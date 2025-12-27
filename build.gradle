@@ -14,7 +14,7 @@ buildscript {
 
 apply plugin: 'net.minecraftforge.gradle.forge'
 
-version = "0.0.1"
+version = "0.1.0"
 group = "com.simplestructurescanner"
 archivesBaseName = "simplestructurescanner"
 
@@ -40,6 +40,9 @@ configurations {
 }
 
 dependencies {
+    // JEI for integration (compile only, not shipped with mod)
+    deobfCompile "mezz.jei:jei_1.12.2:4.16.1.302:api"
+    compile "mezz.jei:jei_1.12.2:4.16.1.302:api"
 }
 
 processResources {

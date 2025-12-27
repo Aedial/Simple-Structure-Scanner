@@ -1,0 +1,123 @@
+# Key bindings
+key.categories.simplestructurescanner=Simple Structure Scanner
+key.simplestructurescanner.open_gui=Open Structure Scanner
+
+# GUI Main
+gui.structurescanner.title=Structure Scanner
+gui.structurescanner.noSelection=Select a structure from the list
+gui.structurescanner.search=Search...
+gui.structurescanner.structureName=Name: %s
+gui.structurescanner.structureId=ID: %s
+gui.structurescanner.modOrigin=Mod: %s
+gui.structurescanner.structureSize=Size: %s x %s x %s
+gui.structurescanner.structureSizeUnknown=Size: Cannot be determined
+gui.structurescanner.searchableYes=Searchable: Yes
+gui.structurescanner.searchableNo=Searchable: No
+gui.structurescanner.unknown=Unknown
+gui.structurescanner.separator=, 
+
+# I18n toggle button
+gui.structurescanner.i18nIDs.on=IDs: Localized
+gui.structurescanner.i18nIDs.off=IDs: Raw
+
+# Providers
+gui.structurescanner.provider.minecraft=Minecraft
+
+# Structures
+gui.structurescanner.structures.village=Village
+gui.structurescanner.structures.mineshaft=Mineshaft
+gui.structurescanner.structures.stronghold=Stronghold
+gui.structurescanner.structures.temple=Temple
+gui.structurescanner.structures.desert_temple=Desert Temple
+gui.structurescanner.structures.jungle_temple=Jungle Temple
+gui.structurescanner.structures.witch_hut=Witch Hut
+gui.structurescanner.structures.igloo=Igloo
+gui.structurescanner.structures.ocean_monument=Ocean Monument
+gui.structurescanner.structures.woodland_mansion=Woodland Mansion
+gui.structurescanner.structures.dungeon=Dungeon
+gui.structurescanner.structures.nether_fortress=Nether Fortress
+gui.structurescanner.structures.end_city=End City
+gui.structurescanner.structures.end_ship=End Ship
+
+# Buttons
+gui.structurescanner.blocksButton=[Blocks]
+gui.structurescanner.lootButton=[Loot]
+gui.structurescanner.entitiesButton=[Entities]
+gui.structurescanner.locateButton=[Locate Nearest]
+gui.structurescanner.locateNextButton=[Next]
+gui.structurescanner.locatePrevButton=[Prev]
+gui.structurescanner.refreshButton=[Refresh]
+gui.structurescanner.skipButton=[Skip]
+
+# Blocks Window
+gui.structurescanner.blocks.title=Blocks in %s
+gui.structurescanner.blocks.loading=Loading blocks...
+gui.structurescanner.blocks.noBlocks=No blocks found
+gui.structurescanner.blocks.count=%,d blocks
+gui.structurescanner.blocks.countTooltip=Total of %,d blocks in this structure
+
+# Loot Window
+gui.structurescanner.loot.title=Loot in %s
+gui.structurescanner.loot.loading=Loading loot tables...
+gui.structurescanner.loot.noLoot=No loot tables found
+gui.structurescanner.loot.count=%d loot tables
+gui.structurescanner.loot.unknown=Items unknown
+gui.structurescanner.loot.rateTooltip=Drop rate: %s
+gui.structurescanner.loot.chest=Chest
+gui.structurescanner.loot.dispenser=Dispenser
+gui.structurescanner.loot.minecart_chest=Minecart with Chest
+
+# Entities Window
+gui.structurescanner.entities.title=Entities in %s
+gui.structurescanner.entities.loading=Loading entities...
+gui.structurescanner.entities.noEntities=No entities found
+gui.structurescanner.entities.count=%d entities
+gui.structurescanner.entities.entityName=Name: %s
+gui.structurescanner.entities.entityId=ID: %s
+gui.structurescanner.entities.spawner=§a[Spawner]
+
+# Location
+gui.structurescanner.locate.searching=Searching...
+gui.structurescanner.locate.found=Found at %d, %d, %d
+gui.structurescanner.locate.notFound=Structure not found nearby
+gui.structurescanner.locate.error=Error locating structure
+gui.structurescanner.locate.distance=Distance: %d blocks
+gui.structurescanner.locate.result=%d of %d
+
+# Errors
+gui.structurescanner.error.noProvider=No structure provider available
+gui.structurescanner.error.loadFailed=Failed to load structure data
+
+# Search
+gui.structurescanner.searching.hint=Double-click a structure to toggle searching
+
+# Config descriptions
+config.structurescanner.client.enableSearch.desc=Enable or disable structure searching globally
+config.structurescanner.client.i18nNames.desc=Use localized names instead of raw IDs in the UI
+config.structurescanner.client.lastSelectedStructure.desc=Last selected structure ID (persisted between sessions)
+config.structurescanner.client.filterText.desc=Last filter text (persisted between sessions)
+config.structurescanner.client.searchedStructureIds.desc=List of structure IDs currently being searched
+config.structurescanner.client.structureWhitelist.desc=Whitelist of structure IDs or partial matches allowed for searching. Takes priority over blacklist. Add ";radius" to make it local (e.g., "village;1000" only allows structures within 1000 blocks).
+config.structurescanner.client.structureBlacklist.desc=Blacklist of structure IDs or partial matches to block from searching. Add ";radius" to make it local (e.g., "minecraft:;500" blocks vanilla structures beyond 500 blocks).
+config.structurescanner.client.showBlocks.desc=Show blocks that are part of the structure in the details panel
+config.structurescanner.client.showEntities.desc=Show entities that are part of the structure in the details panel
+config.structurescanner.client.showLootTables.desc=Show loot tables that are part of the structure in the details panel
+config.structurescanner.client.hudEnabled.desc=Enable or disable the HUD overlay showing searched structures
+config.structurescanner.client.hudPaddingExternal.desc=Padding from screen edge for HUD overlay
+config.structurescanner.client.hudPaddingInternal.desc=Padding inside the HUD box
+config.structurescanner.client.hudLineSpacing.desc=Spacing between lines in HUD overlay
+config.structurescanner.server.enableSearch.desc=Enable or disable structure searching on the server (requires server-side installation)
+config.structurescanner.title=Simple Structure Scanner Settings
+
+# HUD Position
+gui.structurescanner.hudPosition.label=HUD Position
+gui.structurescanner.hudPosition.button=Position: %s
+gui.structurescanner.hudPosition.top_left=Top Left
+gui.structurescanner.hudPosition.top_center=Top Center
+gui.structurescanner.hudPosition.top_right=Top Right
+gui.structurescanner.hudPosition.center_left=Center Left
+gui.structurescanner.hudPosition.center=Center
+gui.structurescanner.hudPosition.center_right=Center Right
+gui.structurescanner.hudPosition.bottom_left=Bottom Left
+gui.structurescanner.hudPosition.bottom_center=Bottom Center
+gui.structurescanner.hudPosition.bottom_right=Bottom Right

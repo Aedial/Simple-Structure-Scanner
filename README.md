@@ -13,8 +13,10 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 
 - Configs:
   - enableSearch: Globally disable search.
-  - whitelist/blacklist: Configure which structures are allowed/disallowed for searching. Whitelist takes priority over blacklist. Partial matches are supported (e.g., `village` matches all structures with "village" in their ID or `minecraft` matches all structures from the Minecraft namespace). To avoid matching too broadly, keep the `:` separator for namespace matching (e.g., `pillar:`). As it is a purely client-side mod, there is no way to enforce server-side structure restrictions.
-  - localWhitelist/localBlacklist: Same as above, but it stops being disallowed if the player is within a certain radius of the structure. The radius is per whitelist/blacklist entry, configured as `filter;radius` (e.g., `minecraft:;100`).
+  - whitelist/blacklist: Configure which structures are allowed/disallowed for searching. Whitelist takes priority over blacklist. Partial matches are supported (e.g., `village` matches all structures with "village" in their ID or `minecraft` matches all structures from the Minecraft namespace). To avoid matching too broadly, keep the `:` separator for namespace matching (e.g., `pillar:`). Add `;radius` to make the entry local, which stops being enforced if the player is within a certain radius of the structure (e.g., `minecraft:;100` only blocks vanilla structures until within 100 blocks).
+  - showBlocks: Show blocks that are part of the structure in the details panel.
+  - showEntities: Show entities that are part of the structure in the details panel.
+  - showLootTables: Show loot tables that are part of the structure in the details panel.
 
 - List of supported structures:
   - Vanilla Minecraft structures.
@@ -22,7 +24,7 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 
 ## FAQ
 ### Do I need to install this on a server?
-You do not need to, unless you want to use the custom loot tables viewer. The mod will still work fine without server-side installation.
+If you wish the query structure locations, you will need to put the mod on the server as well. However, if you only want to view structure information, you can use it client-side, as long as the mod providing said structures is also installed client-side.
 
 ### How is the structures list filtered?
 The filter box matches both localized and unlocalized structure names. This means you can type the mod name, the name in your selected language, or the default English name.
