@@ -14,7 +14,7 @@ buildscript {
 
 apply plugin: 'net.minecraftforge.gradle.forge'
 
-version = "0.1.0"
+version = "0.1.1"
 group = "com.simplestructurescanner"
 archivesBaseName = "simplestructurescanner"
 
@@ -90,6 +90,8 @@ if (cfProjectId) {
             // Declare relations for CurseForge page
             relations {
                 // Optional: JEI
+                optionalDependency 'jei'
+                // Optional: Pillar
                 optionalDependency 'pillar'
             }
         }

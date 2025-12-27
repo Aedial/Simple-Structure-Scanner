@@ -8,7 +8,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
-## [0.1.0] - 2025-12-27
+## [0.1.1] - 2025-12-27
 ### Added
 - Keybind handler (`KeybindHandler`) to open the scanner GUI (default: P key)
 - Structure provider system for modular structure support:
