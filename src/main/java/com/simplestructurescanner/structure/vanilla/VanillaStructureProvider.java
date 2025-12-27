@@ -42,10 +42,25 @@ public class VanillaStructureProvider implements StructureProvider {
     private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
 
     public VanillaStructureProvider() {
-        initKnownStructures();
     }
 
-    private void initKnownStructures() {
+    @Override
+    public String getProviderId() {
+        return PROVIDER_ID;
+    }
+
+    @Override
+    public String getModName() {
+        return MOD_NAME;
+    }
+
+    @Override
+    public boolean isAvailable() {
+        return true;
+    }
+
+    @Override
+    public void postInit() {
         knownStructures = new ArrayList<>();
 
         // Overworld
@@ -92,6 +107,7 @@ public class VanillaStructureProvider implements StructureProvider {
     }
 
     // FIXME: we have some invalid blocks (shown as Air)
+    // TODO: for non-procedural structures, we should parse structure files instead of hardcoding
 
     private void populateDesertTemple() {
         StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "desert_temple"));
@@ -155,7 +171,7 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setBlocks(blocks);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "witch"), "entity.witch.name", 1)
+            new EntityEntry(new ResourceLocation("minecraft", "witch"), 1)
         );
         info.setEntities(entities);
     }
@@ -183,8 +199,8 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "villager"), "entity.villager.name", 1),
-            new EntityEntry(new ResourceLocation("minecraft", "zombie_villager"), "entity.zombie_villager.name", 1)
+            new EntityEntry(new ResourceLocation("minecraft", "villager"), 1),
+            new EntityEntry(new ResourceLocation("minecraft", "zombie_villager"), 1)
         );
         info.setEntities(entities);
     }
@@ -204,8 +220,8 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setBlocks(blocks);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "guardian"), "entity.guardian.name", 20),
-            new EntityEntry(new ResourceLocation("minecraft", "elder_guardian"), "entity.elder_guardian.name", 3)
+            new EntityEntry(new ResourceLocation("minecraft", "guardian"), 20),
+            new EntityEntry(new ResourceLocation("minecraft", "elder_guardian"), 3)
         );
         info.setEntities(entities);
     }
@@ -228,9 +244,9 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "zombie"), "entity.zombie.name", 1, true),
-            new EntityEntry(new ResourceLocation("minecraft", "skeleton"), "entity.skeleton.name", 1, true),
-            new EntityEntry(new ResourceLocation("minecraft", "spider"), "entity.spider.name", 1, true)
+            new EntityEntry(new ResourceLocation("minecraft", "zombie"), 1),
+            new EntityEntry(new ResourceLocation("minecraft", "skeleton"), 1),
+            new EntityEntry(new ResourceLocation("minecraft", "spider"), 1)
         );
         info.setEntities(entities);
     }
@@ -260,7 +276,7 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "silverfish"), "entity.silverfish.name", 1, true)
+            new EntityEntry(new ResourceLocation("minecraft", "silverfish"), 1)
         );
         info.setEntities(entities);
     }
@@ -285,7 +301,7 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "cave_spider"), "entity.cave_spider.name", 1, true)
+            new EntityEntry(new ResourceLocation("minecraft", "cave_spider"), 1)
         );
         info.setEntities(entities);
     }
@@ -310,8 +326,8 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "blaze"), "entity.blaze.name", 1, true),
-            new EntityEntry(new ResourceLocation("minecraft", "wither_skeleton"), "entity.wither_skeleton.name", 1, false)
+            new EntityEntry(new ResourceLocation("minecraft", "blaze"), 1),
+            new EntityEntry(new ResourceLocation("minecraft", "wither_skeleton"), 1)
         );
         info.setEntities(entities);
     }
@@ -337,7 +353,7 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "shulker"), "entity.shulker.name", 10)
+            new EntityEntry(new ResourceLocation("minecraft", "shulker"), 10)
         );
         info.setEntities(entities);
 
@@ -358,7 +374,7 @@ public class VanillaStructureProvider implements StructureProvider {
             shipInfo.setLootTables(shipLoot);
 
             List<EntityEntry> shipEntities = Arrays.asList(
-                new EntityEntry(new ResourceLocation("minecraft", "shulker"), "entity.shulker.name", 3)
+                new EntityEntry(new ResourceLocation("minecraft", "shulker"), 3)
             );
             shipInfo.setEntities(shipEntities);
         }
@@ -386,8 +402,8 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "vindication_illager"), "entity.vindication_illager.name", 10),
-            new EntityEntry(new ResourceLocation("minecraft", "evocation_illager"), "entity.evocation_illager.name", 3)
+            new EntityEntry(new ResourceLocation("minecraft", "vindication_illager"), 10),
+            new EntityEntry(new ResourceLocation("minecraft", "evocation_illager"), 3)
         );
         info.setEntities(entities);
     }
@@ -418,8 +434,8 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "villager"), "entity.villager.name", 10),
-            new EntityEntry(new ResourceLocation("minecraft", "iron_golem"), "entity.iron_golem.name", 1)
+            new EntityEntry(new ResourceLocation("minecraft", "villager"), 10),
+            new EntityEntry(new ResourceLocation("minecraft", "villager_golem"), 1)
         );
         info.setEntities(entities);
     }
@@ -441,21 +457,6 @@ public class VanillaStructureProvider implements StructureProvider {
         String name = I18n.translateToLocal(displayName);
         StructureInfo info = new StructureInfo(id, name, PROVIDER_ID, sizeX, sizeY, sizeZ);
         structureInfos.put(id, info);
-    }
-
-    @Override
-    public String getProviderId() {
-        return PROVIDER_ID;
-    }
-
-    @Override
-    public String getModName() {
-        return MOD_NAME;
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return true;
     }
 
     @Override

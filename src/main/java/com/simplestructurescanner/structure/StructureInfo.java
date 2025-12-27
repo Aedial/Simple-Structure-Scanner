@@ -126,17 +126,15 @@ public class StructureInfo {
      */
     public static class EntityEntry {
         public final ResourceLocation entityId;
-        public final String displayName;
         public final int count;
         public final boolean spawner;
 
-        public EntityEntry(ResourceLocation entityId, String displayName, int count) {
-            this(entityId, displayName, count, false);
+        public EntityEntry(ResourceLocation entityId, int count) {
+            this(entityId, count, false);
         }
 
-        public EntityEntry(ResourceLocation entityId, String displayName, int count, boolean spawner) {
+        public EntityEntry(ResourceLocation entityId, int count, boolean spawner) {
             this.entityId = entityId;
-            this.displayName = displayName;
             this.count = count;
             this.spawner = spawner;
         }

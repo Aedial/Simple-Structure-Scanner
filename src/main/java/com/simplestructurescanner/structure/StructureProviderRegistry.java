@@ -1,6 +1,7 @@
 package com.simplestructurescanner.structure;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,11 @@ public class StructureProviderRegistry {
     private static final Map<ResourceLocation, StructureProvider> structureToProvider = new HashMap<>();
     private static boolean initialized = false;
 
+    private static List<Class<? extends StructureProvider>> providerClasses = Arrays.asList(
+        VanillaStructureProvider.class
+        // Add other provider classes here
+    );
+
     /**
      * Discover and register all available structure providers.
      * Called during mod initialization.
@@ -31,17 +37,21 @@ public class StructureProviderRegistry {
     public static void discoverProviders() {
         if (initialized) return;
 
+        for (Class<? extends StructureProvider> providerClass : providerClasses) {
+            try {
+                StructureProvider provider = providerClass.getDeclaredConstructor().newInstance();
+                if (!provider.isAvailable()) {
+                    SimpleStructureScanner.LOGGER.debug("Skipping unavailable provider: {}", provider.getProviderId());
+                    continue;
+                }
+
+                registerProvider(provider);
+            } catch (Exception e) {
+                SimpleStructureScanner.LOGGER.error("Failed to instantiate structure provider: {}", providerClass.getName(), e);
+            }
+        }
+
         initialized = true;
-
-        // Register vanilla provider (always available)
-        registerProvider(new VanillaStructureProvider());
-
-        // TODO: Add mod detection and registration here
-        // Example:
-        // if (Loader.isModLoaded("recurrentcomplex")) {
-        //     registerProvider(new RecurrentComplexProvider());
-        // }
-
         SimpleStructureScanner.LOGGER.info("Registered {} structure providers", providers.size());
     }
 
@@ -49,12 +59,7 @@ public class StructureProviderRegistry {
      * Register a structure provider.
      */
     public static void registerProvider(StructureProvider provider) {
-        if (!provider.isAvailable()) {
-            SimpleStructureScanner.LOGGER.debug("Skipping unavailable provider: {}", provider.getProviderId());
-
-            return;
-        }
-
+        provider.postInit();  // Allow provider to set up structure data
         providers.add(provider);
 
         // Map all structures to their provider

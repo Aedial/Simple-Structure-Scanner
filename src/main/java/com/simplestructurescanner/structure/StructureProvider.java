@@ -28,8 +28,15 @@ public interface StructureProvider {
 
     /**
      * Check if this provider is available (mod is loaded).
+     * You can use Loader.isModLoaded for this.
      */
     boolean isAvailable();
+
+    /**
+     * Called after provider registration. Use this to set up any necessary structure data.
+     * Class initialization should contain no bindings to other mods, as they may not be loaded.
+     */
+    void postInit();
 
     /**
      * Get a list of all structure IDs this provider knows about.

@@ -63,6 +63,7 @@ public class GuiEntitiesWindow {
     // Entity caching and error searching
     private Map<ResourceLocation, Entity> entityCache = new HashMap<>();
     private Set<ResourceLocation> entitiesWithRenderErrors = new HashSet<>();
+    private static Map<ResourceLocation, String> entityNameCache = new HashMap<>();
 
     public GuiEntitiesWindow(GuiScreen parent, ResourceLocation structureId, StructureInfo structureInfo) {
         this.parent = parent;
@@ -154,9 +155,7 @@ public class GuiEntitiesWindow {
             int relativeY = mouseY - listY + (int) scrollOffset;
             int index = relativeY / ENTRY_HEIGHT;
 
-            if (index >= 0 && index < entities.size()) {
-                selectedIndex = index;
-            }
+            if (index >= 0 && index < entities.size()) selectedIndex = index;
         }
 
         return true;
@@ -272,6 +271,47 @@ public class GuiEntitiesWindow {
         }
     }
 
+    private Entity getEntityInstance(ResourceLocation entityId) {
+        if (entityCache.containsKey(entityId)) return entityCache.get(entityId);
+
+        try {
+            Entity entity = EntityList.createEntityByIDFromName(entityId, Minecraft.getMinecraft().world);
+            entityCache.put(entityId, entity);
+
+            return entity;
+        } catch (Exception e) {
+            entityCache.put(entityId, null);
+
+            return null;
+        }
+    }
+
+    private String formatEntityName(ResourceLocation id) {
+        if (id == null) return "";
+        if (entityNameCache.containsKey(id)) return entityNameCache.get(id);
+
+        Entity entity = getEntityInstance(id);
+        if (entity != null) {
+            String name = entity.getDisplayName().getUnformattedText();
+            entityNameCache.put(id, name);
+            return name;
+        }
+
+        // Fallback for modded entities missing translation mapping
+        String[] parts = id.toString().split(":" , 2);
+        String domain = parts.length > 0 ? parts[0] : "minecraft";
+        String path = parts.length > 1 ? parts[1] : parts[0];
+        String altKey = "entity." + domain + "." + path + ".name";
+        if (I18n.hasKey(altKey)) {
+            String name = I18n.format(altKey);
+            entityNameCache.put(id, name);
+            return name;
+        }
+
+        entityNameCache.put(id, id.toString());
+        return id.toString();
+    }
+
     private void drawEntityList(int mouseX, int mouseY) {
         Minecraft mc = Minecraft.getMinecraft();
         FontRenderer font = mc.fontRenderer;
@@ -304,7 +344,7 @@ public class GuiEntitiesWindow {
             }
 
             // Draw entity name and count
-            String displayText = entry.displayName;
+            String displayText = formatEntityName(entry.entityId);
             if (entry.count > 1) {
                 displayText += " x" + entry.count;
             }
@@ -341,11 +381,12 @@ public class GuiEntitiesWindow {
         if (selectedIndex < 0 || selectedIndex >= entities.size()) return;
 
         EntityEntry entry = entities.get(selectedIndex);
+        String entityName = formatEntityName(entry.entityId);
 
         // Draw entity name and ID
         int textY = viewerY + 5;
 
-        String nameLabel = I18n.format("gui.structurescanner.entities.entityName", entry.displayName);
+        String nameLabel = I18n.format("gui.structurescanner.entities.entityName", entityName);
         String elidedName = font.trimStringToWidth(nameLabel, viewerW - 6);
         if (!elidedName.equals(nameLabel)) elidedName += "…";
         font.drawString(elidedName, viewerX + 3, textY, 0xFFFFFF);
@@ -372,21 +413,6 @@ public class GuiEntitiesWindow {
 
             float entityRotation = (mc.getSystemTime() % 10000L) / 10000.0f * 360.0f;
             drawEntityPreview(entry.entityId, previewX, previewY, previewSize, entityRotation);
-        }
-    }
-
-    private Entity getEntityInstance(ResourceLocation entityId) {
-        if (entityCache.containsKey(entityId)) return entityCache.get(entityId);
-
-        try {
-            Entity entity = EntityList.createEntityByIDFromName(entityId, Minecraft.getMinecraft().world);
-            entityCache.put(entityId, entity);
-
-            return entity;
-        } catch (Exception e) {
-            entityCache.put(entityId, null);
-
-            return null;
         }
     }
 
