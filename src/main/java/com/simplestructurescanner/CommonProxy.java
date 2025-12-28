@@ -14,13 +14,12 @@ public class CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         File configFile = new File(event.getModConfigurationDirectory(), SimpleStructureScanner.MODID + ".cfg");
         ModConfig.loadConfigs(configFile);
-
-        StructureProviderRegistry.discoverProviders();
     }
 
     public void init(FMLInitializationEvent event) {
     }
 
     public void postInit(FMLPostInitializationEvent event) {
+        StructureProviderRegistry.discoverProviders();
     }
 }

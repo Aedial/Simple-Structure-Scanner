@@ -13,6 +13,17 @@ gui.structurescanner.structureSize=Size: %s x %s x %s
 gui.structurescanner.structureSizeUnknown=Size: Cannot be determined
 gui.structurescanner.searchableYes=Searchable: Yes
 gui.structurescanner.searchableNo=Searchable: No
+gui.structurescanner.biomes=Biomes: %s
+gui.structurescanner.biomes.any=Any
+gui.structurescanner.biomes.count=biomes
+gui.structurescanner.dimension=Dimension: %s
+gui.structurescanner.dimension.overworld=Overworld
+gui.structurescanner.dimension.nether=Nether
+gui.structurescanner.dimension.end=The End
+gui.structurescanner.rarity=Rarity: %s
+gui.structurescanner.rarity.common=Common
+gui.structurescanner.rarity.uncommon=Uncommon
+gui.structurescanner.rarity.rare=Rare
 gui.structurescanner.unknown=Unknown
 gui.structurescanner.separator=, 
 
@@ -83,13 +94,6 @@ gui.structurescanner.locate.notFound=Structure not found nearby
 gui.structurescanner.locate.error=Error locating structure
 gui.structurescanner.locate.distance=Distance: %d blocks
 gui.structurescanner.locate.result=%d of %d
-
-# Errors
-gui.structurescanner.error.noProvider=No structure provider available
-gui.structurescanner.error.loadFailed=Failed to load structure data
-
-# Search
-gui.structurescanner.searching.hint=Double-click a structure to toggle searching
 
 # Config descriptions
 config.structurescanner.client.enableSearch.desc=Enable or disable structure searching globally

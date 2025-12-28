@@ -2,12 +2,16 @@ package com.simplestructurescanner.structure;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import javax.annotation.Nullable;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.biome.Biome;
 
 
 /**
@@ -25,6 +29,14 @@ public class StructureInfo {
     private List<LootEntry> lootTables;
     private List<EntityEntry> entities;
 
+    // Biome/dimension/rarity info
+    private Set<Biome> validBiomes;
+    private Set<Integer> validDimensions;
+    private String rarity;
+
+    // Layer data for structure viewer (Y-level indexed)
+    private List<StructureLayer> layers;
+
     public StructureInfo(ResourceLocation id, String displayName, String modId, int sizeX, int sizeY, int sizeZ) {
         this.id = id;
         this.displayName = displayName;
@@ -35,6 +47,10 @@ public class StructureInfo {
         this.blocks = Collections.emptyList();
         this.lootTables = Collections.emptyList();
         this.entities = Collections.emptyList();
+        this.validBiomes = null;
+        this.validDimensions = null;
+        this.rarity = null;
+        this.layers = null;
     }
 
     public ResourceLocation getId() {
@@ -83,6 +99,80 @@ public class StructureInfo {
 
     public void setEntities(List<EntityEntry> entities) {
         this.entities = entities != null ? entities : Collections.emptyList();
+    }
+
+    @Nullable
+    public Set<Biome> getValidBiomes() {
+        return validBiomes;
+    }
+
+    public void setValidBiomes(Set<Biome> validBiomes) {
+        this.validBiomes = validBiomes;
+    }
+
+    @Nullable
+    public Set<Integer> getValidDimensions() {
+        return validDimensions;
+    }
+
+    public void setValidDimensions(Set<Integer> validDimensions) {
+        this.validDimensions = validDimensions;
+    }
+
+    @Nullable
+    public String getRarity() {
+        return rarity;
+    }
+
+    public void setRarity(String rarity) {
+        this.rarity = rarity;
+    }
+
+    @Nullable
+    public List<StructureLayer> getLayers() {
+        return layers;
+    }
+
+    public void setLayers(List<StructureLayer> layers) {
+        this.layers = layers;
+    }
+
+    /**
+     * Check if this structure has layer data for the structure viewer.
+     */
+    public boolean hasLayerData() {
+        return layers != null && !layers.isEmpty();
+    }
+
+    /**
+     * Represents a single Y-level layer of the structure.
+     * Contains a 2D grid of block states for rendering.
+     */
+    public static class StructureLayer {
+        public final int y;
+        public final int width;
+        public final int depth;
+        public final IBlockState[] blockStates;
+
+        public StructureLayer(int y, int width, int depth) {
+            this.y = y;
+            this.width = width;
+            this.depth = depth;
+            this.blockStates = new IBlockState[width * depth];
+        }
+
+        public void setBlockState(int x, int z, IBlockState state) {
+            if (x >= 0 && x < width && z >= 0 && z < depth) {
+                blockStates[x + z * width] = state;
+            }
+        }
+
+        @Nullable
+        public IBlockState getBlockState(int x, int z) {
+            if (x < 0 || x >= width || z < 0 || z >= depth) return null;
+
+            return blockStates[x + z * width];
+        }
     }
 
     /**

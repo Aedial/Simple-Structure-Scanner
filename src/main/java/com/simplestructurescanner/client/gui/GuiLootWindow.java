@@ -117,8 +117,6 @@ public class GuiLootWindow {
                 resolvedLoot.add(directItems);
             }
         }
-
-        // TODO: unify items by removing dmg, enchants, and spell book ids
     }
 
     public void hide() {
@@ -461,7 +459,7 @@ public class GuiLootWindow {
             currentY += entryHeight;
         }
 
-        org.lwjgl.opengl.GL11.glDisable(org.lwjgl.opengl.GL11.GL_SCISSOR_TEST);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
     }
 
     public void drawTooltips(int mouseX, int mouseY) {
@@ -477,12 +475,6 @@ public class GuiLootWindow {
             ITooltipFlag.TooltipFlags tooltipFlag = mc.gameSettings.advancedItemTooltips ?
                 ITooltipFlag.TooltipFlags.ADVANCED : ITooltipFlag.TooltipFlags.NORMAL;
             List<String> tooltip = item.stack.getTooltip(mc.player, tooltipFlag);
-
-            // Add JEI hint
-            if (JEIHelper.isJEIAvailable()) {
-                tooltip.add("");
-                tooltip.add("\u00a77" + I18n.format("gui.structurescanner.loot.jeiHint"));
-            }
 
             GlStateManager.pushMatrix();
             GlStateManager.translate(0, 0, 500);

@@ -1,11 +1,14 @@
 package com.simplestructurescanner.integration;
 
+import java.util.List;
+
 import net.minecraft.item.ItemStack;
 import net.minecraftforge.fml.common.Loader;
 
 import mezz.jei.api.IJeiRuntime;
 import mezz.jei.api.JEIPlugin;
 import mezz.jei.api.recipe.IFocus;
+import mezz.jei.api.recipe.IRecipeCategory;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 
@@ -55,24 +58,34 @@ public class JEIHelper {
      * This prevents ClassNotFoundErrors when JEI is not loaded.
      */
     private static class JEIIntegrationImpl {
+        @SuppressWarnings("rawtypes")
         static boolean showRecipes(ItemStack stack) {
             IJeiRuntime runtime = JEIIntegration.getRuntime();
             if (runtime == null) return false;
 
             IFocus<ItemStack> focus = runtime.getRecipeRegistry().createFocus(IFocus.Mode.OUTPUT, stack);
+
+            // Check if any recipes exist for this item before showing
+            List<IRecipeCategory> categories = runtime.getRecipeRegistry().getRecipeCategories(focus);
+            if (categories.isEmpty()) return false;
+
             runtime.getRecipesGui().show(focus);
-            // FIXME: should return false if no recipes found, otherwise the GUI breaks
 
             return true;
         }
 
+        @SuppressWarnings("rawtypes")
         static boolean showUses(ItemStack stack) {
             IJeiRuntime runtime = JEIIntegration.getRuntime();
             if (runtime == null) return false;
 
             IFocus<ItemStack> focus = runtime.getRecipeRegistry().createFocus(IFocus.Mode.INPUT, stack);
+
+            // Check if any recipes exist that use this item before showing
+            List<IRecipeCategory> categories = runtime.getRecipeRegistry().getRecipeCategories(focus);
+            if (categories.isEmpty()) return false;
+
             runtime.getRecipesGui().show(focus);
-            // FIXME: same here
 
             return true;
         }

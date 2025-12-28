@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Random;
 
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.init.Items;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
@@ -75,7 +76,8 @@ public class LootTableResolver {
         public int dropCount;
 
         public LootItem(ItemStack stack, int dropCount) {
-            this.stack = stack;
+            // Store a normalized copy for cleaner display
+            this.stack = normalizeForDisplay(stack);
             this.dropCount = dropCount;
         }
 
@@ -182,8 +184,45 @@ public class LootTableResolver {
         return items;
     }
 
+    /**
+     * Get a normalized item key for aggregation purposes.
+     * This unifies items by removing enchantments, damage values (for tools), and spell book specifics.
+     */
     private static String getItemKey(ItemStack stack) {
-        return stack.getItem().getRegistryName() + "@" + stack.getMetadata();
+        Item item = stack.getItem();
+        int meta = stack.getMetadata();
+
+        // Enchanted books - treat all as the same item
+        if (item == Items.ENCHANTED_BOOK) return item.getRegistryName().toString() + "@enchanted";
+
+        // Items with durability - ignore damage value (metadata)
+        if (stack.isItemStackDamageable()) return item.getRegistryName().toString() + "@0";
+
+        return item.getRegistryName() + "@" + meta;
+    }
+
+    /**
+     * Create a normalized ItemStack for display.
+     * Removes enchantments and resets damage for cleaner display.
+     */
+    public static ItemStack normalizeForDisplay(ItemStack stack) {
+        ItemStack normalized = stack.copy();
+        Item item = normalized.getItem();
+
+        // Remove all enchantments for display
+        if (normalized.isItemEnchanted()) {
+            if (normalized.hasTagCompound()) normalized.getTagCompound().removeTag("ench");
+        }
+
+        // Reset damage on damageable items
+        if (normalized.isItemStackDamageable()) normalized.setItemDamage(0);
+
+        // Remove stored enchantments from enchanted books (show as generic book)
+        if (item == Items.ENCHANTED_BOOK && normalized.hasTagCompound()) {
+            normalized.getTagCompound().removeTag("StoredEnchantments");
+        }
+
+        return normalized;
     }
 
     @SuppressWarnings("unchecked")
