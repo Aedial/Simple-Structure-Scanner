@@ -191,6 +191,7 @@ public class LootTableResolver {
     private static String getItemKey(ItemStack stack) {
         Item item = stack.getItem();
         int meta = stack.getMetadata();
+        // TODO: add NBT data stripped of enchantments
 
         // Enchanted books - treat all as the same item
         if (item == Items.ENCHANTED_BOOK) return item.getRegistryName().toString() + "@enchanted";
@@ -210,17 +211,13 @@ public class LootTableResolver {
         Item item = normalized.getItem();
 
         // Remove all enchantments for display
-        if (normalized.isItemEnchanted()) {
-            if (normalized.hasTagCompound()) normalized.getTagCompound().removeTag("ench");
-        }
+        if (normalized.isItemEnchanted() && normalized.hasTagCompound()) normalized.getTagCompound().removeTag("ench");
 
         // Reset damage on damageable items
         if (normalized.isItemStackDamageable()) normalized.setItemDamage(0);
 
         // Remove stored enchantments from enchanted books (show as generic book)
-        if (item == Items.ENCHANTED_BOOK && normalized.hasTagCompound()) {
-            normalized.getTagCompound().removeTag("StoredEnchantments");
-        }
+        if (item == Items.ENCHANTED_BOOK && normalized.hasTagCompound()) normalized.getTagCompound().removeTag("StoredEnchantments");
 
         return normalized;
     }

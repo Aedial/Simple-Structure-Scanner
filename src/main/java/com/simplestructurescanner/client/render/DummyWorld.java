@@ -107,9 +107,7 @@ public class DummyWorld extends World {
     @Nonnull
     @Override
     public IBlockState getBlockState(@Nonnull BlockPos pos) {
-        if (!renderedBlocks.contains(pos)) {
-            return Blocks.AIR.getDefaultState();
-        }
+        if (!renderedBlocks.contains(pos)) return Blocks.AIR.getDefaultState();
 
         return super.getBlockState(pos);
     }

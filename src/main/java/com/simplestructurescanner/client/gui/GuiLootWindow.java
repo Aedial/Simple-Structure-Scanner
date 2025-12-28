@@ -101,21 +101,25 @@ public class GuiLootWindow {
         simulationCount = LootTableResolver.getSimulationCount();
 
         for (LootEntry entry : lootEntries) {
+            List<LootItem> entryLoot = new ArrayList<>();
+
+            // Try to resolve from loot table ID first
             if (entry.lootTableId != null) {
-                resolvedLoot.add(LootTableResolver.resolveLootTableWithSimulation(
-                    world, entry.lootTableId, mc.player));
+                entryLoot = LootTableResolver.resolveLootTableWithSimulation(
+                    world, entry.lootTableId, mc.player);
             }
-            
-            if (entry.possibleDrops != null) {
-                List<LootItem> directItems = new ArrayList<>();
+
+            // If loot table resolution failed or wasn't available, use possibleDrops as fallback
+            if (entryLoot.isEmpty() && entry.possibleDrops != null && !entry.possibleDrops.isEmpty()) {
                 for (ItemStack stack : entry.possibleDrops) {
                     int count = stack.getCount();
                     stack = stack.copy();
                     stack.setCount(1);
-                    directItems.add(new LootItem(stack, count * simulationCount));
+                    entryLoot.add(new LootItem(stack, count * simulationCount));
                 }
-                resolvedLoot.add(directItems);
             }
+
+            resolvedLoot.add(entryLoot);
         }
     }
 

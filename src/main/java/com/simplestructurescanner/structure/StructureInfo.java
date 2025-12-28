@@ -157,14 +157,13 @@ public class StructureInfo {
         public StructureLayer(int y, int width, int depth) {
             this.y = y;
             this.width = width;
+
             this.depth = depth;
             this.blockStates = new IBlockState[width * depth];
         }
 
         public void setBlockState(int x, int z, IBlockState state) {
-            if (x >= 0 && x < width && z >= 0 && z < depth) {
-                blockStates[x + z * width] = state;
-            }
+            if (x >= 0 && x < width && z >= 0 && z < depth) blockStates[x + z * width] = state;
         }
 
         @Nullable

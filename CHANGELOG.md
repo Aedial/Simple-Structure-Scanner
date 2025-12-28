@@ -8,6 +8,19 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
+## [0.2.0] - 2025-12-28
+### Added
+- Add Igloo structure retrieval to VanillaStructureProvider (as test case)
+- Add structure preview for those providing structure schematic data
+- Add biome, dimension, rarity information to StructureInfo and display in GUI
+
+### Fixed
+- Fix loot table resolution vanilla provider (some loot tables were missing)
+
+### Changed
+- Change hardcoded block->item mapping to handle GuiBlocksWindow better
+
+
 ## [0.1.1] - 2025-12-27
 ### Added
 - Keybind handler (`KeybindHandler`) to open the scanner GUI (default: P key)

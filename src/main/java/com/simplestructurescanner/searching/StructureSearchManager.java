@@ -58,9 +58,7 @@ public class StructureSearchManager {
 
     private static void saveToConfig() {
         List<String> ids = new ArrayList<>();
-        for (ResourceLocation loc : searchedStructures) {
-            ids.add(loc.toString());
-        }
+        for (ResourceLocation loc : searchedStructures) ids.add(loc.toString());
         ModConfig.setClientTrackedIds(ids);
     }
 
@@ -68,9 +66,7 @@ public class StructureSearchManager {
         if (!structureColors.containsKey(id)) {
             // Find the first available color index
             int colorIndex = 0;
-            while (usedColorIndices.contains(colorIndex)) {
-                colorIndex++;
-            }
+            while (usedColorIndices.contains(colorIndex)) colorIndex++;
             usedColorIndices.add(colorIndex);
             structureColorIndices.put(id, colorIndex);
             structureColors.put(id, COLORS[colorIndex % COLORS.length]);
@@ -79,9 +75,7 @@ public class StructureSearchManager {
 
     private static void freeColor(ResourceLocation id) {
         Integer colorIndex = structureColorIndices.remove(id);
-        if (colorIndex != null) {
-            usedColorIndices.remove(colorIndex);
-        }
+        if (colorIndex != null) usedColorIndices.remove(colorIndex);
         structureColors.remove(id);
     }
 
@@ -131,9 +125,7 @@ public class StructureSearchManager {
      * on the next client tick.
      */
     public static void requestSearch(ResourceLocation id) {
-        if (searchedStructures.contains(id)) {
-            pendingSearches.add(id);
-        }
+        if (searchedStructures.contains(id)) pendingSearches.add(id);
     }
 
     /**

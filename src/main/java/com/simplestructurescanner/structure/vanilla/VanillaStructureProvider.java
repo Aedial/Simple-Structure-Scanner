@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -43,6 +44,7 @@ import com.simplestructurescanner.structure.StructureProvider;
  */
 public class VanillaStructureProvider implements StructureProvider {
     private static final String PROVIDER_ID = "minecraft";
+    private static final Random RANDOM = new Random();
     private static final String MOD_NAME = I18n.translateToLocal("gui.structurescanner.provider.minecraft");
 
     private List<ResourceLocation> knownStructures;
@@ -280,8 +282,7 @@ public class VanillaStructureProvider implements StructureProvider {
 
             if (existing != null) {
                 // Add counts
-                blockMap.put(key, new BlockEntry(existing.blockState, existing.displayStack,
-                    existing.count + newEntry.count));
+                blockMap.put(key, new BlockEntry(existing.blockState, existing.displayStack, existing.count + newEntry.count));
             } else {
                 blockMap.put(key, newEntry);
             }
@@ -302,6 +303,14 @@ public class VanillaStructureProvider implements StructureProvider {
      * New layers are stacked on top of existing layers (offset by max Y + 1).
      */
     private void mergeLayers(StructureInfo info, List<StructureLayer> newLayers) {
+        mergeLayers(info, newLayers, 0, 0);
+    }
+
+    /**
+     * Merge additional layers into existing layer list with X/Z offsets.
+     * New layers are stacked on top of existing layers (offset by max Y + 1).
+     */
+    private void mergeLayers(StructureInfo info, List<StructureLayer> newLayers, int xOffset, int zOffset) {
         List<StructureLayer> existing = new ArrayList<>(info.getLayers());
 
         // Find the maximum Y in existing layers to stack new parts on top
@@ -326,7 +335,7 @@ public class VanillaStructureProvider implements StructureProvider {
             for (int x = 0; x < newLayer.width; x++) {
                 for (int z = 0; z < newLayer.depth; z++) {
                     IBlockState state = newLayer.getBlockState(x, z);
-                    if (state != null) offsetLayer.setBlockState(x, z, state);
+                    if (state != null) offsetLayer.setBlockState(x + xOffset, z + zOffset, state);
                 }
             }
 
@@ -700,20 +709,36 @@ public class VanillaStructureProvider implements StructureProvider {
     }
 
     private BlockEntry createBlockEntry(Block block, int meta, int count) {
-        ItemStack stack = new ItemStack(block, 1, meta);
+        IBlockState state = block.getStateFromMeta(meta);
+        ItemStack stack = ItemStack.EMPTY;
 
-        // Validate that the item stack is valid and not air
-        // Some blocks don't have valid item representations for all metadata values
+        // Strategy 1: Use Item.getItemFromBlock with damageDropped
+        Item blockItem = Item.getItemFromBlock(block);
+        if (blockItem != null && blockItem != Items.AIR) {
+            int damage = block.damageDropped(state);
+            stack = new ItemStack(blockItem, 1, damage);
+        }
+
+        // Strategy 2: Use getItemDropped if direct item form failed
         if (stack.isEmpty()) {
-            // Try without metadata
-            stack = new ItemStack(block);
-            if (stack.isEmpty()) {
-                // Block has no item representation, skip it
-                return null;
+            Item droppedItem = block.getItemDropped(state, RANDOM, 0);
+            if (droppedItem != null && droppedItem != Items.AIR) {
+                int damage = block.damageDropped(state);
+                stack = new ItemStack(droppedItem, 1, damage);
             }
         }
 
-        return new BlockEntry(block.getStateFromMeta(meta), stack, count);
+        // Strategy 3: Fallback to direct ItemStack creation
+        if (stack.isEmpty()) {
+            stack = new ItemStack(block, 1, meta);
+        }
+
+        if (stack.isEmpty()) {
+            stack = new ItemStack(block);
+            if (stack.isEmpty()) return null;
+        }
+
+        return new BlockEntry(state, stack, count);
     }
 
     @SafeVarargs

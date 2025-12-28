@@ -7,6 +7,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import java.util.Random;
+
 import javax.annotation.Nullable;
 
 import com.google.common.base.Optional;
@@ -16,6 +18,7 @@ import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.nbt.NBTTagCompound;
@@ -217,123 +220,56 @@ public class StructureNBTParser {
         return state;
     }
 
+    private static final Random RANDOM = new Random();
+
     /**
      * Create a display ItemStack for a block state.
-     * Handles blocks that don't have valid item representations for all metadata values.
+     * Uses multiple strategies to find the correct item representation:
+     * 1. Try Item.getItemFromBlock with damageDropped for proper metadata mapping
+     * 2. Try block.getItemDropped to get what the block drops
+     * 3. Direct ItemStack creation as fallback
      */
     private static ItemStack createDisplayStack(IBlockState state) {
         Block block = state.getBlock();
-        int meta = block.getMetaFromState(state);
+
+        if (block == null || block == Blocks.AIR || block == Blocks.STRUCTURE_VOID) {
+            return ItemStack.EMPTY;
+        }
 
         try {
-            ItemStack stack = new ItemStack(block, 1, meta);
+            // Strategy 1: Use Item.getItemFromBlock with damageDropped
+            // This works for most blocks that have a direct item form
+            Item blockItem = Item.getItemFromBlock(block);
+            if (blockItem != null && blockItem != Items.AIR) {
+                int damage = block.damageDropped(state);
+                ItemStack stack = new ItemStack(blockItem, 1, damage);
 
-            // If the stack is empty or shows as air, try creating from the Item form
-            if (stack.isEmpty() || stack.getItem() == Items.AIR) {
-                // Try without metadata
-                stack = new ItemStack(block, 1, 0);
-
-                if (stack.isEmpty() || stack.getItem() == Items.AIR) {
-                    // Some blocks need special handling - get their item drop instead
-                    stack = getItemRepresentation(block, state, meta);
-                }
+                if (!stack.isEmpty()) return stack;
             }
 
-            // Validate the stack has a valid display name (not empty or "Air")
-            if (!stack.isEmpty() && stack.getItem() != Items.AIR) return stack;
+            // Strategy 2: Use getItemDropped to get what the block drops
+            // This handles blocks like crops, redstone wire, etc.
+            Item droppedItem = block.getItemDropped(state, RANDOM, 0);
+            if (droppedItem != null && droppedItem != Items.AIR) {
+                int damage = block.damageDropped(state);
+                ItemStack stack = new ItemStack(droppedItem, 1, damage);
 
-            // Final fallback: return an empty stack which will be filtered out
+                if (!stack.isEmpty()) return stack;
+            }
+
+            // Strategy 3: Fallback to direct ItemStack creation with block's metadata
+            int meta = block.getMetaFromState(state);
+            ItemStack fallback = new ItemStack(block, 1, meta);
+
+            if (!fallback.isEmpty() && fallback.getItem() != Items.AIR) return fallback;
+
+            // Last resort: try meta 0
+            fallback = new ItemStack(block, 1, 0);
+            if (!fallback.isEmpty() && fallback.getItem() != Items.AIR) return fallback;
+
             return ItemStack.EMPTY;
         } catch (Exception e) {
             return ItemStack.EMPTY;
         }
-    }
-
-    /**
-     * Get an item representation for blocks that don't have a direct item form.
-     * This handles cases like directional blocks, placed-only blocks, etc.
-     */
-    private static ItemStack getItemRepresentation(Block block, IBlockState state, int meta) {
-        // FIXME: this mess needs to be cleaned up. We can't have a hardcoded list for every special block.
-
-        // Blocks that need special item mapping
-        if (block == Blocks.WALL_SIGN) {
-            return new ItemStack(Items.SIGN);
-        }
-        if (block == Blocks.STANDING_SIGN) {
-            return new ItemStack(Items.SIGN);
-        }
-        if (block == Blocks.WALL_BANNER || block == Blocks.STANDING_BANNER) {
-            return new ItemStack(Items.BANNER);
-        }
-        if (block == Blocks.REDSTONE_WIRE) {
-            return new ItemStack(Items.REDSTONE);
-        }
-        if (block == Blocks.TRIPWIRE) {
-            return new ItemStack(Items.STRING);
-        }
-        if (block == Blocks.PISTON_HEAD || block == Blocks.PISTON_EXTENSION) {
-            return new ItemStack(Blocks.PISTON);
-        }
-        if (block == Blocks.BREWING_STAND) {
-            return new ItemStack(Items.BREWING_STAND);
-        }
-        if (block == Blocks.CAULDRON) {
-            return new ItemStack(Items.CAULDRON);
-        }
-        if (block == Blocks.FLOWER_POT) {
-            return new ItemStack(Items.FLOWER_POT);
-        }
-        if (block == Blocks.SKULL) {
-            return new ItemStack(Items.SKULL);
-        }
-        if (block == Blocks.BED) {
-            return new ItemStack(Items.BED);
-        }
-        if (block == Blocks.REEDS) {
-            return new ItemStack(Items.REEDS);
-        }
-        if (block == Blocks.CAKE) {
-            return new ItemStack(Items.CAKE);
-        }
-        if (block == Blocks.UNPOWERED_REPEATER || block == Blocks.POWERED_REPEATER) {
-            return new ItemStack(Items.REPEATER);
-        }
-        if (block == Blocks.UNPOWERED_COMPARATOR || block == Blocks.POWERED_COMPARATOR) {
-            return new ItemStack(Items.COMPARATOR);
-        }
-        if (block == Blocks.IRON_DOOR) {
-            return new ItemStack(Items.IRON_DOOR);
-        }
-        if (block == Blocks.OAK_DOOR) {
-            return new ItemStack(Items.OAK_DOOR);
-        }
-        if (block == Blocks.SPRUCE_DOOR) {
-            return new ItemStack(Items.SPRUCE_DOOR);
-        }
-        if (block == Blocks.BIRCH_DOOR) {
-            return new ItemStack(Items.BIRCH_DOOR);
-        }
-        if (block == Blocks.JUNGLE_DOOR) {
-            return new ItemStack(Items.JUNGLE_DOOR);
-        }
-        if (block == Blocks.ACACIA_DOOR) {
-            return new ItemStack(Items.ACACIA_DOOR);
-        }
-        if (block == Blocks.DARK_OAK_DOOR) {
-            return new ItemStack(Items.DARK_OAK_DOOR);
-        }
-        if (block == Blocks.NETHER_WART) {
-            return new ItemStack(Items.NETHER_WART);
-        }
-
-        // For directional blocks (like torches, ladders, stairs, etc.), try meta 0
-        ItemStack fallback = new ItemStack(block, 1, 0);
-        if (!fallback.isEmpty() && fallback.getItem() != Items.AIR) {
-            return fallback;
-        }
-
-        // No valid representation
-        return ItemStack.EMPTY;
     }
 }

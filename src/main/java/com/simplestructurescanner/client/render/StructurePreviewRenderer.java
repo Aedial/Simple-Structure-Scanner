@@ -39,8 +39,15 @@ public class StructurePreviewRenderer {
     private int backgroundColor = 0xFF1A1A1A;
 
     // Isometric camera settings
+    private enum LightingMode {
+        STRUCTURE,
+        WORLD
+    }
+
     private static final float ISOMETRIC_PITCH = 30f;
     private static final float ROTATION_SPEED = 20f;
+    private static final float ZOOM_FACTOR = 0.75f;
+    private static final LightingMode LIGHTING_MODE = LightingMode.STRUCTURE;
 
     public StructurePreviewRenderer() {
         this.world = new DummyWorld();
@@ -150,9 +157,7 @@ public class StructurePreviewRenderer {
 
         // === RESTORE STATE ===
         // Disable scissor
-        if (!wasScissor) {
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
-        }
+        if (!wasScissor) GL11.glDisable(GL11.GL_SCISSOR_TEST);
 
         // Restore viewport
         GlStateManager.viewport(oldViewport.get(0), oldViewport.get(1), oldViewport.get(2), oldViewport.get(3));
@@ -169,57 +174,15 @@ public class StructurePreviewRenderer {
 
         // Restore texture binding
         GlStateManager.bindTexture(oldTexture);
-
-        // Restore blend state
-        if (wasBlend) {
-            GlStateManager.enableBlend();
-        } else {
-            GlStateManager.disableBlend();
-        }
         GL11.glBlendFunc(oldBlendSrc, oldBlendDst);
-
-        // Restore depth
-        if (wasDepth) {
-            GlStateManager.enableDepth();
-        } else {
-            GlStateManager.disableDepth();
-        }
-
-        // Restore cull
-        if (wasCull) {
-            GlStateManager.enableCull();
-        } else {
-            GlStateManager.disableCull();
-        }
-
-        // Restore lighting
-        if (wasLighting) {
-            GlStateManager.enableLighting();
-        } else {
-            GlStateManager.disableLighting();
-        }
-
-        // Restore alpha
-        if (wasAlpha) {
-            GlStateManager.enableAlpha();
-        } else {
-            GlStateManager.disableAlpha();
-        }
-
-        // Restore rescale
-        if (wasRescale) {
-            GlStateManager.enableRescaleNormal();
-        } else {
-            GlStateManager.disableRescaleNormal();
-        }
-
-        // Restore color
+        if (wasBlend) GlStateManager.enableBlend(); else GlStateManager.disableBlend();
+        if (wasDepth) GlStateManager.enableDepth(); else GlStateManager.disableDepth();
+        if (wasCull) GlStateManager.enableCull(); else GlStateManager.disableCull();
+        if (wasLighting) GlStateManager.enableLighting(); else GlStateManager.disableLighting();
+        if (wasAlpha) GlStateManager.enableAlpha(); else GlStateManager.disableAlpha();
+        if (wasRescale) GlStateManager.enableRescaleNormal(); else GlStateManager.disableRescaleNormal();
         GlStateManager.color(colorBuf.get(0), colorBuf.get(1), colorBuf.get(2), colorBuf.get(3));
-
-        // Restore depth mask
         GlStateManager.depthMask(true);
-
-        // Disable item lighting that block rendering may have enabled
         RenderHelper.disableStandardItemLighting();
     }
 

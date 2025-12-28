@@ -100,9 +100,7 @@ public class GuiStructureScanner extends GuiScreen {
         String lastStructure = ModConfig.getClientLastSelectedStructure();
         if (lastStructure != null && !lastStructure.isEmpty()) {
             ResourceLocation id = new ResourceLocation(lastStructure);
-            if (StructureProviderRegistry.getStructureInfo(id) != null) {
-                selectStructure(id);
-            }
+            if (StructureProviderRegistry.getStructureInfo(id) != null) selectStructure(id);
         }
 
         // Restore modal windows if they were hidden for navigation
@@ -547,11 +545,9 @@ public class GuiStructureScanner extends GuiScreen {
             for (int x = 0; x < layer.width; x++) {
                 for (int z = 0; z < layer.depth; z++) {
                     IBlockState state = layer.getBlockState(x, z);
-                    if (state == null || state.getBlock() == Blocks.AIR) continue;
-                    if (state.getBlock() == Blocks.STRUCTURE_VOID) continue;
+                    if (state == null || state.getBlock() == Blocks.AIR || state.getBlock() == Blocks.STRUCTURE_VOID) continue;
 
-                    BlockPos pos = new BlockPos(x, y, z);
-                    previewRenderer.getWorld().addBlock(pos, state);
+                    previewRenderer.getWorld().addBlock(new BlockPos(x, y, z), state);
                 }
             }
         }
@@ -719,20 +715,6 @@ public class GuiStructureScanner extends GuiScreen {
                 }
             }
 
-            // Sort: selected first, then tracked, then searchable, then alphabetically
-            ResourceLocation currentSelected = parent.selected;
-            filteredStructures.sort(Comparator
-                .<ResourceLocation, Integer>comparing(id -> id.equals(currentSelected) ? 0 : 1)
-                .thenComparing(id -> StructureSearchManager.isTracked(id) ? 0 : 1)
-                .thenComparing(id -> StructureProviderRegistry.canBeSearched(id) ? 0 : 1)
-                .thenComparing(id -> {
-                    if (ClientSettings.i18nNames) {
-                        StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
-                        return info != null ? I18n.format(info.getDisplayName()) : id.getPath();
-                    }
-                    return id.toString();
-                }));
-
             // Clamp scroll
             float maxScroll = getMaxScroll();
             if (scrollOffset > maxScroll) scrollOffset = maxScroll;
@@ -836,11 +818,10 @@ public class GuiStructureScanner extends GuiScreen {
             int visibleStart = (int) (scrollOffset / entryHeight);
             int visibleEnd = Math.min(filteredStructures.size(), visibleStart + (height / entryHeight) + 2);
 
-            // FIXME: list needs to be sorted by name with current search at the top
+            // FIXME: list needs to be sorted by name with currently tracked at the top
 
             for (int i = visibleStart; i < visibleEnd; i++) {
                 int entryY = y + (i * entryHeight) - (int) scrollOffset;
-
                 if (entryY + entryHeight < y || entryY > y + height) continue;
 
                 ResourceLocation id = filteredStructures.get(i);

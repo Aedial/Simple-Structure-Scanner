@@ -107,9 +107,7 @@ public class ClientRenderEvents {
         // Calculate dimensions
         int lineHeight = mc.fontRenderer.FONT_HEIGHT;
         int maxWidth = 0;
-        for (String line : lines) {
-            maxWidth = Math.max(maxWidth, mc.fontRenderer.getStringWidth(line));
-        }
+        for (String line : lines) maxWidth = Math.max(maxWidth, mc.fontRenderer.getStringWidth(line));
 
         int boxW = maxWidth + paddingInternal * 2 + 8;  // Extra 8 for color indicator
         int boxH = lines.size() * lineHeight + (lines.size() - 1) * lineSpacing + paddingInternal * 2;
