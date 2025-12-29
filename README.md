@@ -7,9 +7,9 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 - Filterable scrolling list of structures on the left; right panel shows details.
 - Live search on the main screen for the nearest selected structure. Double-click a structure in the list to toggle search.
 
-- Support for custom loot tables integrated with JEI.
-  - Custom loot tables viewer cannot be used without server-side installation (if you play singleplayer, you can ignore this).
-  - The custom viewer can use mouse or keys to open JEI: U/Left-click for uses, R/Right-click for recipes.
+- Preview of structure schematic when available. Click on the preview area to open a larger preview window.
+
+- Support for custom loot tables integrated with JEI: U/Left-click for uses, R/Right-click for recipes.
 
 - Configs:
   - enableSearch: Globally disable search.

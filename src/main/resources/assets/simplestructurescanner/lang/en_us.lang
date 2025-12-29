@@ -82,6 +82,10 @@ gui.structurescanner.loot.minecart_chest=Minecart with Chest
 gui.structurescanner.entities.title=Entities in %s
 gui.structurescanner.entities.loading=Loading entities...
 gui.structurescanner.entities.noEntities=No entities found
+
+# Preview Window
+gui.structurescanner.preview.title=Preview: %s
+gui.structurescanner.preview.unavailable=No preview available
 gui.structurescanner.entities.count=%d entities
 gui.structurescanner.entities.entityName=Name: %s
 gui.structurescanner.entities.entityId=ID: %s

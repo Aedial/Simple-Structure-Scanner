@@ -69,6 +69,7 @@ public class GuiStructureScanner extends GuiScreen {
     private GuiBlocksWindow blocksWindow = null;
     private GuiLootWindow lootWindow = null;
     private GuiEntitiesWindow entitiesWindow = null;
+    private GuiPreviewWindow previewWindow = null;
 
     // Panel bounds
     private int panelMaxY = Integer.MAX_VALUE;
@@ -107,6 +108,7 @@ public class GuiStructureScanner extends GuiScreen {
         if (blocksWindow != null) blocksWindow.restoreIfHiddenForNavigation();
         if (lootWindow != null) lootWindow.restoreIfHiddenForNavigation();
         if (entitiesWindow != null) entitiesWindow.restoreIfHiddenForNavigation();
+        if (previewWindow != null) previewWindow.restoreIfHiddenForNavigation();
     }
 
     public void selectStructure(ResourceLocation id) {
@@ -138,6 +140,7 @@ public class GuiStructureScanner extends GuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         // Handle modal windows first
+        if (previewWindow != null && previewWindow.isVisible() && previewWindow.handleKey(keyCode)) return;
         if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.handleKey(keyCode)) return;
         if (lootWindow != null && lootWindow.isVisible() && lootWindow.handleKey(keyCode)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.handleKey(keyCode)) return;
@@ -151,6 +154,7 @@ public class GuiStructureScanner extends GuiScreen {
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
         // Handle modal windows first
+        if (previewWindow != null && previewWindow.isVisible() && previewWindow.handleClick(mouseX, mouseY, mouseButton)) return;
         if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.handleClick(mouseX, mouseY, mouseButton)) return;
         if (lootWindow != null && lootWindow.isVisible() && lootWindow.handleClick(mouseX, mouseY, mouseButton)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.handleClick(mouseX, mouseY, mouseButton)) return;
@@ -192,6 +196,13 @@ public class GuiStructureScanner extends GuiScreen {
                 return;
             }
 
+            // Check preview click
+            if (isInBounds(mouseX, mouseY, previewX, previewY, previewSize, previewSize)) {
+                openPreviewWindow();
+
+                return;
+            }
+
             // Check list widget
             listWidget.handleClick(mouseX, mouseY);
         }
@@ -224,6 +235,14 @@ public class GuiStructureScanner extends GuiScreen {
         entitiesWindow.show();
     }
 
+    private void openPreviewWindow() {
+        if (selected == null || selectedInfo == null) return;
+        if (previewRenderer == null || previewRenderer.getWorld().renderedBlocks.isEmpty()) return;
+
+        previewWindow = new GuiPreviewWindow(this, selected, selectedInfo, previewRenderer);
+        previewWindow.show();
+    }
+
     @Override
     protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
         super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
@@ -244,6 +263,7 @@ public class GuiStructureScanner extends GuiScreen {
         int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
         int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
 
+        if (previewWindow != null && previewWindow.isVisible() && previewWindow.isMouseOver(mouseX, mouseY)) return;
         if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) return;
         if (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.isMouseOver(mouseX, mouseY) && entitiesWindow.handleMouseInput(mouseX, mouseY)) return;
@@ -259,7 +279,8 @@ public class GuiStructureScanner extends GuiScreen {
         this.drawDefaultBackground();
 
         // Check if any modal is blocking
-        boolean modalBlocking = (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) ||
+        boolean modalBlocking = (previewWindow != null && previewWindow.isVisible() && previewWindow.isMouseOver(mouseX, mouseY)) ||
+                                (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) ||
                                 (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) ||
                                 (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.isMouseOver(mouseX, mouseY));
 
@@ -284,6 +305,10 @@ public class GuiStructureScanner extends GuiScreen {
         if (entitiesWindow != null && entitiesWindow.isVisible()) {
             entitiesWindow.draw(mouseX, mouseY, partialTicks);
             entitiesWindow.drawTooltips(mouseX, mouseY);
+        }
+        if (previewWindow != null && previewWindow.isVisible()) {
+            previewWindow.draw(mouseX, mouseY, partialTicks);
+            previewWindow.drawTooltips(mouseX, mouseY);
         }
 
         // Draw biome tooltip on top of everything except modals
@@ -495,19 +520,44 @@ public class GuiStructureScanner extends GuiScreen {
      * Draws a 3D preview of the structure using actual block rendering.
      * Renders the structure as if viewed in a void world with perspective camera.
      */
-    private void drawStructurePreview(int previewX, int previewY, int panelW, int panelH, int contentEndY) {
-        // Calculate preview size
+    private void drawStructurePreview(int x, int y, int panelW, int panelH, int contentEndY) {
+        // Calculate preview size and store in instance fields for click detection
         previewSize = Math.min(width/4, height / 2);
+        previewX = x;
+        previewY = y;
+
+        // Skip rendering if preview modal is open (to avoid GL state conflicts)
+        if (previewWindow != null && previewWindow.isVisible()) {
+            // Just draw the background placeholder
+            Gui.drawRect(previewX - 1, previewY - 1, previewX + previewSize + 1, previewY + previewSize + 1, 0xFF333333);
+            Gui.drawRect(previewX, previewY, previewX + previewSize, previewY + previewSize, 0xFF1A1A1A);
+
+            return;
+        }
 
         // Draw preview background
         Gui.drawRect(previewX - 1, previewY - 1, previewX + previewSize + 1, previewY + previewSize + 1, 0xFF333333);
         Gui.drawRect(previewX, previewY, previewX + previewSize, previewY + previewSize, 0xFF1A1A1A);
 
-        // Keep empty preview if no layer data
-        if (selectedInfo == null || !selectedInfo.hasLayerData()) return;
+        // Keep empty preview if no layer data - clear stale renderer
+        if (selectedInfo == null || !selectedInfo.hasLayerData()) {
+            if (lastRenderedStructure == null || !lastRenderedStructure.equals(selected)) {
+                previewRenderer = null;
+                lastRenderedStructure = selected;
+            }
+
+            return;
+        }
 
         List<StructureLayer> layers = selectedInfo.getLayers();
-        if (layers == null || layers.isEmpty()) return;
+        if (layers == null || layers.isEmpty()) {
+            if (lastRenderedStructure == null || !lastRenderedStructure.equals(selected)) {
+                previewRenderer = null;
+                lastRenderedStructure = selected;
+            }
+
+            return;
+        }
 
         // Check if we need to rebuild the renderer for this structure
         boolean needsRebuild = (previewRenderer == null) ||
