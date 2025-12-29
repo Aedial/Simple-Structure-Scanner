@@ -1,0 +1,127 @@
+# Key bindings
+key.categories.simplestructurescanner=简易结构扫描器
+key.simplestructurescanner.open_gui=打开结构扫描器
+
+# GUI Main
+gui.structurescanner.title=结构扫描器
+gui.structurescanner.noSelection=从列表中选择一个结构
+gui.structurescanner.search=搜索……
+gui.structurescanner.structureName=名称：%s
+gui.structurescanner.structureId=ID：%s
+gui.structurescanner.modOrigin=模组：%s
+gui.structurescanner.structureSize=尺寸：%s x %s x %s
+gui.structurescanner.structureSizeUnknown=尺寸：无法确定
+gui.structurescanner.searchableYes=可搜索：是
+gui.structurescanner.searchableNo=可搜索：否
+gui.structurescanner.biomes=生物群系：%s
+gui.structurescanner.biomes.any=任意
+gui.structurescanner.biomes.count=个生物群系
+gui.structurescanner.dimension=维度：%s
+gui.structurescanner.dimension.overworld=主世界
+gui.structurescanner.dimension.nether=下界
+gui.structurescanner.dimension.end=末地
+gui.structurescanner.rarity=稀有度：%s
+gui.structurescanner.rarity.common=常见
+gui.structurescanner.rarity.uncommon=少见
+gui.structurescanner.rarity.rare=稀有
+gui.structurescanner.unknown=未知
+gui.structurescanner.separator=、
+
+# I18n toggle button
+gui.structurescanner.i18nIDs.on=ID显示：本地化
+gui.structurescanner.i18nIDs.off=ID显示：原始
+
+# Providers
+gui.structurescanner.provider.minecraft=Minecraft
+
+# Structures
+gui.structurescanner.structures.village=村庄
+gui.structurescanner.structures.mineshaft=废弃矿井
+gui.structurescanner.structures.stronghold=要塞
+gui.structurescanner.structures.temple=神庙
+gui.structurescanner.structures.desert_temple=沙漠神庙
+gui.structurescanner.structures.jungle_temple=丛林神庙
+gui.structurescanner.structures.witch_hut=沼泽小屋
+gui.structurescanner.structures.igloo=雪屋
+gui.structurescanner.structures.ocean_monument=海底神殿
+gui.structurescanner.structures.woodland_mansion=林地府邸
+gui.structurescanner.structures.dungeon=地牢
+gui.structurescanner.structures.nether_fortress=下界要塞
+gui.structurescanner.structures.end_city=末地城
+gui.structurescanner.structures.end_ship=末地船
+
+# Buttons
+gui.structurescanner.blocksButton=[方块]
+gui.structurescanner.lootButton=[战利品]
+gui.structurescanner.entitiesButton=[实体]
+gui.structurescanner.locateButton=[定位最近]
+gui.structurescanner.locateNextButton=[下一个]
+gui.structurescanner.locatePrevButton=[上一个]
+gui.structurescanner.refreshButton=[刷新]
+gui.structurescanner.skipButton=[跳过]
+
+# Blocks Window
+gui.structurescanner.blocks.title=%s中的方块
+gui.structurescanner.blocks.loading=正在加载方块……
+gui.structurescanner.blocks.noBlocks=未找到方块
+gui.structurescanner.blocks.count=%,d种方块
+gui.structurescanner.blocks.countTooltip=该结构中共有%,d个方块
+
+# Loot Window
+gui.structurescanner.loot.title=%s中的战利品
+gui.structurescanner.loot.loading=正在加载战利品表……
+gui.structurescanner.loot.noLoot=未找到战利品表
+gui.structurescanner.loot.count=%d个战利品表
+gui.structurescanner.loot.unknown=物品未知
+gui.structurescanner.loot.rateTooltip=掉落率：%s
+gui.structurescanner.loot.chest=箱子
+gui.structurescanner.loot.dispenser=发射器
+gui.structurescanner.loot.minecart_chest=运输矿车
+
+# Entities Window
+gui.structurescanner.entities.title=%s中的实体
+gui.structurescanner.entities.loading=正在加载实体……
+gui.structurescanner.entities.noEntities=未找到实体
+gui.structurescanner.entities.count=%d种实体
+gui.structurescanner.entities.entityName=名称：%s
+gui.structurescanner.entities.entityId=ID：%s
+gui.structurescanner.entities.spawner=§a[刷怪箱]
+
+# Location
+gui.structurescanner.locate.searching=正在搜索……
+gui.structurescanner.locate.found=发现于坐标：%d, %d, %d
+gui.structurescanner.locate.notFound=附近未找到该结构
+gui.structurescanner.locate.error=定位结构时出错
+gui.structurescanner.locate.distance=距离：%d格
+gui.structurescanner.locate.result=%d / %d
+
+# Config descriptions
+config.structurescanner.client.enableSearch.desc=全局启用或禁用结构搜索功能
+config.structurescanner.client.i18nNames.desc=在UI中使用本地化名称代替原始ID
+config.structurescanner.client.lastSelectedStructure.desc=最后选中的结构ID（跨会话保存）
+config.structurescanner.client.filterText.desc=最后的过滤文本（跨会话保存）
+config.structurescanner.client.searchedStructureIds.desc=当前被搜索的结构ID列表
+config.structurescanner.client.structureWhitelist.desc=允许搜索的结构ID白名单（支持部分匹配）。优先级高于黑名单。在其后添加";半径"可使其变为局部搜索（例如，"village;1000"仅允许1000格范围内的村庄结构搜索）。
+config.structurescanner.client.structureBlacklist.desc=禁止搜索的结构ID黑名单（支持部分匹配）。在其后添加";半径"可使其变为局部限制（例如，"minecraft:;500"会阻止500格以外的原版结构搜索）。
+config.structurescanner.client.showBlocks.desc=在详细信息面板中显示构成该结构的方块
+config.structurescanner.client.showEntities.desc=在详细信息面板中显示构成该结构的实体
+config.structurescanner.client.showLootTables.desc=在详细信息面板中显示构成该结构的战利品表
+config.structurescanner.client.hudEnabled.desc=启用或禁用显示被搜索结构的HUD叠加层
+config.structurescanner.client.hudPaddingExternal.desc=HUD叠加层与屏幕边缘的边距
+config.structurescanner.client.hudPaddingInternal.desc=HUD框体内部的边距
+config.structurescanner.client.hudLineSpacing.desc=HUD叠加层中文本的行间距
+config.structurescanner.server.enableSearch.desc=在服务端启用或禁用结构搜索（需要在服务器端安装）
+config.structurescanner.title=简易结构扫描器设置
+
+# HUD Position
+gui.structurescanner.hudPosition.label=HUD位置
+gui.structurescanner.hudPosition.button=位置：%s
+gui.structurescanner.hudPosition.top_left=顶部左侧
+gui.structurescanner.hudPosition.top_center=顶部中心
+gui.structurescanner.hudPosition.top_right=顶部右侧
+gui.structurescanner.hudPosition.center_left=中心左侧
+gui.structurescanner.hudPosition.center=中心
+gui.structurescanner.hudPosition.center_right=中心右侧
+gui.structurescanner.hudPosition.bottom_left=底部左侧
+gui.structurescanner.hudPosition.bottom_center=底部中心
+gui.structurescanner.hudPosition.bottom_right=底部右侧
