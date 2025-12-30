@@ -82,6 +82,10 @@ gui.structurescanner.loot.minecart_chest=运输矿车
 gui.structurescanner.entities.title=%s中的实体
 gui.structurescanner.entities.loading=正在加载实体……
 gui.structurescanner.entities.noEntities=未找到实体
+
+# Preview Window
+gui.structurescanner.preview.title=预览：%s
+gui.structurescanner.preview.unavailable=无可用预览
 gui.structurescanner.entities.count=%d种实体
 gui.structurescanner.entities.entityName=名称：%s
 gui.structurescanner.entities.entityId=ID：%s
