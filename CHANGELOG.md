@@ -14,6 +14,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Add structure preview for those providing structure schematic data
 - Add structure preview window when clicking on the structure preview area
 - Add biome, dimension, rarity information to StructureInfo and display in GUI
+- Add y-agnostic arrow mode for structure location
 
 ### Fixed
 - Fix loot table resolution vanilla provider (some loot tables were missing)

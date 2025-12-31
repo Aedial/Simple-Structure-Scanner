@@ -48,6 +48,18 @@ public class ClientRenderEvents {
         StructureSearchManager.processPendingSearches(mc.world, mc.player.getPosition());
     }
 
+    public double getDistanceFrom(StructureLocation loc, BlockPos from) {
+        double dx = loc.getPosition().getX() - from.getX();
+        double dz = loc.getPosition().getZ() - from.getZ();
+
+        if (loc.isYAgnostic()) {
+            return Math.sqrt(dx * dx + dz * dz);
+        } else {
+            double dy = loc.getPosition().getY() - from.getY();
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+    }
+
     @SubscribeEvent
     public void onRenderOverlay(RenderGameOverlayEvent.Post event) {
         if (event.getType() != RenderGameOverlayEvent.ElementType.ALL) return;
@@ -83,7 +95,7 @@ public class ClientRenderEvents {
             }
 
             if (loc != null) {
-                double distance = loc.getDistanceFrom(playerPos);
+                double distance = getDistanceFrom(loc, playerPos);
 
                 // Check local whitelist/blacklist
                 if (!ModConfig.isLocallyAllowed(id.toString(), distance)) continue;
@@ -205,14 +217,13 @@ public class ClientRenderEvents {
             if (!ModConfig.isStructureAllowed(id.toString())) continue;
             if (loc == null) continue;
 
-            BlockPos structurePos = loc.getPosition();
-            double distance = Math.sqrt(player.getDistanceSq(structurePos));
+            double distance = getDistanceFrom(loc, player.getPosition());
 
             // Check local whitelist/blacklist
             if (!ModConfig.isLocallyAllowed(id.toString(), distance)) continue;
 
             int color = StructureSearchManager.getColor(id);
-            drawDirectionArrow(player, structurePos, color, distance, partialTicks);
+            drawDirectionArrow(player, loc, color, distance, partialTicks);
         }
     }
 
@@ -229,8 +240,10 @@ public class ClientRenderEvents {
      * Draws a 3D directional arrow pointing towards the target structure.
      * Arrow is positioned in front of the player, offset towards target direction.
      */
-    private void drawDirectionArrow(EntityPlayer player, BlockPos target, int color, double distance, float partialTicks) {
+    private void drawDirectionArrow(EntityPlayer player, StructureLocation loc, int color, double distance, float partialTicks) {
         Minecraft mc = Minecraft.getMinecraft();
+        BlockPos target = loc.getPosition();
+        boolean yAgnostic = loc.isYAgnostic();
 
         // Use interpolated player position for smooth rendering
         double playerX = player.lastTickPosX + (player.posX - player.lastTickPosX) * partialTicks;
@@ -244,7 +257,7 @@ public class ClientRenderEvents {
 
         // Direction to target (from player's eye)
         double dx = target.getX() + 0.5 - playerX;
-        double dy = target.getY() + 0.5 - eyeY;
+        double dy = yAgnostic ? 0 : (target.getY() + 0.5 - eyeY);
         double dz = target.getZ() + 0.5 - playerZ;
         double horizontalDist = Math.sqrt(dx * dx + dz * dz);
         double totalDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -253,10 +266,16 @@ public class ClientRenderEvents {
 
         // Calculate yaw and pitch to target
         float targetYaw = (float) Math.toDegrees(Math.atan2(dx, dz));
-        float targetPitch = (float) Math.toDegrees(Math.atan2(dy, horizontalDist));
-
-        // Clamp pitch so arrow doesn't go fully horizontal
-        if (Math.abs(targetPitch) < MIN_PITCH_ANGLE) targetPitch = targetPitch >= 0 ? MIN_PITCH_ANGLE : -MIN_PITCH_ANGLE;
+        float targetPitch;
+        if (yAgnostic) {
+            targetPitch = -MIN_PITCH_ANGLE;
+        } else {
+            targetPitch = (float) Math.toDegrees(Math.atan2(dy, horizontalDist));
+            // Clamp pitch so arrow doesn't go fully horizontal
+            if (Math.abs(targetPitch) < MIN_PITCH_ANGLE) {
+                targetPitch = targetPitch >= 0 ? MIN_PITCH_ANGLE : -MIN_PITCH_ANGLE;
+            }
+        }
 
         // Camera forward direction
         double camYawRad = Math.toRadians(cameraYaw);
@@ -278,18 +297,19 @@ public class ClientRenderEvents {
         double relativeYaw = Math.toRadians(targetYaw - cameraYaw);
         double targetPitchRad = Math.toRadians(targetPitch);
 
-        // Project onto camera's local axes using relative angle
-        double rightOffset = Math.sin(relativeYaw) * ARROW_SPREAD_RADIUS;
-        double forwardOffset = Math.cos(relativeYaw);
+        // Normalized horizontal direction to target
+        double targetDirX = dx / horizontalDist;
+        double targetDirZ = dz / horizontalDist;
 
-        // Offset the arrow position in camera space, then convert to world
-        double offsetX = camRightX * rightOffset;
-        double offsetZ = camRightZ * rightOffset;
+        // Offset in the target direction so arrows emanate outward from a sphere
+        double offsetX = targetDirX * ARROW_SPREAD_RADIUS;
+        double offsetZ = targetDirZ * ARROW_SPREAD_RADIUS;
 
-        // Vertical: based on target pitch
-        double offsetY = Math.sin(targetPitchRad) * ARROW_SPREAD_RADIUS;
+        // Vertical offset: based on target pitch, but 0 for y-agnostic (horizontal ring)
+        double offsetY = yAgnostic ? 0 : Math.sin(targetPitchRad) * ARROW_SPREAD_RADIUS;
 
         // If target is behind camera, push arrow further out to sides
+        double forwardOffset = Math.cos(relativeYaw);
         if (forwardOffset < 0) {
             double behindFactor = 1.0 + Math.abs(forwardOffset) * 0.5;
             offsetX *= behindFactor;
