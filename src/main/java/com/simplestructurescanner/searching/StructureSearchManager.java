@@ -53,6 +53,8 @@ public class StructureSearchManager {
             ResourceLocation loc = new ResourceLocation(id);
             searchedStructures.add(loc);
             assignColor(loc);
+            skipOffsets.put(loc, 0);
+            pendingSearches.add(loc);  // Queue search on load
         }
     }
 

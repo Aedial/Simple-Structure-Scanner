@@ -17,6 +17,9 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ### Fixed
 - Fix loot table resolution vanilla provider (some loot tables were missing)
+- Fix structures not being searched on relog
+- Fix arrow interpolation, causing jittery movement
+- Fix arrow rendering to properly point in 3D space and show the distance label correctly
 
 ### Changed
 - Change hardcoded block->item mapping to handle GuiBlocksWindow better

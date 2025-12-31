@@ -198,14 +198,6 @@ public class ClientRenderEvents {
 
         float partialTicks = event.getPartialTicks();
 
-        // Get player's interpolated position
-        double playerX = player.lastTickPosX + (player.posX - player.lastTickPosX) * partialTicks;
-        double playerY = player.lastTickPosY + (player.posY - player.lastTickPosY) * partialTicks;
-        double playerZ = player.lastTickPosZ + (player.posZ - player.lastTickPosZ) * partialTicks;
-
-        GlStateManager.pushMatrix();
-        GlStateManager.translate(-playerX, -playerY, -playerZ);
-
         for (Map.Entry<ResourceLocation, StructureLocation> entry : locations.entrySet()) {
             ResourceLocation id = entry.getKey();
             StructureLocation loc = entry.getValue();
@@ -220,47 +212,116 @@ public class ClientRenderEvents {
             if (!ModConfig.isLocallyAllowed(id.toString(), distance)) continue;
 
             int color = StructureSearchManager.getColor(id);
-            draw3DTriangle(player, structurePos, color, distance, partialTicks);
+            drawDirectionArrow(player, structurePos, color, distance, partialTicks);
         }
-
-        GlStateManager.popMatrix();
     }
 
+    // ========== Arrow Rendering Constants ==========
+    private static final float ARROW_BASE_DISTANCE = 0.6f;   // Base distance in front of camera
+    private static final float ARROW_SPREAD_RADIUS = 0.1f;   // How far arrows spread from center based on target dir
+    private static final float ARROW_LENGTH = 0.05f;         // Length of the arrow
+    private static final float ARROW_WIDTH = 0.02f;          // Width of arrow base
+    private static final float ARROW_THICKNESS = 0.01f;      // Thickness between top/bottom triangles
+    private static final float MIN_PITCH_ANGLE = 10.0f;      // Minimum angle from horizontal (degrees)
+    private static final float TEXT_SCALE = 0.0012f;         // Scale for distance text
+
     /**
-     * Draws a 3D triangle pointing towards the structure with distance text above it.
+     * Draws a 3D directional arrow pointing towards the target structure.
+     * Arrow is positioned in front of the player, offset towards target direction.
      */
-    private void draw3DTriangle(EntityPlayer player, BlockPos target, int color, double distance, float partialTicks) {
+    private void drawDirectionArrow(EntityPlayer player, BlockPos target, int color, double distance, float partialTicks) {
         Minecraft mc = Minecraft.getMinecraft();
 
-        // Calculate direction from player to target
-        double dx = target.getX() + 0.5 - player.posX;
-        double dz = target.getZ() + 0.5 - player.posZ;
+        // Use interpolated player position for smooth rendering
+        double playerX = player.lastTickPosX + (player.posX - player.lastTickPosX) * partialTicks;
+        double playerY = player.lastTickPosY + (player.posY - player.lastTickPosY) * partialTicks;
+        double playerZ = player.lastTickPosZ + (player.posZ - player.lastTickPosZ) * partialTicks;
+        double eyeY = playerY + player.getEyeHeight();
+
+        // Interpolated camera rotation
+        float cameraYaw = player.prevRotationYaw + (player.rotationYaw - player.prevRotationYaw) * partialTicks;
+        float cameraPitch = player.prevRotationPitch + (player.rotationPitch - player.prevRotationPitch) * partialTicks;
+
+        // Direction to target (from player's eye)
+        double dx = target.getX() + 0.5 - playerX;
+        double dy = target.getY() + 0.5 - eyeY;
+        double dz = target.getZ() + 0.5 - playerZ;
         double horizontalDist = Math.sqrt(dx * dx + dz * dz);
+        double totalDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-        // Normalize direction
-        double dirX = dx / horizontalDist;
-        double dirZ = dz / horizontalDist;
+        if (totalDist < 1) return;
 
-        // Position the triangle a fixed distance from the player (5 blocks in front)
-        double triangleDistance = Math.min(5.0, horizontalDist - 1);
-        if (triangleDistance < 1) triangleDistance = 1;
+        // Calculate yaw and pitch to target
+        float targetYaw = (float) Math.toDegrees(Math.atan2(dx, dz));
+        float targetPitch = (float) Math.toDegrees(Math.atan2(dy, horizontalDist));
 
-        double triangleX = player.posX + dirX * triangleDistance;
-        double triangleY = player.posY + player.getEyeHeight() - 0.2;
-        double triangleZ = player.posZ + dirZ * triangleDistance;
+        // Clamp pitch so arrow doesn't go fully horizontal
+        if (Math.abs(targetPitch) < MIN_PITCH_ANGLE) targetPitch = targetPitch >= 0 ? MIN_PITCH_ANGLE : -MIN_PITCH_ANGLE;
 
-        // Calculate rotation angle
-        float angle = (float) Math.toDegrees(Math.atan2(dz, dx));
+        // Camera forward direction
+        double camYawRad = Math.toRadians(cameraYaw);
+        double camPitchRad = Math.toRadians(cameraPitch);
+        double camForwardX = -Math.sin(camYawRad) * Math.cos(camPitchRad);
+        double camForwardY = -Math.sin(camPitchRad);
+        double camForwardZ = Math.cos(camYawRad) * Math.cos(camPitchRad);
+
+        // Camera right direction (for horizontal offset)
+        double camRightX = Math.cos(camYawRad);
+        double camRightZ = Math.sin(camYawRad);
+
+        // Base position: in front of camera
+        double baseX = playerX + camForwardX * ARROW_BASE_DISTANCE;
+        double baseY = eyeY + camForwardY * ARROW_BASE_DISTANCE;
+        double baseZ = playerZ + camForwardZ * ARROW_BASE_DISTANCE;
+
+        // Calculate relative yaw: difference between target direction and camera direction
+        double relativeYaw = Math.toRadians(targetYaw - cameraYaw);
+        double targetPitchRad = Math.toRadians(targetPitch);
+
+        // Project onto camera's local axes using relative angle
+        double rightOffset = Math.sin(relativeYaw) * ARROW_SPREAD_RADIUS;
+        double forwardOffset = Math.cos(relativeYaw);
+
+        // Offset the arrow position in camera space, then convert to world
+        double offsetX = camRightX * rightOffset;
+        double offsetZ = camRightZ * rightOffset;
+
+        // Vertical: based on target pitch
+        double offsetY = Math.sin(targetPitchRad) * ARROW_SPREAD_RADIUS;
+
+        // If target is behind camera, push arrow further out to sides
+        if (forwardOffset < 0) {
+            double behindFactor = 1.0 + Math.abs(forwardOffset) * 0.5;
+            offsetX *= behindFactor;
+            offsetZ *= behindFactor;
+        }
+
+        double arrowX = baseX + offsetX;
+        double arrowY = baseY + offsetY;
+        double arrowZ = baseZ + offsetZ;
 
         // Extract color components
         float r = ((color >> 16) & 0xFF) / 255.0f;
         float g = ((color >> 8) & 0xFF) / 255.0f;
         float b = (color & 0xFF) / 255.0f;
+        float alpha = 0.95f;
 
-        // Draw the triangle
+        // Darker shade for sides
+        float rd = r * 0.6f;
+        float gd = g * 0.6f;
+        float bd = b * 0.6f;
+
+        // Translate to render coordinates (relative to player position)
+        double renderX = arrowX - playerX;
+        double renderY = arrowY - playerY;
+        double renderZ = arrowZ - playerZ;
+
         GlStateManager.pushMatrix();
-        GlStateManager.translate(triangleX, triangleY, triangleZ);
-        GlStateManager.rotate(-angle + 90, 0, 1, 0);
+        GlStateManager.translate(renderX, renderY, renderZ);
+
+        // Rotate arrow to point towards target
+        GlStateManager.rotate(180 + targetYaw, 0, 1, 0);
+        GlStateManager.rotate(targetPitch, 1, 0, 0);
 
         GlStateManager.disableTexture2D();
         GlStateManager.disableLighting();
@@ -272,29 +333,49 @@ public class ClientRenderEvents {
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder buffer = tessellator.getBuffer();
 
-        // Triangle pointing forward
-        float size = 0.3f;
-        float alpha = 0.8f;
-
         buffer.begin(GL11.GL_TRIANGLES, DefaultVertexFormats.POSITION_COLOR);
 
-        // Front face
-        buffer.pos(0, size * 0.5, 0).color(r, g, b, alpha).endVertex();
-        buffer.pos(-size * 0.5, -size * 0.5, 0).color(r, g, b, alpha).endVertex();
-        buffer.pos(size * 0.5, -size * 0.5, 0).color(r, g, b, alpha).endVertex();
+        // Arrow points towards -Z (after rotation points to target)
+        float halfThick = ARROW_THICKNESS / 2;
+        float len = ARROW_LENGTH;
+        float w = ARROW_WIDTH;
 
-        // Point forward
-        buffer.pos(0, 0, size).color(r, g, b, alpha).endVertex();
-        buffer.pos(-size * 0.5, -size * 0.5, 0).color(r, g, b, alpha).endVertex();
-        buffer.pos(0, size * 0.5, 0).color(r, g, b, alpha).endVertex();
+        // TOP triangular face
+        buffer.pos(0, halfThick, -len).color(r, g, b, alpha).endVertex();
+        buffer.pos(w, halfThick, 0).color(r, g, b, alpha).endVertex();
+        buffer.pos(-w, halfThick, 0).color(r, g, b, alpha).endVertex();
 
-        buffer.pos(0, 0, size).color(r, g, b, alpha).endVertex();
-        buffer.pos(0, size * 0.5, 0).color(r, g, b, alpha).endVertex();
-        buffer.pos(size * 0.5, -size * 0.5, 0).color(r, g, b, alpha).endVertex();
+        // BOTTOM triangular face
+        buffer.pos(0, -halfThick, -len).color(r, g, b, alpha).endVertex();
+        buffer.pos(-w, -halfThick, 0).color(r, g, b, alpha).endVertex();
+        buffer.pos(w, -halfThick, 0).color(r, g, b, alpha).endVertex();
 
-        buffer.pos(0, 0, size).color(r, g, b, alpha).endVertex();
-        buffer.pos(size * 0.5, -size * 0.5, 0).color(r, g, b, alpha).endVertex();
-        buffer.pos(-size * 0.5, -size * 0.5, 0).color(r, g, b, alpha).endVertex();
+        // LEFT side
+        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(-w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(-w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+
+        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(-w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(0, -halfThick, -len).color(rd, gd, bd, alpha).endVertex();
+
+        // RIGHT side
+        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+
+        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(0, -halfThick, -len).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+
+        // BACK side
+        buffer.pos(-w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+
+        buffer.pos(-w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+        buffer.pos(-w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
 
         tessellator.draw();
 
@@ -304,30 +385,28 @@ public class ClientRenderEvents {
         GlStateManager.enableTexture2D();
         GlStateManager.enableLighting();
 
-        // Draw distance text above the triangle
-        GlStateManager.rotate(angle - 90, 0, 1, 0);  // Undo rotation for text
+        GlStateManager.popMatrix();
 
+        // Draw distance text above arrow
         String distanceStr = StructureSearchManager.formatDistance(distance);
 
-        // Face the player
-        float playerYaw = player.rotationYaw;
-        float playerPitch = player.rotationPitch;
+        GlStateManager.pushMatrix();
+        GlStateManager.translate(renderX, renderY + 0.04, renderZ);
 
-        GlStateManager.rotate(-playerYaw + 180, 0, 1, 0);
-        GlStateManager.rotate(playerPitch, 1, 0, 0);
-        GlStateManager.scale(-0.025f, -0.025f, 0.025f);
+        // Billboard: face camera (both yaw and pitch for proper facing)
+        GlStateManager.rotate(-cameraYaw, 0, 1, 0);
+        GlStateManager.rotate(cameraPitch, 1, 0, 0);
+
+        GlStateManager.scale(-TEXT_SCALE, -TEXT_SCALE, TEXT_SCALE);
 
         GlStateManager.disableLighting();
-        GlStateManager.depthMask(false);
         GlStateManager.disableDepth();
         GlStateManager.enableBlend();
-        GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 
         int textWidth = mc.fontRenderer.getStringWidth(distanceStr);
-        mc.fontRenderer.drawString(distanceStr, -textWidth / 2, -20, color | 0xFF000000);
+        mc.fontRenderer.drawStringWithShadow(distanceStr, -textWidth / 2.0f, 0, color | 0xFF000000);
 
         GlStateManager.enableDepth();
-        GlStateManager.depthMask(true);
         GlStateManager.enableLighting();
         GlStateManager.disableBlend();
 
