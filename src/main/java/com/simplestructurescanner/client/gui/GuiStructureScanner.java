@@ -83,6 +83,12 @@ public class GuiStructureScanner extends GuiScreen {
     private StructurePreviewRenderer previewRenderer = null;
     private ResourceLocation lastRenderedStructure = null;
 
+    static final private String rarities[] = {
+        "common",
+        "uncommon",
+        "rare"
+    };
+
     private String getI18nButtonString() {
         return ClientSettings.i18nNames ? I18n.format("gui.structurescanner.i18nIDs.on") : I18n.format("gui.structurescanner.i18nIDs.off");
     }
@@ -597,7 +603,7 @@ public class GuiStructureScanner extends GuiScreen {
                     IBlockState state = layer.getBlockState(x, z);
                     if (state == null || state.getBlock() == Blocks.AIR || state.getBlock() == Blocks.STRUCTURE_VOID) continue;
 
-                    previewRenderer.getWorld().addBlock(new BlockPos(x, y, z), state);
+                    previewRenderer.getWorld().addBlock(new BlockPos(x + layer.xOffset, y, z + layer.zOffset), state);
                 }
             }
         }
@@ -611,7 +617,7 @@ public class GuiStructureScanner extends GuiScreen {
                 case 1: return I18n.format("gui.structurescanner.dimension.end");
                 default: return String.valueOf(dim);
             }
-        }).collect(Collectors.joining(", "));
+        }).collect(Collectors.joining(I18n.format("gui.structurescanner.dimension.separator")));
     }
 
     private int getRarityColor(String rarity) {

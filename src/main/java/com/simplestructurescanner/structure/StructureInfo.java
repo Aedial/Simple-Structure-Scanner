@@ -153,13 +153,21 @@ public class StructureInfo {
         public final int width;
         public final int depth;
         public final IBlockState[] blockStates;
+        public final int xOffset;
+        public final int zOffset;
 
-        public StructureLayer(int y, int width, int depth) {
+        public StructureLayer(int y, int width, int depth, int xOffset, int zOffset) {
             this.y = y;
             this.width = width;
 
             this.depth = depth;
+            this.xOffset = xOffset;
+            this.zOffset = zOffset;
             this.blockStates = new IBlockState[width * depth];
+        }
+
+        public StructureLayer(int y, int width, int depth) {
+            this(y, width, depth, 0, 0);
         }
 
         public void setBlockState(int x, int z, IBlockState state) {
