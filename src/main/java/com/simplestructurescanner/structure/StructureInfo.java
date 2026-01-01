@@ -8,6 +8,7 @@ import java.util.Set;
 import javax.annotation.Nullable;
 
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
@@ -197,7 +198,7 @@ public class StructureInfo {
         }
 
         public String formatCount() {
-            if (count >= 1000) return String.format("%.1fk", count / 1000.0);
+            if (count >= 1000) return String.format("%.1f%s", count / 1000.0, I18n.format("gui.structurescanner.k"));
 
             return String.valueOf(count);
         }

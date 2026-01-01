@@ -26,6 +26,9 @@ gui.structurescanner.rarity.uncommon=Uncommon
 gui.structurescanner.rarity.rare=Rare
 gui.structurescanner.unknown=Unknown
 gui.structurescanner.separator=, 
+gui.structurescanner.k=k
+gui.structurescanner.km=km
+gui.structurescanner.m=m
 
 # I18n toggle button
 gui.structurescanner.i18nIDs.on=IDs: Localized
@@ -35,30 +38,36 @@ gui.structurescanner.i18nIDs.off=IDs: Raw
 gui.structurescanner.provider.minecraft=Minecraft
 
 # Structures
-gui.structurescanner.structures.village=Village
-gui.structurescanner.structures.mineshaft=Mineshaft
-gui.structurescanner.structures.stronghold=Stronghold
-gui.structurescanner.structures.temple=Temple
-gui.structurescanner.structures.desert_temple=Desert Temple
-gui.structurescanner.structures.jungle_temple=Jungle Temple
-gui.structurescanner.structures.witch_hut=Witch Hut
-gui.structurescanner.structures.igloo=Igloo
-gui.structurescanner.structures.ocean_monument=Ocean Monument
-gui.structurescanner.structures.woodland_mansion=Woodland Mansion
-gui.structurescanner.structures.dungeon=Dungeon
-gui.structurescanner.structures.nether_fortress=Nether Fortress
-gui.structurescanner.structures.end_city=End City
-gui.structurescanner.structures.end_ship=End Ship
+gui.structurescanner.structures.minecraft.village=Village
+gui.structurescanner.structures.minecraft.mineshaft=Mineshaft
+gui.structurescanner.structures.minecraft.stronghold=Stronghold
+gui.structurescanner.structures.minecraft.temple=Temple
+gui.structurescanner.structures.minecraft.desert_temple=Desert Temple
+gui.structurescanner.structures.minecraft.jungle_temple=Jungle Temple
+gui.structurescanner.structures.minecraft.witch_hut=Witch Hut
+gui.structurescanner.structures.minecraft.igloo=Igloo
+gui.structurescanner.structures.minecraft.ocean_monument=Ocean Monument
+gui.structurescanner.structures.minecraft.woodland_mansion=Woodland Mansion
+gui.structurescanner.structures.minecraft.dungeon=Dungeon
+gui.structurescanner.structures.minecraft.nether_fortress=Nether Fortress
+gui.structurescanner.structures.minecraft.end_city=End City
+gui.structurescanner.structures.minecraft.end_ship=End Ship
 
 # Buttons
 gui.structurescanner.blocksButton=[Blocks]
 gui.structurescanner.lootButton=[Loot]
 gui.structurescanner.entitiesButton=[Entities]
-gui.structurescanner.locateButton=[Locate Nearest]
-gui.structurescanner.locateNextButton=[Next]
-gui.structurescanner.locatePrevButton=[Prev]
-gui.structurescanner.refreshButton=[Refresh]
-gui.structurescanner.skipButton=[Skip]
+gui.structurescanner.prevButton=<
+gui.structurescanner.nextButton=>
+gui.structurescanner.refreshButton=Refresh
+gui.structurescanner.teleportButton=TP
+gui.structurescanner.ok=OK
+gui.structurescanner.cancel=Cancel
+
+# Blacklist confirmation
+gui.structurescanner.blacklist.title=Blacklist Current Location for %s?
+gui.structurescanner.blacklist.titleFallback=the selected structure
+gui.structurescanner.blacklist.message=This location will never be matched again in this world.
 
 # Blocks Window
 gui.structurescanner.blocks.title=Blocks in %s
@@ -93,11 +102,8 @@ gui.structurescanner.entities.spawner=§a[Spawner]
 
 # Location
 gui.structurescanner.locate.searching=Searching...
-gui.structurescanner.locate.found=Found at %d, %d, %d
-gui.structurescanner.locate.notFound=Structure not found nearby
-gui.structurescanner.locate.error=Error locating structure
-gui.structurescanner.locate.distance=Distance: %d blocks
-gui.structurescanner.locate.result=%d of %d
+gui.structurescanner.locate.xz=X: %s, Z: %s
+gui.structurescanner.locate.xyz=X: %s, Y: %s, Z: %s
 
 # Config descriptions
 config.structurescanner.client.enableSearch.desc=Enable or disable structure searching globally
@@ -114,6 +120,7 @@ config.structurescanner.client.hudEnabled.desc=Enable or disable the HUD overlay
 config.structurescanner.client.hudPaddingExternal.desc=Padding from screen edge for HUD overlay
 config.structurescanner.client.hudPaddingInternal.desc=Padding inside the HUD box
 config.structurescanner.client.hudLineSpacing.desc=Spacing between lines in HUD overlay
+config.structurescanner.client.blacklistedLocations.desc=List of blacklisted structure locations in the format "world_id|structure_id|x|y|z". These locations will not be matched when searching.
 config.structurescanner.server.enableSearch.desc=Enable or disable structure searching on the server (requires server-side installation)
 config.structurescanner.title=Simple Structure Scanner Settings
 

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import net.minecraft.client.resources.I18n;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -14,6 +15,7 @@ import net.minecraft.world.World;
 import com.simplestructurescanner.config.ModConfig;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
+import com.simplestructurescanner.util.WorldUtils;
 
 
 /**
@@ -149,6 +151,36 @@ public class StructureSearchManager {
     }
 
     /**
+     * Goes back to the previous result.
+     */
+    public static void previousResult(ResourceLocation id) {
+        int currentOffset = skipOffsets.getOrDefault(id, 0);
+        if (currentOffset > 0) {
+            skipOffsets.put(id, currentOffset - 1);
+            requestSearch(id);
+        }
+    }
+
+    /**
+     * Blacklists the current location for the given structure, then searches for next.
+     * Returns true if a location was blacklisted.
+     */
+    public static boolean blacklistCurrentLocation(ResourceLocation id, long worldSeed) {
+        StructureLocation location = lastKnownLocations.get(id);
+        if (location == null) return false;
+
+        BlockPos pos = location.getPosition();
+        ModConfig.addBlacklistedLocation(worldSeed, id.toString(),
+            pos.getX(), pos.getY(), pos.getZ(), location.isYAgnostic());
+
+        // Remove from cache and search again
+        lastKnownLocations.remove(id);
+        requestSearch(id);
+
+        return true;
+    }
+
+    /**
      * Processes any pending search requests. Called from client tick.
      */
     public static void processPendingSearches(World world, BlockPos playerPos) {
@@ -162,7 +194,9 @@ public class StructureSearchManager {
         if (!StructureProviderRegistry.canBeSearched(id)) return;
 
         int skipOffset = skipOffsets.getOrDefault(id, 0);
-        StructureLocation location = StructureProviderRegistry.findNearest(world, id, playerPos, skipOffset);
+        long worldId = WorldUtils.getWorldIdentifier();
+        StructureLocation location = StructureProviderRegistry.findNearest(world, id, playerPos, skipOffset,
+            (pos) -> !ModConfig.isLocationBlacklisted(worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ()));
         updateLocation(id, location);
     }
 
@@ -208,10 +242,10 @@ public class StructureSearchManager {
      */
     public static String formatDistance(double distance) {
         if (distance >= 1000) {
-            return String.format("%.1fkm", distance / 1000);
+            return String.format("%.1f%s", distance / 1000, I18n.format("gui.structurescanner.km"));
         }
 
-        return String.format("%.0fm", distance);
+        return String.format("%.0f%s", distance, I18n.format("gui.structurescanner.m"));
     }
 
     /**

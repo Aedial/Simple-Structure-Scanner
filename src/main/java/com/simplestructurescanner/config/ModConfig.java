@@ -28,6 +28,7 @@ public class ModConfig {
     public static List<String> clientTrackedStructureIds = new ArrayList<>();
     public static List<String> clientStructureWhitelist = new ArrayList<>();
     public static List<String> clientStructureBlacklist = new ArrayList<>();
+    public static List<String> clientBlacklistedLocations = new ArrayList<>();
     public static boolean clientShowBlocks = true;
     public static boolean clientShowEntities = true;
     public static boolean clientShowLootTables = true;
@@ -137,6 +138,13 @@ public class ModConfig {
         clientTrackedStructureIds = new ArrayList<>();
         for (String s : prop.getStringList()) {
             if (!s.isEmpty()) clientTrackedStructureIds.add(s);
+        }
+
+        prop = config.get("client", "blacklistedLocations", new String[0]);
+        prop.setLanguageKey("config.structurescanner.client.blacklistedLocations");
+        clientBlacklistedLocations = new ArrayList<>();
+        for (String s : prop.getStringList()) {
+            if (!s.isEmpty()) clientBlacklistedLocations.add(s);
         }
 
         // Server settings
@@ -361,5 +369,55 @@ public class ModConfig {
 
     public static boolean isSearchEnabled() {
         return clientEnableSearch && serverEnableSearch;
+    }
+
+    // --- Blacklisted locations management ---
+
+    /**
+     * Format: "worldSeed|structureId|x|z" (y is omitted for y-agnostic locations)
+     * or "worldSeed|structureId|x|y|z" for exact locations.
+     */
+    public static void addBlacklistedLocation(long worldSeed, String structureId, int x, int y, int z, boolean yAgnostic) {
+        String entry = yAgnostic
+            ? String.format("%d|%s|%d|%d", worldSeed, structureId, x, z)
+            : String.format("%d|%s|%d|%d|%d", worldSeed, structureId, x, y, z);
+
+        if (!clientBlacklistedLocations.contains(entry)) {
+            clientBlacklistedLocations.add(entry);
+            saveBlacklistedLocations();
+        }
+    }
+
+    public static void removeBlacklistedLocation(long worldSeed, String structureId, int x, int y, int z, boolean yAgnostic) {
+        String entry = yAgnostic
+            ? String.format("%d|%s|%d|%d", worldSeed, structureId, x, z)
+            : String.format("%d|%s|%d|%d|%d", worldSeed, structureId, x, y, z);
+
+        if (clientBlacklistedLocations.remove(entry)) {
+            saveBlacklistedLocations();
+        }
+    }
+
+    public static boolean isLocationBlacklisted(long worldSeed, String structureId, int x, int y, int z) {
+        // Check y-agnostic format first
+        String yAgnosticEntry = String.format("%d|%s|%d|%d", worldSeed, structureId, x, z);
+        if (clientBlacklistedLocations.contains(yAgnosticEntry)) return true;
+
+        // Check exact format
+        String exactEntry = String.format("%d|%s|%d|%d|%d", worldSeed, structureId, x, y, z);
+
+        return clientBlacklistedLocations.contains(exactEntry);
+    }
+
+    private static void saveBlacklistedLocations() {
+        if (config != null) {
+            config.get("client", "blacklistedLocations", new String[0])
+                .set(clientBlacklistedLocations.toArray(new String[0]));
+            config.save();
+        }
+    }
+
+    public static List<String> getBlacklistedLocations() {
+        return new ArrayList<>(clientBlacklistedLocations);
     }
 }

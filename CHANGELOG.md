@@ -8,6 +8,10 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
+## [0.2.1] - 2026-01-
+### Fixed
+- Fix Vanilla structure provider (location finding and missing structures)
+
 ## [0.2.0] - 2025-12-28
 ### Added
 - Add Igloo structure retrieval to VanillaStructureProvider (as test case)
@@ -15,6 +19,8 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Add structure preview window when clicking on the structure preview area
 - Add biome, dimension, rarity information to StructureInfo and display in GUI
 - Add y-agnostic arrow mode for structure location
+- Add location blacklisting (per structure, per world)
+- Add teleport button to a found structure (op only)
 
 ### Fixed
 - Fix loot table resolution vanilla provider (some loot tables were missing)
@@ -24,6 +30,8 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ### Changed
 - Change hardcoded block->item mapping to handle GuiBlocksWindow better
+- Rehaul the Vanilla provider's structure location finding
+- Improve the UX of the structure location cycling in the right panel
 
 
 ## [0.1.1] - 2025-12-27

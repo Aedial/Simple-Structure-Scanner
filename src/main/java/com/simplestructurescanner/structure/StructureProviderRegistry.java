@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
@@ -143,10 +144,39 @@ public class StructureProviderRegistry {
      */
     @Nullable
     public static StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount) {
+        return findNearest(world, structureId, pos, skipCount, null);
+    }
+
+    /**
+     * Find the nearest structure of a given type, with optional location filter.
+     */
+    @Nullable
+    public static StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
+            @Nullable Predicate<BlockPos> locationFilter) {
         StructureProvider provider = getProviderForStructure(structureId);
         if (provider == null) return null;
 
-        return provider.findNearest(world, structureId, pos, skipCount);
+        // If no filter, use the simple path
+        if (locationFilter == null) return provider.findNearest(world, structureId, pos, skipCount);
+
+        // With filter, we need to search with increasing skip counts until we find enough valid locations
+        int additionalSkips = 0;
+        int validFound = 0;
+        int maxAttempts = skipCount + 50;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            StructureLocation location = provider.findNearest(world, structureId, pos, attempt);
+            if (location == null) break;
+
+            BlockPos locationPos = location.getPosition();
+            if (locationFilter.test(locationPos)) {
+                if (validFound == skipCount) return location;
+
+                validFound++;
+            }
+        }
+
+        return null;
     }
 
     /**
