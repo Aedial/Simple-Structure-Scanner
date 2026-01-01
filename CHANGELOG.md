@@ -8,9 +8,13 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
-## [0.2.1] - 2026-01-
+## [0.2.2] - 2026-01-
 ### Fixed
 - Fix Vanilla structure provider (location finding and missing structures)
+
+## [0.2.1] - 2026-01-01
+### Fixed
+- Fix structure preview interfering with other item-related modals (blocks, loot, entities windows)
 
 ## [0.2.0] - 2026-01-01
 ### Added

@@ -639,8 +639,12 @@ public class GuiStructureScanner extends GuiScreen {
         previewX = x;
         previewY = y;
 
-        // Skip rendering if preview modal is open (to avoid GL state conflicts)
-        if (previewWindow != null && previewWindow.isVisible()) {
+        // Skip rendering if any item-related modal is open (to avoid GL state conflicts)
+        boolean modalWithItemsVisible = (previewWindow != null && previewWindow.isVisible()) ||
+                                        (blocksWindow != null && blocksWindow.isVisible()) ||
+                                        (lootWindow != null && lootWindow.isVisible()) ||
+                                        (entitiesWindow != null && entitiesWindow.isVisible());
+        if (modalWithItemsVisible) {
             // Just draw the background placeholder
             Gui.drawRect(previewX - 1, previewY - 1, previewX + previewSize + 1, previewY + previewSize + 1, 0xFF333333);
             Gui.drawRect(previewX, previewY, previewX + previewSize, previewY + previewSize, 0xFF1A1A1A);
