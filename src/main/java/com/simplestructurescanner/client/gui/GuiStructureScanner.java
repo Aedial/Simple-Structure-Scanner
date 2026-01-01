@@ -142,6 +142,7 @@ public class GuiStructureScanner extends GuiScreen {
         if (button.id == 1) {
             ClientSettings.setI18nNames(!ClientSettings.i18nNames);
             button.displayString = getI18nButtonString();
+            listWidget.applyFilter();
         }
     }
 
@@ -302,11 +303,17 @@ public class GuiStructureScanner extends GuiScreen {
 
         if (previewWindow != null && previewWindow.isVisible() && previewWindow.isMouseOver(mouseX, mouseY)) return;
         if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) return;
-        if (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.isMouseOver(mouseX, mouseY) && entitiesWindow.handleMouseInput(mouseX, mouseY)) return;
 
         int wheel = Mouse.getDWheel();
         if (wheel != 0) {
+            // Loot window handles its own scrolling
+            if (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) {
+                lootWindow.handleScroll(wheel);
+
+                return;
+            }
+
             listWidget.handleScroll(wheel);
         }
     }
@@ -1026,10 +1033,35 @@ public class GuiStructureScanner extends GuiScreen {
                 }
             }
 
+            // Sort: tracked structures first, then alphabetically by display name
+            filteredStructures.sort((a, b) -> {
+                boolean aTracked = StructureSearchManager.isTracked(a);
+                boolean bTracked = StructureSearchManager.isTracked(b);
+
+                // Tracked structures come first
+                if (aTracked != bTracked) return aTracked ? -1 : 1;
+
+                // Then sort alphabetically by display name
+                String aName = getDisplayName(a);
+                String bName = getDisplayName(b);
+
+                return aName.compareToIgnoreCase(bName);
+            });
+
             // Clamp scroll
             float maxScroll = getMaxScroll();
             if (scrollOffset > maxScroll) scrollOffset = maxScroll;
             if (scrollOffset < 0) scrollOffset = 0;
+        }
+
+        private String getDisplayName(ResourceLocation id) {
+            if (ClientSettings.i18nNames) {
+                StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+
+                return info != null ? I18n.format(info.getDisplayName()) : id.getPath();
+            }
+
+            return id.toString();
         }
 
         private float getMaxScroll() {
@@ -1061,6 +1093,7 @@ public class GuiStructureScanner extends GuiScreen {
                     // Double-click: toggle searching
                     if (StructureProviderRegistry.canBeSearched(clickedId) && ModConfig.isStructureAllowed(clickedId.toString())) {
                         StructureSearchManager.toggleTracking(clickedId);
+                        applyFilter(); // Re-sort to move tracked items to top
                     }
                     parent.lastClickTime = 0L;
                     parent.lastClickId = null;
@@ -1129,8 +1162,6 @@ public class GuiStructureScanner extends GuiScreen {
             int visibleStart = (int) (scrollOffset / entryHeight);
             int visibleEnd = Math.min(filteredStructures.size(), visibleStart + (height / entryHeight) + 2);
 
-            // FIXME: list needs to be sorted by name with currently tracked at the top
-
             for (int i = visibleStart; i < visibleEnd; i++) {
                 int entryY = y + (i * entryHeight) - (int) scrollOffset;
                 if (entryY + entryHeight < y || entryY > y + height) continue;
@@ -1157,13 +1188,7 @@ public class GuiStructureScanner extends GuiScreen {
                 }
 
                 // Draw text - use localized name if i18n is enabled
-                String displayName;
-                if (ClientSettings.i18nNames) {
-                    StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
-                    displayName = info != null ? I18n.format(info.getDisplayName()) : id.getPath();
-                } else {
-                    displayName = id.toString();
-                }
+                String displayName = getDisplayName(id);
 
                 int availableWidth = width - (textStartX - x) - 3;
                 String elidedName = font.trimStringToWidth(displayName, availableWidth);

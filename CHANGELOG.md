@@ -12,7 +12,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Fixed
 - Fix Vanilla structure provider (location finding and missing structures)
 
-## [0.2.0] - 2025-12-28
+## [0.2.0] - 2026-01-01
 ### Added
 - Add Igloo structure retrieval to VanillaStructureProvider (as test case)
 - Add structure preview for those providing structure schematic data
@@ -24,7 +24,9 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ### Fixed
 - Fix loot table resolution vanilla provider (some loot tables were missing)
+- Fix loot tables window not being scrollable with mouse wheel
 - Fix structures not being searched on relog
+- Fix structures list not being sorted properly
 - Fix arrow interpolation, causing jittery movement
 - Fix arrow rendering to properly point in 3D space and show the distance label correctly
 
@@ -32,6 +34,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Change hardcoded block->item mapping to handle GuiBlocksWindow better
 - Rehaul the Vanilla provider's structure location finding
 - Improve the UX of the structure location cycling in the right panel
+- Merge entries with of the same item but different NBT/metadata in the loot tables window
 
 
 ## [0.1.1] - 2025-12-27
