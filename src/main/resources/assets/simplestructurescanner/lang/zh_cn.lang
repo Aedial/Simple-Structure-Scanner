@@ -26,6 +26,9 @@ gui.structurescanner.rarity.uncommon=少见
 gui.structurescanner.rarity.rare=稀有
 gui.structurescanner.unknown=未知
 gui.structurescanner.separator=、
+gui.structurescanner.k=k
+gui.structurescanner.km=km
+gui.structurescanner.m=m
 
 # I18n toggle button
 gui.structurescanner.i18nIDs.on=ID显示：本地化
@@ -35,30 +38,36 @@ gui.structurescanner.i18nIDs.off=ID显示：原始
 gui.structurescanner.provider.minecraft=Minecraft
 
 # Structures
-gui.structurescanner.structures.village=村庄
-gui.structurescanner.structures.mineshaft=废弃矿井
-gui.structurescanner.structures.stronghold=要塞
-gui.structurescanner.structures.temple=神庙
-gui.structurescanner.structures.desert_temple=沙漠神庙
-gui.structurescanner.structures.jungle_temple=丛林神庙
-gui.structurescanner.structures.witch_hut=沼泽小屋
-gui.structurescanner.structures.igloo=雪屋
-gui.structurescanner.structures.ocean_monument=海底神殿
-gui.structurescanner.structures.woodland_mansion=林地府邸
-gui.structurescanner.structures.dungeon=地牢
-gui.structurescanner.structures.nether_fortress=下界要塞
-gui.structurescanner.structures.end_city=末地城
-gui.structurescanner.structures.end_ship=末地船
+gui.structurescanner.structures.minecraft.village=村庄
+gui.structurescanner.structures.minecraft.mineshaft=废弃矿井
+gui.structurescanner.structures.minecraft.stronghold=要塞
+gui.structurescanner.structures.minecraft.temple=神庙
+gui.structurescanner.structures.minecraft.desert_temple=沙漠神庙
+gui.structurescanner.structures.minecraft.jungle_temple=丛林神庙
+gui.structurescanner.structures.minecraft.witch_hut=沼泽小屋
+gui.structurescanner.structures.minecraft.igloo=雪屋
+gui.structurescanner.structures.minecraft.ocean_monument=海底神殿
+gui.structurescanner.structures.minecraft.woodland_mansion=林地府邸
+gui.structurescanner.structures.minecraft.dungeon=地牢
+gui.structurescanner.structures.minecraft.nether_fortress=下界要塞
+gui.structurescanner.structures.minecraft.end_city=末地城
+gui.structurescanner.structures.minecraft.end_ship=末地船
 
 # Buttons
 gui.structurescanner.blocksButton=[方块]
 gui.structurescanner.lootButton=[战利品]
 gui.structurescanner.entitiesButton=[实体]
-gui.structurescanner.locateButton=[定位最近]
-gui.structurescanner.locateNextButton=[下一个]
-gui.structurescanner.locatePrevButton=[上一个]
-gui.structurescanner.refreshButton=[刷新]
-gui.structurescanner.skipButton=[跳过]
+gui.structurescanner.prevButton=<
+gui.structurescanner.nextButton=>
+gui.structurescanner.refreshButton=刷新
+gui.structurescanner.teleportButton=传送
+gui.structurescanner.ok=确定
+gui.structurescanner.cancel=取消
+
+# Blacklist confirmation
+gui.structurescanner.blacklist.title=将当前位置添加到%s的黑名单？
+gui.structurescanner.blacklist.titleFallback=所选结构
+gui.structurescanner.blacklist.message=该位置在本世界中将不再被匹配。
 
 # Blocks Window
 gui.structurescanner.blocks.title=%s中的方块
@@ -93,11 +102,8 @@ gui.structurescanner.entities.spawner=§a[刷怪箱]
 
 # Location
 gui.structurescanner.locate.searching=正在搜索……
-gui.structurescanner.locate.found=发现于坐标：%d, %d, %d
-gui.structurescanner.locate.notFound=附近未找到该结构
-gui.structurescanner.locate.error=定位结构时出错
-gui.structurescanner.locate.distance=距离：%d格
-gui.structurescanner.locate.result=%d / %d
+gui.structurescanner.locate.xz=X: %s, Z: %s
+gui.structurescanner.locate.xyz=X: %s, Y: %s, Z: %s
 
 # Config descriptions
 config.structurescanner.client.enableSearch.desc=全局启用或禁用结构搜索功能
@@ -114,6 +120,7 @@ config.structurescanner.client.hudEnabled.desc=启用或禁用显示被搜索结
 config.structurescanner.client.hudPaddingExternal.desc=HUD叠加层与屏幕边缘的边距
 config.structurescanner.client.hudPaddingInternal.desc=HUD框体内部的边距
 config.structurescanner.client.hudLineSpacing.desc=HUD叠加层中文本的行间距
+config.structurescanner.client.blacklistedLocations.desc=结构位置的黑名单列表，格式为"世界ID|结构ID|x|y|z"。搜索时不会匹配这些位置。
 config.structurescanner.server.enableSearch.desc=在服务端启用或禁用结构搜索（需要在服务器端安装）
 config.structurescanner.title=简易结构扫描器设置
 
