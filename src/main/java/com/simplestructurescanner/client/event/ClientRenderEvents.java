@@ -235,6 +235,14 @@ public class ClientRenderEvents {
     private static final float ARROW_THICKNESS = 0.01f;      // Thickness between top/bottom triangles
     private static final float MIN_PITCH_ANGLE = 10.0f;      // Minimum angle from horizontal (degrees)
     private static final float TEXT_SCALE = 0.0012f;         // Scale for distance text
+    private static final float TEXT_HEIGHT_OFFSET = 0.04f;   // Height offset for distance text above arrow
+    private static final float ARROW_ALPHA = 1.0f;           // Arrow alpha transparency
+
+    // ========== Arrow Gradient Constants ==========
+    private static final float GRADIENT_START_FACTOR = 1.0f;  // Brightness factor at gradient start (1.0 = full color)
+    private static final float GRADIENT_END_FACTOR = 0.5f;    // Brightness factor at gradient end (0.5 = half brightness)
+    private static final int GRADIENT_RINGS = 16;             // Number of segments for gradient (more = smoother)
+    private static final boolean GRADIENT_FRONT_TO_BACK = true;   // false = back-to-front (back light, front dark)
 
     /**
      * Draws a 3D directional arrow pointing towards the target structure.
@@ -324,12 +332,7 @@ public class ClientRenderEvents {
         float r = ((color >> 16) & 0xFF) / 255.0f;
         float g = ((color >> 8) & 0xFF) / 255.0f;
         float b = (color & 0xFF) / 255.0f;
-        float alpha = 0.95f;
-
-        // Darker shade for sides
-        float rd = r * 0.6f;
-        float gd = g * 0.6f;
-        float bd = b * 0.6f;
+        float alpha = ARROW_ALPHA;
 
         // Translate to render coordinates (relative to player position)
         double renderX = arrowX - playerX;
@@ -345,10 +348,11 @@ public class ClientRenderEvents {
 
         GlStateManager.disableTexture2D();
         GlStateManager.disableLighting();
-        GlStateManager.enableBlend();
-        GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GlStateManager.disableCull();
-        GlStateManager.disableDepth();
+        GlStateManager.disableCull();  // Disable culling so all faces draw, rely on depth testing
+        GlStateManager.enableDepth();
+        GlStateManager.depthFunc(GL11.GL_LEQUAL);
+        // Use a tiny depth range so arrow renders in front of world but arrow triangles test against each other
+        GL11.glDepthRange(0.0, 0.001);
 
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder buffer = tessellator.getBuffer();
@@ -360,48 +364,123 @@ public class ClientRenderEvents {
         float len = ARROW_LENGTH;
         float w = ARROW_WIDTH;
 
-        // TOP triangular face
-        buffer.pos(0, halfThick, -len).color(r, g, b, alpha).endVertex();
-        buffer.pos(w, halfThick, 0).color(r, g, b, alpha).endVertex();
-        buffer.pos(-w, halfThick, 0).color(r, g, b, alpha).endVertex();
+        // Draw arrow with gradient rings
+        for (int i = 0; i < GRADIENT_RINGS; i++) {
+            // Calculate progress along the arrow for this ring (0 = back, 1 = front/tip)
+            float t0 = (float) i / GRADIENT_RINGS;
+            float t1 = (float) (i + 1) / GRADIENT_RINGS;
 
-        // BOTTOM triangular face
-        buffer.pos(0, -halfThick, -len).color(r, g, b, alpha).endVertex();
-        buffer.pos(-w, -halfThick, 0).color(r, g, b, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(r, g, b, alpha).endVertex();
+            // Z positions for this ring segment
+            float z0 = -t0 * len;
+            float z1 = -t1 * len;
 
-        // LEFT side
-        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(-w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(-w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+            // Width at each Z position (linearly decreases to 0 at tip)
+            float w0 = w * (1.0f - t0);
+            float w1 = w * (1.0f - t1);
 
-        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(-w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(0, -halfThick, -len).color(rd, gd, bd, alpha).endVertex();
+            // Calculate gradient factors based on direction
+            // TODO: should we use a nonlinear function to darken faster?
+            float factor0, factor1;
+            if (GRADIENT_FRONT_TO_BACK) {
+                // Front dark, back light: front (t=1) gets END_FACTOR, back (t=0) gets START_FACTOR
+                factor0 = GRADIENT_START_FACTOR + t0 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+                factor1 = GRADIENT_START_FACTOR + t1 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+            } else {
+                // Back light, front dark: back (t=0) gets START_FACTOR, front (t=1) gets END_FACTOR
+                factor0 = GRADIENT_START_FACTOR + t0 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+                factor1 = GRADIENT_START_FACTOR + t1 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+            }
 
-        // RIGHT side
-        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+            // Colors for back and front of this segment
+            float r0 = r * factor0, g0 = g * factor0, b0 = b * factor0;
+            float r1 = r * factor1, g1 = g * factor1, b1 = b * factor1;
 
-        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(0, -halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+            boolean isTip = (i == GRADIENT_RINGS - 1);
 
-        // BACK side
-        buffer.pos(-w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+            if (isTip) {
+                // Final segment: triangular tip
+                // TOP triangular face
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
 
-        buffer.pos(-w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(-w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+                // BOTTOM triangular face
+                buffer.pos(0, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                // LEFT side
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(0, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+
+                // RIGHT side
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(0, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+            } else {
+                // Intermediate segment: trapezoidal prism
+                // TOP face (trapezoid as 2 triangles)
+                buffer.pos(-w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(-w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                // BOTTOM face (trapezoid as 2 triangles)
+                buffer.pos(-w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(-w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+
+                // LEFT side
+                buffer.pos(-w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(-w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+
+                // RIGHT side
+                buffer.pos(w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+            }
+
+            // BACK face (only for first segment)
+            if (i == 0) {
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+            }
+        }
 
         tessellator.draw();
 
-        GlStateManager.enableDepth();
-        GlStateManager.enableCull();
-        GlStateManager.disableBlend();
+        GL11.glDepthRange(0.0, 1.0);  // Restore default depth range
+        GlStateManager.enableCull();  // Restore culling
         GlStateManager.enableTexture2D();
         GlStateManager.enableLighting();
 
@@ -411,7 +490,7 @@ public class ClientRenderEvents {
         String distanceStr = StructureSearchManager.formatDistance(distance);
 
         GlStateManager.pushMatrix();
-        GlStateManager.translate(renderX, renderY + 0.04, renderZ);
+        GlStateManager.translate(renderX, renderY + TEXT_HEIGHT_OFFSET, renderZ);
 
         // Billboard: face camera (both yaw and pitch for proper facing)
         GlStateManager.rotate(-cameraYaw, 0, 1, 0);

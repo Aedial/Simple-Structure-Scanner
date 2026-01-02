@@ -8,9 +8,13 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
-## [0.2.2] - 2026-01-
+## [0.2.X] - 2026-01-
 ### Fixed
 - Fix Vanilla structure provider (location finding and missing structures)
+
+## [0.2.2] - 2026-01-02
+### Fixed
+- Fix the guiding arrow being drawn incorrectly (culling issues)
 
 ## [0.2.1] - 2026-01-01
 ### Fixed
