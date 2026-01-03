@@ -180,6 +180,19 @@ public class StructureProviderRegistry {
     }
 
     /**
+     * Find all nearby structures of a given type.
+     * Results are not sorted - caller should sort by distance if needed.
+     * @return List of positions, null if batch search not supported, or empty list if none found
+     */
+    @Nullable
+    public static List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
+        StructureProvider provider = getProviderForStructure(structureId);
+        if (provider == null) return null;
+
+        return provider.findAllNearby(world, structureId, pos, maxResults);
+    }
+
+    /**
      * Clear all providers and structure mappings.
      * Primarily for testing.
      */

@@ -8,9 +8,14 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
-## [0.2.X] - 2026-01-
+## [0.2.3] - 2026-01-03
+### Added
+- Add batching support to structure location finding in StructureProvider interface
+
 ### Fixed
-- Fix Vanilla structure provider (location finding and missing structures)
+- Fix Village, Igloo, Witch Hut, Jungle Temple, and Desert Temple structure location finding in VanillaStructureProvider
+- Fix safe teleport Y coordinate search to avoid having to go up because you are in the floor
+- Fix overflow in sorting structure locations by distance when very far away from origin
 
 ## [0.2.2] - 2026-01-02
 ### Fixed

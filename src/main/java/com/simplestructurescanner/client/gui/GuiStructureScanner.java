@@ -30,9 +30,12 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 
+import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.client.ClientSettings;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.network.NetworkHandler;
+import com.simplestructurescanner.network.PacketRequestSafeTeleport;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.util.WorldUtils;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
@@ -891,15 +894,13 @@ public class GuiStructureScanner extends GuiScreen {
         if (location == null) return;
 
         BlockPos pos = location.getPosition();
-        int startY = location.isYAgnostic() ? 100 : pos.getY();
 
-        // Find a safe Y coordinate to teleport to
-        int safeY = WorldUtils.findSafeTeleportY(mc.world, pos.getX(), pos.getZ(), startY);
-        // Fallback to original Y if no safe spot found
-        if (safeY < 0) safeY = startY;
+        // For y-agnostic locations, start search from Y=64 (typical overworld surface)
+        // For known Y locations, use the structure Y as starting point
+        int startY = location.isYAgnostic() ? 64 : pos.getY();
 
-        String command = String.format("/tp %d %d %d", pos.getX(), safeY, pos.getZ());
-        mc.player.sendChatMessage(command);
+        // Send packet to server - it will find safe Y and teleport
+        NetworkHandler.INSTANCE.sendToServer(new PacketRequestSafeTeleport(pos.getX(), pos.getZ(), startY));
     }
 
     private int drawElidedString(FontRenderer renderer, String text, int x, int y, int lineHeight, int maxWidth, int color) {

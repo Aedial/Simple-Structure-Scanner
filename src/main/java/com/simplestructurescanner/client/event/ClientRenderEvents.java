@@ -379,7 +379,7 @@ public class ClientRenderEvents {
             float w1 = w * (1.0f - t1);
 
             // Calculate gradient factors based on direction
-            // TODO: should we use a nonlinear function to darken faster?
+            // TODO: should probably use exponential 0.4-0.8 instead of linear 0.5-1.0
             float factor0, factor1;
             if (GRADIENT_FRONT_TO_BACK) {
                 // Front dark, back light: front (t=1) gets END_FACTOR, back (t=0) gets START_FACTOR

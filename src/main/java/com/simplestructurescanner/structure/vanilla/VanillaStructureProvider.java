@@ -25,6 +25,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
+import net.minecraft.world.biome.BiomeProvider;
 import net.minecraft.util.text.translation.I18n;
 
 import com.simplestructurescanner.SimpleStructureScanner;
@@ -36,6 +37,7 @@ import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.TerrainHeightCalculator;
 
 
 /**
@@ -189,7 +191,7 @@ public class VanillaStructureProvider implements StructureProvider {
      */
     private void parseNBTStructures() {
 
-        // FIXME: encode and use direct .nbt files (made manually)
+        // TODO: encode and use direct .nbt files (made manually)
 
         // Igloo structures
         parseAndApplyNBT("igloo", "igloo/igloo_bottom");
@@ -727,9 +729,7 @@ public class VanillaStructureProvider implements StructureProvider {
         }
 
         // Strategy 3: Fallback to direct ItemStack creation
-        if (stack.isEmpty()) {
-            stack = new ItemStack(block, 1, meta);
-        }
+        if (stack.isEmpty()) stack = new ItemStack(block, 1, meta);
 
         if (stack.isEmpty()) {
             stack = new ItemStack(block);
@@ -780,17 +780,117 @@ public class VanillaStructureProvider implements StructureProvider {
         if (!canBeSearched(structureId)) return null;
 
         String path = structureId.getPath();
-        long seed = world.getSeed();
+        Long seed = getWorldSeed(world);
 
-        List<BlockPos> candidates = findStructuresByType(world, path, pos, seed, skipCount + 5);
+        if (seed == null) {
+            SimpleStructureScanner.LOGGER.warn("Could not get world seed for structure search");
+            return null;
+        }
+
+        List<BlockPos> candidates = findStructuresByType(world, path, pos, seed, skipCount + 20);
         if (candidates.isEmpty()) return null;
 
-        // Sort by distance and get requested index
-        candidates.sort((a, b) -> Double.compare(a.distanceSq(pos), b.distanceSq(pos)));
+        // Sort by distance (Y-agnostic - only use X and Z)
+        sortByDistance(candidates, pos);
 
         if (skipCount >= candidates.size()) return null;
 
-        return new StructureLocation(candidates.get(skipCount), skipCount, candidates.size());
+        BlockPos targetPos = candidates.get(skipCount);
+
+        // Calculate terrain height for surface structures with Y=0
+        if (targetPos.getY() == 0 && isSurfaceStructure(path)) {
+            TerrainHeightCalculator heightCalc = new TerrainHeightCalculator(seed, world.getBiomeProvider());
+            int terrainY = heightCalc.getTerrainHeight(targetPos.getX(), targetPos.getZ());
+            targetPos = new BlockPos(targetPos.getX(), terrainY, targetPos.getZ());
+        }
+
+        boolean yAgnostic = targetPos.getY() == 0;
+
+        return new StructureLocation(targetPos, skipCount, candidates.size(), yAgnostic);
+    }
+
+    @Override
+    public List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
+        if (world == null) return Collections.emptyList();
+        if (!canBeSearched(structureId)) return Collections.emptyList();
+
+        String path = structureId.getPath();
+        Long seed = getWorldSeed(world);
+
+        if (seed == null) {
+            SimpleStructureScanner.LOGGER.warn("Could not get world seed for structure search");
+            return Collections.emptyList();
+        }
+
+        List<BlockPos> candidates = findStructuresByType(world, path, pos, seed, maxResults);
+
+        // Calculate terrain heights for surface structures
+        if (isSurfaceStructure(path) && !candidates.isEmpty()) {
+            TerrainHeightCalculator heightCalc = new TerrainHeightCalculator(seed, world.getBiomeProvider());
+            List<BlockPos> withHeights = new ArrayList<>(candidates.size());
+
+            for (BlockPos candidate : candidates) {
+                if (candidate.getY() == 0) {
+                    int terrainY = heightCalc.getTerrainHeight(candidate.getX(), candidate.getZ());
+                    withHeights.add(new BlockPos(candidate.getX(), terrainY, candidate.getZ()));
+                } else {
+                    withHeights.add(candidate);
+                }
+            }
+
+            return withHeights;
+        }
+
+        return candidates;
+    }
+
+    /**
+     * Sorts positions by horizontal distance from the given position.
+     */
+    private void sortByDistance(List<BlockPos> positions, BlockPos from) {
+        final int px = from.getX();
+        final int pz = from.getZ();
+
+        positions.sort((a, b) -> {
+            // Cast to long to avoid integer overflow for large distances
+            long dxA = a.getX() - px;
+            long dzA = a.getZ() - pz;
+            long dxB = b.getX() - px;
+            long dzB = b.getZ() - pz;
+            long distA = dxA * dxA + dzA * dzA;
+            long distB = dxB * dxB + dzB * dzB;
+            return Long.compare(distA, distB);
+        });
+    }
+
+    /**
+     * Check if a structure is a surface structure (vs underground/underwater).
+     */
+    private boolean isSurfaceStructure(String structureType) {
+        switch (structureType) {
+            case "village":
+            case "desert_temple":
+            case "jungle_temple":
+            case "witch_hut":
+            case "igloo":
+            case "mansion":
+            case "endcity":
+            case "end_ship":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Get the world seed. This should only be called on the server side.
+     * Returns 0 if the seed cannot be retrieved (should not happen on server).
+     */
+    private Long getWorldSeed(World world) {
+        // On server, WorldInfo should always have the correct seed
+        if (world.getWorldInfo() != null) return world.getWorldInfo().getSeed();
+
+        return null;
     }
 
     /**
@@ -840,7 +940,16 @@ public class VanillaStructureProvider implements StructureProvider {
      * Villages have their own salt (10387312) separate from temples.
      */
     private List<BlockPos> findVillages(World world, BlockPos pos, long seed, int maxResults) {
-        return findScatteredFeature(world, pos, seed, 32, 8, 10387312, maxResults, null);
+        Set<Biome> validBiomes = new HashSet<>();
+        validBiomes.add(Biomes.PLAINS);
+        validBiomes.add(Biomes.DESERT);
+        validBiomes.add(Biomes.SAVANNA);
+        validBiomes.add(Biomes.TAIGA);
+        validBiomes.add(Biomes.ICE_PLAINS);
+        validBiomes.add(Biomes.MUTATED_PLAINS);
+        validBiomes.add(Biomes.SAVANNA_PLATEAU);
+
+        return findScatteredFeature(world, pos, seed, 32, 8, 10387312, maxResults, validBiomes);
     }
 
     /**
@@ -853,47 +962,38 @@ public class VanillaStructureProvider implements StructureProvider {
             int maxDist, int minDist, int salt, int maxResults, @Nullable Set<Biome> validBiomes) {
 
         List<BlockPos> results = new ArrayList<>();
+        Set<Long> checkedRegions = new HashSet<>();
+        BiomeProvider biomeProvider = world.getBiomeProvider();
 
-        int playerChunkX = pos.getX() >> 4;
-        int playerChunkZ = pos.getZ() >> 4;
+        // Player's region coordinates
+        int playerRegionX = Math.floorDiv(pos.getX() >> 4, maxDist);
+        int playerRegionZ = Math.floorDiv(pos.getZ() >> 4, maxDist);
 
-        // Search outward in chunks, checking each potential structure position
-        int searchRadiusChunks = maxDist * 10;  // Search up to 10 regions away
+        // Search outward in regions (not chunks) - much more efficient
+        int searchRadiusRegions = 20;
 
-        for (int dist = 0; dist <= searchRadiusChunks && results.size() < maxResults; dist++) {
-            for (int cx = -dist; cx <= dist; cx++) {
-                for (int cz = -dist; cz <= dist; cz++) {
+        for (int dist = 0; dist <= searchRadiusRegions && results.size() < maxResults; dist++) {
+            for (int dx = -dist; dx <= dist; dx++) {
+                for (int dz = -dist; dz <= dist; dz++) {
                     // Only check the perimeter at this distance (expanding square)
-                    if (dist > 0 && Math.abs(cx) != dist && Math.abs(cz) != dist) continue;
+                    if (dist > 0 && Math.abs(dx) != dist && Math.abs(dz) != dist) continue;
 
-                    int checkChunkX = playerChunkX + cx;
-                    int checkChunkZ = playerChunkZ + cz;
+                    int regionX = playerRegionX + dx;
+                    int regionZ = playerRegionZ + dz;
 
-                    // Get the structure position for the region containing this chunk
-                    BlockPos structurePos = getScatteredFeaturePos(seed, maxDist, minDist, salt, checkChunkX, checkChunkZ);
+                    // Avoid duplicate region checks
+                    long regionKey = ((long) regionX << 32) | (regionZ & 0xFFFFFFFFL);
+                    if (checkedRegions.contains(regionKey)) continue;
+                    checkedRegions.add(regionKey);
 
-                    // Check if this chunk would actually generate the structure
-                    int structChunkX = structurePos.getX() >> 4;
-                    int structChunkZ = structurePos.getZ() >> 4;
+                    // Get the structure position for this region directly
+                    BlockPos structurePos = getScatteredFeaturePosForRegion(seed, maxDist, minDist, salt, regionX, regionZ);
 
-                    // Only count if this is the actual structure chunk
-                    if (structChunkX != checkChunkX || structChunkZ != checkChunkZ) continue;
-
-                    // Check biome if required
+                    // Check biome using BiomeProvider (fast, doesn't load chunks)
                     if (validBiomes != null) {
-                        Biome biome = world.getBiome(structurePos);
+                        Biome biome = biomeProvider.getBiome(structurePos);
                         if (!validBiomes.contains(biome)) continue;
                     }
-
-                    // Avoid duplicates
-                    boolean duplicate = false;
-                    for (BlockPos existing : results) {
-                        if (existing.getX() == structurePos.getX() && existing.getZ() == structurePos.getZ()) {
-                            duplicate = true;
-                            break;
-                        }
-                    }
-                    if (duplicate) continue;
 
                     results.add(structurePos);
                 }
@@ -904,38 +1004,19 @@ public class VanillaStructureProvider implements StructureProvider {
     }
 
     /**
-     * Get the structure position for a given chunk using MC 1.12's algorithm.
-     * This calculates which chunk in the region would contain the structure.
+     * Get the structure position for a specific region.
      */
-    private BlockPos getScatteredFeaturePos(long seed, int maxDist, int minDist, int salt, int chunkX, int chunkZ) {
-        // MC 1.12's region calculation (handles negative coords correctly)
-        int regionX = chunkX;
-        int regionZ = chunkZ;
-
-        if (chunkX < 0) {
-            regionX = chunkX - maxDist + 1;
-        }
-        if (chunkZ < 0) {
-            regionZ = chunkZ - maxDist + 1;
-        }
-
-        regionX = regionX / maxDist;
-        regionZ = regionZ / maxDist;
-
-        // Seed the random with the region coordinates
+    private BlockPos getScatteredFeaturePosForRegion(long seed, int maxDist, int minDist, int salt, int regionX, int regionZ) {
         Random random = new Random();
         random.setSeed((long) regionX * 341873128712L + (long) regionZ * 132897987541L + seed + (long) salt);
 
-        // Calculate offset within region
         int offsetX = random.nextInt(maxDist - minDist);
         int offsetZ = random.nextInt(maxDist - minDist);
 
-        // Structure chunk position
         int structChunkX = regionX * maxDist + offsetX;
         int structChunkZ = regionZ * maxDist + offsetZ;
 
-        // Return block position at chunk center
-        return new BlockPos(structChunkX * 16 + 8, 64, structChunkZ * 16 + 8);
+        return new BlockPos(structChunkX * 16 + 8, 0, structChunkZ * 16 + 8);
     }
 
     // ========== Temple Algorithm (Desert Temple, Jungle Temple, Witch Hut, Igloo) ==========
@@ -972,7 +1053,6 @@ public class VanillaStructureProvider implements StructureProvider {
                 break;
         }
 
-        // Use the same scattered feature algorithm as villages
         return findScatteredFeature(world, pos, seed, 32, 8, 14357617, maxResults, validBiomes);
     }
 
@@ -981,49 +1061,39 @@ public class VanillaStructureProvider implements StructureProvider {
     /**
      * Find ocean monuments using MC 1.12 algorithm.
      * Monuments use spacing=32, separation=5, salt=10387313.
-     * Uses the same scattered feature placement with averaged offset.
+     * Iterates over regions for efficiency.
      */
     private List<BlockPos> findOceanMonuments(World world, BlockPos pos, long seed, int maxResults) {
         List<BlockPos> results = new ArrayList<>();
+        Set<Long> checkedRegions = new HashSet<>();
+        BiomeProvider biomeProvider = world.getBiomeProvider();
 
         int maxDist = 32;
         int minDist = 5;
         int salt = 10387313;
 
-        int playerChunkX = pos.getX() >> 4;
-        int playerChunkZ = pos.getZ() >> 4;
+        int playerRegionX = Math.floorDiv(pos.getX() >> 4, maxDist);
+        int playerRegionZ = Math.floorDiv(pos.getZ() >> 4, maxDist);
 
-        int searchRadiusChunks = maxDist * 15;
+        int searchRadiusRegions = 20;
 
-        for (int dist = 0; dist <= searchRadiusChunks && results.size() < maxResults; dist++) {
-            for (int cx = -dist; cx <= dist; cx++) {
-                for (int cz = -dist; cz <= dist; cz++) {
-                    if (dist > 0 && Math.abs(cx) != dist && Math.abs(cz) != dist) continue;
+        for (int dist = 0; dist <= searchRadiusRegions && results.size() < maxResults; dist++) {
+            for (int dx = -dist; dx <= dist; dx++) {
+                for (int dz = -dist; dz <= dist; dz++) {
+                    if (dist > 0 && Math.abs(dx) != dist && Math.abs(dz) != dist) continue;
 
-                    int checkChunkX = playerChunkX + cx;
-                    int checkChunkZ = playerChunkZ + cz;
+                    int regionX = playerRegionX + dx;
+                    int regionZ = playerRegionZ + dz;
 
-                    BlockPos structurePos = getMonumentPos(seed, maxDist, minDist, salt, checkChunkX, checkChunkZ);
-                    if (structurePos == null) continue;
+                    long regionKey = ((long) regionX << 32) | (regionZ & 0xFFFFFFFFL);
+                    if (checkedRegions.contains(regionKey)) continue;
+                    checkedRegions.add(regionKey);
 
-                    int structChunkX = structurePos.getX() >> 4;
-                    int structChunkZ = structurePos.getZ() >> 4;
+                    BlockPos structurePos = getMonumentPosForRegion(seed, maxDist, minDist, salt, regionX, regionZ);
 
-                    if (structChunkX != checkChunkX || structChunkZ != checkChunkZ) continue;
-
-                    // Check biome
-                    Biome biome = world.getBiome(structurePos);
-                    if (biome != Biomes.DEEP_OCEAN && biome != Biomes.OCEAN) continue;
-
-                    // Avoid duplicates
-                    boolean duplicate = false;
-                    for (BlockPos existing : results) {
-                        if (existing.getX() == structurePos.getX() && existing.getZ() == structurePos.getZ()) {
-                            duplicate = true;
-                            break;
-                        }
-                    }
-                    if (duplicate) continue;
+                    // Check biome using BiomeProvider (fast, doesn't load chunks)
+                    Biome biome = biomeProvider.getBiome(structurePos);
+                    if (biome != Biomes.DEEP_OCEAN) continue;
 
                     results.add(structurePos);
                 }
@@ -1033,20 +1103,13 @@ public class VanillaStructureProvider implements StructureProvider {
         return results;
     }
 
-    private BlockPos getMonumentPos(long seed, int maxDist, int minDist, int salt, int chunkX, int chunkZ) {
-        int regionX = chunkX;
-        int regionZ = chunkZ;
-
-        if (chunkX < 0) regionX = chunkX - maxDist + 1;
-        if (chunkZ < 0) regionZ = chunkZ - maxDist + 1;
-
-        regionX = regionX / maxDist;
-        regionZ = regionZ / maxDist;
-
+    private BlockPos getMonumentPosForRegion(long seed, int maxDist, int minDist, int salt, int regionX, int regionZ) {
+        // FIXME: less than 50% chance to find a monument, something is wrong here
         Random random = new Random();
         random.setSeed((long) regionX * 341873128712L + (long) regionZ * 132897987541L + seed + (long) salt);
 
         // Monument uses averaged offset (triangular distribution)
+        // MC formula: regionX * spacing + (rand(range) + rand(range)) / 2
         int range = maxDist - minDist;
         int offsetX = (random.nextInt(range) + random.nextInt(range)) / 2;
         int offsetZ = (random.nextInt(range) + random.nextInt(range)) / 2;
@@ -1054,6 +1117,7 @@ public class VanillaStructureProvider implements StructureProvider {
         int structChunkX = regionX * maxDist + offsetX;
         int structChunkZ = regionZ * maxDist + offsetZ;
 
+        // Ocean monuments sit on the sea floor, typically Y=39 (center), but surface is ~Y=63
         return new BlockPos(structChunkX * 16 + 8, 63, structChunkZ * 16 + 8);
     }
 
@@ -1062,48 +1126,40 @@ public class VanillaStructureProvider implements StructureProvider {
     /**
      * Find woodland mansions using MC 1.12 algorithm.
      * Mansions use spacing=80, separation=20, salt=10387319.
+     * Mansions are VERY rare - roofed forest biomes are uncommon.
      */
     private List<BlockPos> findWoodlandMansions(World world, BlockPos pos, long seed, int maxResults) {
         List<BlockPos> results = new ArrayList<>();
+        Set<Long> checkedRegions = new HashSet<>();
+        BiomeProvider biomeProvider = world.getBiomeProvider();
 
         int maxDist = 80;
         int minDist = 20;
         int salt = 10387319;
 
-        int playerChunkX = pos.getX() >> 4;
-        int playerChunkZ = pos.getZ() >> 4;
+        int playerRegionX = Math.floorDiv(pos.getX() >> 4, maxDist);
+        int playerRegionZ = Math.floorDiv(pos.getZ() >> 4, maxDist);
 
-        int searchRadiusChunks = maxDist * 8;
+        // Mansions are very rare, search further
+        int searchRadiusRegions = 30;
 
-        for (int dist = 0; dist <= searchRadiusChunks && results.size() < maxResults; dist++) {
-            for (int cx = -dist; cx <= dist; cx++) {
-                for (int cz = -dist; cz <= dist; cz++) {
-                    if (dist > 0 && Math.abs(cx) != dist && Math.abs(cz) != dist) continue;
+        for (int dist = 0; dist <= searchRadiusRegions && results.size() < maxResults; dist++) {
+            for (int dx = -dist; dx <= dist; dx++) {
+                for (int dz = -dist; dz <= dist; dz++) {
+                    if (dist > 0 && Math.abs(dx) != dist && Math.abs(dz) != dist) continue;
 
-                    int checkChunkX = playerChunkX + cx;
-                    int checkChunkZ = playerChunkZ + cz;
+                    int regionX = playerRegionX + dx;
+                    int regionZ = playerRegionZ + dz;
 
-                    BlockPos structurePos = getMansionPos(seed, maxDist, minDist, salt, checkChunkX, checkChunkZ);
-                    if (structurePos == null) continue;
+                    long regionKey = ((long) regionX << 32) | (regionZ & 0xFFFFFFFFL);
+                    if (checkedRegions.contains(regionKey)) continue;
+                    checkedRegions.add(regionKey);
 
-                    int structChunkX = structurePos.getX() >> 4;
-                    int structChunkZ = structurePos.getZ() >> 4;
+                    BlockPos structurePos = getMansionPosForRegion(seed, maxDist, minDist, salt, regionX, regionZ);
 
-                    if (structChunkX != checkChunkX || structChunkZ != checkChunkZ) continue;
-
-                    // Check biome
-                    Biome biome = world.getBiome(structurePos);
+                    // Check biome using BiomeProvider
+                    Biome biome = biomeProvider.getBiome(structurePos);
                     if (biome != Biomes.ROOFED_FOREST && biome != Biomes.MUTATED_ROOFED_FOREST) continue;
-
-                    // Avoid duplicates
-                    boolean duplicate = false;
-                    for (BlockPos existing : results) {
-                        if (existing.getX() == structurePos.getX() && existing.getZ() == structurePos.getZ()) {
-                            duplicate = true;
-                            break;
-                        }
-                    }
-                    if (duplicate) continue;
 
                     results.add(structurePos);
                 }
@@ -1113,20 +1169,12 @@ public class VanillaStructureProvider implements StructureProvider {
         return results;
     }
 
-    private BlockPos getMansionPos(long seed, int maxDist, int minDist, int salt, int chunkX, int chunkZ) {
-        int regionX = chunkX;
-        int regionZ = chunkZ;
-
-        if (chunkX < 0) regionX = chunkX - maxDist + 1;
-        if (chunkZ < 0) regionZ = chunkZ - maxDist + 1;
-
-        regionX = regionX / maxDist;
-        regionZ = regionZ / maxDist;
-
+    private BlockPos getMansionPosForRegion(long seed, int maxDist, int minDist, int salt, int regionX, int regionZ) {
+        // FIXME: 1/10 chance to find a mansion, something is wrong here
         Random random = new Random();
         random.setSeed((long) regionX * 341873128712L + (long) regionZ * 132897987541L + seed + (long) salt);
 
-        // Mansion uses averaged offset
+        // MC formula: regionX * spacing + (rand(range) + rand(range)) / 2
         int range = maxDist - minDist;
         int offsetX = (random.nextInt(range) + random.nextInt(range)) / 2;
         int offsetZ = (random.nextInt(range) + random.nextInt(range)) / 2;
@@ -1134,7 +1182,7 @@ public class VanillaStructureProvider implements StructureProvider {
         int structChunkX = regionX * maxDist + offsetX;
         int structChunkZ = regionZ * maxDist + offsetZ;
 
-        return new BlockPos(structChunkX * 16 + 8, 64, structChunkZ * 16 + 8);
+        return new BlockPos(structChunkX * 16 + 8, 0, structChunkZ * 16 + 8);
     }
 
     // ========== Stronghold Algorithm ==========
@@ -1158,9 +1206,15 @@ public class VanillaStructureProvider implements StructureProvider {
     /**
      * Calculate stronghold positions using Minecraft 1.12's algorithm.
      * MC 1.12 places 128 strongholds in 8 concentric rings.
-     * Distance formula: (4 * ringNumber + 1) * 32 chunks, with 25% variance.
+     * 
+     * From MapGenStronghold source:
+     * distance = (4 * 32 + ringNumber * 32 * 6) + (random - 0.5) * 32 * 2.5
+     * This is in CHUNKS, so:
+     * - Ring 0: 128 chunks ± 40 chunks = 88-168 chunks = 1408-2688 blocks
+     * - Ring 1: 320 chunks ± 40 chunks = 280-360 chunks = 4480-5760 blocks
      */
     private List<BlockPos> calculateStrongholds(long seed) {
+        // FIXME: broken algo - strongholds are not where they should be
         List<BlockPos> strongholds = new ArrayList<>();
         Random random = new Random();
         random.setSeed(seed);
@@ -1168,34 +1222,40 @@ public class VanillaStructureProvider implements StructureProvider {
         // Starting angle (random)
         double angle = random.nextDouble() * Math.PI * 2.0;
 
-        // Stronghold counts per ring (MC 1.12) - ring index starts at 1 in MC code
+        // Stronghold counts per ring (MC 1.12)
         int[] countPerRing = {3, 6, 10, 15, 21, 28, 36, 9};  // Total = 128
-        int ringNumber = 1;  // MC starts at 1, not 0
+        int ringNumber = 0;
         int placedInRing = 0;
 
         for (int i = 0; i < 128; i++) {
-            // Distance formula from MC: (4 * ringNumber + 1) * 32 chunks
-            // With random variance of up to 25%
-            double baseDistance = (double) (4 * ringNumber + 1) * 32.0;
-            double variance = baseDistance * 0.25;
-            double distance = baseDistance + random.nextDouble() * variance;
+            // MC 1.12 formula from MapGenStronghold (in CHUNKS):
+            // distance = (4 * 32 + ringNumber * 32 * 6) + (random - 0.5) * 32 * 2.5
+            // Simplifies to: (128 + ringNumber * 192) + (random - 0.5) * 80
+            double baseDistance = 4.0 * 32.0 + (double) ringNumber * 32.0 * 6.0;
+            double spread = (random.nextDouble() - 0.5) * 32.0 * 2.5;
+            double distanceInChunks = baseDistance + spread;
 
-            int chunkX = (int) Math.round(Math.cos(angle) * distance);
-            int chunkZ = (int) Math.round(Math.sin(angle) * distance);
+            int chunkX = (int) Math.round(Math.cos(angle) * distanceInChunks);
+            int chunkZ = (int) Math.round(Math.sin(angle) * distanceInChunks);
 
-            // Convert to block position
-            strongholds.add(new BlockPos(chunkX * 16 + 8, 35, chunkZ * 16 + 8));
+            // Convert to block coordinates (center of chunk)
+            int blockX = chunkX * 16 + 8;
+            int blockZ = chunkZ * 16 + 8;
+
+            // Strongholds generate between Y=0 and Y=50, typically around Y=35
+            // There is no deterministic way to get exact Y without loading chunks, so use Y=0
+            strongholds.add(new BlockPos(blockX, 0, blockZ));
 
             // Advance angle by equal division of circle
-            angle += (Math.PI * 2.0 / countPerRing[ringNumber - 1]);
+            angle += (Math.PI * 2.0 / countPerRing[ringNumber]);
 
             placedInRing++;
-            if (placedInRing >= countPerRing[ringNumber - 1]) {
+            if (placedInRing >= countPerRing[ringNumber]) {
                 // Move to next ring
                 ringNumber++;
                 placedInRing = 0;
-                // New random starting angle for next ring
-                angle = random.nextDouble() * Math.PI * 2.0;
+                // Add random angle offset for next ring
+                angle += random.nextDouble() * Math.PI * 2.0;
             }
         }
 
@@ -1244,6 +1304,7 @@ public class VanillaStructureProvider implements StructureProvider {
      */
     @Nullable
     private BlockPos getFortressPos(long seed, int regionSize, int regionX, int regionZ) {
+        // FIXME: broken algo - fortresses are not where they should be
         Random random = new Random();
         random.setSeed((long) regionX * 341873128712L + (long) regionZ * 132897987541L + seed + 30084232L);
 
@@ -1253,6 +1314,7 @@ public class VanillaStructureProvider implements StructureProvider {
         int chunkX = regionX * regionSize + offsetX;
         int chunkZ = regionZ * regionSize + offsetZ;
 
+        // Nether fortresses typically generate around Y=64 (middle of nether)
         return new BlockPos(chunkX * 16 + 8, 64, chunkZ * 16 + 8);
     }
 
@@ -1273,12 +1335,12 @@ public class VanillaStructureProvider implements StructureProvider {
         int playerRegionX = Math.floorDiv(pos.getX() >> 4, spacing);
         int playerRegionZ = Math.floorDiv(pos.getZ() >> 4, spacing);
 
-        int searchRadius = 10; // regions
+        int searchRadius = 15;
 
-        for (int radius = 0; radius <= searchRadius && results.size() < maxResults; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dz = -radius; dz <= radius; dz++) {
-                    if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+        for (int dist = 0; dist <= searchRadius && results.size() < maxResults; dist++) {
+            for (int dx = -dist; dx <= dist; dx++) {
+                for (int dz = -dist; dz <= dist; dz++) {
+                    if (dist > 0 && Math.abs(dx) != dist && Math.abs(dz) != dist) continue;
 
                     int regionX = playerRegionX + dx;
                     int regionZ = playerRegionZ + dz;
@@ -1287,8 +1349,7 @@ public class VanillaStructureProvider implements StructureProvider {
                     if (checkedRegions.contains(regionKey)) continue;
                     checkedRegions.add(regionKey);
 
-                    BlockPos structurePos = getEndCityPos(seed, spacing, separation, salt, regionX, regionZ);
-                    if (structurePos == null) continue;
+                    BlockPos structurePos = getEndCityPosForRegion(seed, spacing, separation, salt, regionX, regionZ);
 
                     // End cities only generate beyond 1000 blocks from origin
                     int blockX = structurePos.getX();
@@ -1303,8 +1364,7 @@ public class VanillaStructureProvider implements StructureProvider {
         return results;
     }
 
-    @Nullable
-    private BlockPos getEndCityPos(long seed, int spacing, int separation, int salt, int regionX, int regionZ) {
+    private BlockPos getEndCityPosForRegion(long seed, int spacing, int separation, int salt, int regionX, int regionZ) {
         Random random = new Random();
         random.setSeed((long) regionX * 341873128712L + (long) regionZ * 132897987541L + seed + salt);
 
@@ -1314,35 +1374,39 @@ public class VanillaStructureProvider implements StructureProvider {
         int chunkX = regionX * spacing + offsetX;
         int chunkZ = regionZ * spacing + offsetZ;
 
-        return new BlockPos(chunkX * 16 + 8, 64, chunkZ * 16 + 8);
+        return new BlockPos(chunkX * 16 + 8, 0, chunkZ * 16 + 8);
     }
 
     // ========== Mineshaft Algorithm ==========
 
     /**
      * Find mineshafts using the mineshaft algorithm. Mineshafts are determined per-chunk based on seed.
+     * Mineshafts are common (0.4% per chunk) but only far from spawn due to distance check.
      */
     private List<BlockPos> findMineshafts(World world, BlockPos pos, long seed, int maxResults) {
-        Set<Long> checkedChunks = new HashSet<>();
+        // FIXME: broken algo - mineshafts are not where they should be
         List<BlockPos> results = new ArrayList<>();
         int chunkX = pos.getX() >> 4;
         int chunkZ = pos.getZ() >> 4;
 
-        int searchRadius = 30; // chunks
+        // Search in a spiral pattern outward
+        // Mineshafts require distance from origin, so may need to search far
+        int maxSearchRadius = 150; // chunks
 
-        for (int radius = 0; radius <= searchRadius && results.size() < maxResults; radius++) {
+        for (int radius = 0; radius <= maxSearchRadius && results.size() < maxResults; radius++) {
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
+                    // Only check the perimeter at this distance
                     if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
 
                     int cx = chunkX + dx;
                     int cz = chunkZ + dz;
 
-                    long chunkKey = ((long) cx << 32) | (cz & 0xFFFFFFFFL);
-                    if (checkedChunks.contains(chunkKey)) continue;
-                    checkedChunks.add(chunkKey);
-
-                    if (isMineshaftChunk(seed, cx, cz)) results.add(new BlockPos(cx * 16 + 8, 40, cz * 16 + 8));
+                    if (isMineshaftChunk(seed, cx, cz)) {
+                        // Mineshafts generate between Y=10 and Y=60, typically starting around Y=35
+                        // There is no deterministic way to get exact Y without loading chunks, so use Y=0
+                        results.add(new BlockPos(cx * 16 + 8, 0, cz * 16 + 8));
+                    }
                 }
             }
         }

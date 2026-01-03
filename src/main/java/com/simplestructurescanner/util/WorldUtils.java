@@ -52,37 +52,79 @@ public class WorldUtils {
         // Clamp startY to valid range
         startY = Math.max(1, Math.min(startY, 255));
 
-        // First search upward from startY
-        for (int y = startY + 1; y <= 254; y++) if (isSafeTeleportSpot(world, x, y, z)) return y;
+        // Starting in air? Go down to find ground. Otherwise, go up to find surface.
+        BlockPos feetPos = new BlockPos(x, startY, z);
+        boolean inAir = (world.getBlockState(feetPos).getMaterial() == Material.AIR)
+            && (world.getBlockState(feetPos.up()).getMaterial() == Material.AIR);
 
-        // Then search downward from startY (unlikely)
-        for (int y = startY; y >= 1; y--) if (isSafeTeleportSpot(world, x, y, z)) return y;
+        if (inAir) {
+            for (int y = startY; y >= 1; y--) if (canTeleport(world, x, y, z, true)) return y;
+            for (int y = startY + 1; y <= 254; y++) if (canTeleport(world, x, y, z)) return y;
+        } else {
+            for (int y = startY + 1; y <= 254; y++) if (canTeleport(world, x, y, z)) return y;
+            for (int y = startY; y >= 1; y--) if (canTeleport(world, x, y, z)) return y;
+        }
 
         // No safe spot found, well f*ck, deal with it
         return -1;
     }
 
     /**
-     * Checks if a position is safe to teleport to.
-     * Safe means: solid block below, non-solid at feet, non-solid at head, not underwater.
+     * Checks if the player can teleport to the given position safely.
+     * @param world The world to check
+     * @param x X coordinate
+     * @param y Y coordinate (feet position)
+     * @param z Z coordinate
+     * @param needsGround Whether to require solid block below feet
      */
-    public static boolean isSafeTeleportSpot(World world, int x, int y, int z) {
+    public static boolean canTeleport(World world, int x, int y, int z, boolean needsGround) {
         BlockPos feetPos = new BlockPos(x, y, z);
         BlockPos headPos = feetPos.up();
         BlockPos groundPos = feetPos.down();
 
-        IBlockState groundState = world.getBlockState(groundPos);
         IBlockState feetState = world.getBlockState(feetPos);
         IBlockState headState = world.getBlockState(headPos);
+        IBlockState groundState = world.getBlockState(groundPos);
 
-        // Ground must not be harmful and area above must be clear
-        Material groundMaterial = groundState.getMaterial();
-        if (groundMaterial == Material.LAVA || groundMaterial == Material.FIRE) return false;
-        if (groundMaterial == Material.CACTUS) return false;
+        // Feet and head must be passable (not just air - also allows tall grass, etc.)
+        if (!isPassable(feetState)) return false;
+        if (!isPassable(headState)) return false;
 
-        if (feetState.getMaterial() != Material.AIR) return false;
-        if (headState.getMaterial() != Material.AIR) return false;
+        // Try to get something (semi) solid to stand on
+        if (needsGround && isPassable(groundState) && !isFluid(groundState)) return false;
 
         return true;
+    }
+
+    /**
+     * Checks if a block state is passable (player can occupy this space).
+     */
+    private static boolean isPassable(IBlockState state) {
+        Material mat = state.getMaterial();
+
+        // These materials are passable
+        if (mat == Material.AIR) return true;
+        if (mat == Material.PLANTS) return true;
+        if (mat == Material.VINE) return true;
+        if (mat == Material.SNOW) return true;
+        if (mat == Material.CARPET) return true;
+        if (mat == Material.CIRCUITS) return true;  // Redstone, etc.
+        if (mat == Material.WEB) return true;  // Passable but slow
+        if (mat == Material.FIRE) return false;  // Passable but harmful
+        if (mat == Material.PORTAL) return true;
+
+        // Check if block has no collision box
+        return !state.getMaterial().blocksMovement();
+    }
+
+    /**
+     * Checks if a block state is a fluid.
+     */
+    private static boolean isFluid(IBlockState state) {
+        return state.getMaterial().isLiquid();
+    }
+
+    public static boolean canTeleport(World world, int x, int y, int z) {
+        return canTeleport(world, x, y, z, true);
     }
 }

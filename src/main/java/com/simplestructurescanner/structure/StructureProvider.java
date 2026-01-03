@@ -58,7 +58,7 @@ public interface StructureProvider {
     StructureInfo getStructureInfo(ResourceLocation structureId);
 
     /**
-     * Find the nearest structure of the given type.
+     * Find the nearest structure of the given type. This code runs on the server side.
      * @param world The world to search in
      * @param structureId The structure ID to find
      * @param pos The position to search from
@@ -67,4 +67,18 @@ public interface StructureProvider {
      */
     @Nullable
     StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount);
+
+    /**
+     * Find all nearby structures of the given type within search range. This code runs on the server side.
+     * Results are not sorted - caller should sort by distance if needed.
+     * @param world The world to search in
+     * @param structureId The structure ID to find
+     * @param pos The position to search from
+     * @param maxResults Maximum number of results to return
+     * @return List of structure positions, null if batch search not supported, or empty list if none found
+     */
+    @Nullable
+    default List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
+        return null;  // null = batch search not supported, use findNearest instead
+    }
 }
