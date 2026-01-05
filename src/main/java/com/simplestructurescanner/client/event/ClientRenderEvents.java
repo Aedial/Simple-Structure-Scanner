@@ -203,7 +203,6 @@ public class ClientRenderEvents {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayer player = mc.player;
         if (player == null || mc.world == null) return;
-        if (mc.gameSettings.showDebugInfo) return;
 
         Map<ResourceLocation, StructureLocation> locations = StructureSearchManager.getAllLocations();
         if (locations.isEmpty()) return;
@@ -239,10 +238,12 @@ public class ClientRenderEvents {
     private static final float ARROW_ALPHA = 1.0f;           // Arrow alpha transparency
 
     // ========== Arrow Gradient Constants ==========
-    private static final float GRADIENT_START_FACTOR = 1.0f;  // Brightness factor at gradient start (1.0 = full color)
-    private static final float GRADIENT_END_FACTOR = 0.5f;    // Brightness factor at gradient end (0.5 = half brightness)
+    private static final float GRADIENT_START_FACTOR = 0.8f;  // Brightness factor at gradient start (back of arrow)
+    private static final float GRADIENT_END_FACTOR = 0.4f;    // Brightness factor at gradient end (tip of arrow)
+    private static final float GRADIENT_CURVE = 0.5f;         // Exponential curve steepness (higher = reaches end faster)
     private static final int GRADIENT_RINGS = 16;             // Number of segments for gradient (more = smoother)
     private static final boolean GRADIENT_FRONT_TO_BACK = true;   // false = back-to-front (back light, front dark)
+    private static final boolean ACCENTUATE_BACK = true;      // If true, makes the back face stronger in the gradient
 
     /**
      * Draws a 3D directional arrow pointing towards the target structure.
@@ -378,17 +379,20 @@ public class ClientRenderEvents {
             float w0 = w * (1.0f - t0);
             float w1 = w * (1.0f - t1);
 
-            // Calculate gradient factors based on direction
-            // TODO: should probably use exponential 0.4-0.8 instead of linear 0.5-1.0
+            // Calculate gradient factors using exponential curve
+            // Uses 1 - (1-t)^CURVE to create a curve that rises quickly then plateaus
+            float curve0 = (float) (1.0 - Math.pow(1.0 - t0, GRADIENT_CURVE));
+            float curve1 = (float) (1.0 - Math.pow(1.0 - t1, GRADIENT_CURVE));
+
             float factor0, factor1;
             if (GRADIENT_FRONT_TO_BACK) {
                 // Front dark, back light: front (t=1) gets END_FACTOR, back (t=0) gets START_FACTOR
-                factor0 = GRADIENT_START_FACTOR + t0 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
-                factor1 = GRADIENT_START_FACTOR + t1 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+                factor0 = GRADIENT_START_FACTOR + curve0 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+                factor1 = GRADIENT_START_FACTOR + curve1 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
             } else {
                 // Back light, front dark: back (t=0) gets START_FACTOR, front (t=1) gets END_FACTOR
-                factor0 = GRADIENT_START_FACTOR + t0 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
-                factor1 = GRADIENT_START_FACTOR + t1 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+                factor0 = GRADIENT_START_FACTOR + curve0 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+                factor1 = GRADIENT_START_FACTOR + curve1 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
             }
 
             // Colors for back and front of this segment
@@ -467,6 +471,19 @@ public class ClientRenderEvents {
 
             // BACK face (only for first segment)
             if (i == 0) {
+                if (ACCENTUATE_BACK) {
+                    // Make back face stronger in gradient
+                    if (!GRADIENT_FRONT_TO_BACK) {       // front dark, back light
+                        r0 = Math.min(r0 / 1.2f, 1.0f);
+                        g0 = Math.min(g0 / 1.2f, 1.0f);
+                        b0 = Math.min(b0 / 1.2f, 1.0f);
+                    } else {                            // back light, front dark
+                        r0 = Math.min(r0 * 1.2f, 1.0f);
+                        g0 = Math.min(g0 * 1.2f, 1.0f);
+                        b0 = Math.min(b0 * 1.2f, 1.0f);
+                    }
+                }
+
                 buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
                 buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
                 buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
