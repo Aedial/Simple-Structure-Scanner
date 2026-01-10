@@ -16,14 +16,6 @@ gui.structurescanner.searchableNo=Searchable: No
 gui.structurescanner.biomes=Biomes: %s
 gui.structurescanner.biomes.any=Any
 gui.structurescanner.biomes.count=biomes
-gui.structurescanner.dimension=Dimension: %s
-gui.structurescanner.dimension.overworld=Overworld
-gui.structurescanner.dimension.nether=Nether
-gui.structurescanner.dimension.end=The End
-gui.structurescanner.rarity=Rarity: %s
-gui.structurescanner.rarity.common=Common
-gui.structurescanner.rarity.uncommon=Uncommon
-gui.structurescanner.rarity.rare=Rare
 gui.structurescanner.unknown=Unknown
 gui.structurescanner.separator=, 
 gui.structurescanner.k=k
@@ -36,8 +28,18 @@ gui.structurescanner.i18nIDs.off=IDs: Raw
 
 # Providers
 gui.structurescanner.provider.minecraft=Minecraft
+gui.structurescanner.provider.aether=The Aether
+gui.structurescanner.provider.abyssalcraft=AbyssalCraft
 
-# Structures
+# Rarity
+gui.structurescanner.rarity=Rarity: %s
+gui.structurescanner.rarity.common=Common
+gui.structurescanner.rarity.uncommon=Uncommon
+gui.structurescanner.rarity.rare=Rare
+gui.structurescanner.rarity.unique=Unique
+gui.structurescanner.rarity.one_in_chunks=1 in %d chunks
+
+# Structures - Minecraft
 gui.structurescanner.structures.minecraft.village=Village
 gui.structurescanner.structures.minecraft.mineshaft=Mineshaft
 gui.structurescanner.structures.minecraft.stronghold=Stronghold
@@ -52,6 +54,37 @@ gui.structurescanner.structures.minecraft.dungeon=Dungeon
 gui.structurescanner.structures.minecraft.nether_fortress=Nether Fortress
 gui.structurescanner.structures.minecraft.end_city=End City
 gui.structurescanner.structures.minecraft.end_ship=End Ship
+
+# Dimensions - Minecraft + misc
+gui.structurescanner.dimension=Dimension: %s
+gui.structurescanner.dimension.any=Any
+gui.structurescanner.dimension.unknown=Unknown (%s)
+gui.structurescanner.dimension.overworld=Overworld
+gui.structurescanner.dimension.nether=Nether
+gui.structurescanner.dimension.end=The End
+
+# Structures - AbyssalCraft
+gui.structurescanner.structures.abyssalcraft.aby_stronghold=Abyssal Stronghold
+gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft=Dreadlands Mineshaft
+gui.structurescanner.structures.abyssalcraft.jzahar_temple=J'zahar Temple
+gui.structurescanner.structures.abyssalcraft.omothol_city=Omothol City
+gui.structurescanner.structures.abyssalcraft.omothol_storage=Omothol Storage
+gui.structurescanner.structures.abyssalcraft.shoggoth_lair=Shoggoth Lair
+gui.structurescanner.structures.abyssalcraft.graveyard=Graveyard
+
+# Dimensions - AbyssalCraft
+gui.structurescanner.dimension.abyssal_wasteland=Abyssal Wasteland
+gui.structurescanner.dimension.dreadlands=Dreadlands
+gui.structurescanner.dimension.omothol=Omothol
+gui.structurescanner.dimension.dark_realm=Dark Realm
+
+# Structures - Aether
+gui.structurescanner.structures.aether.bronze_dungeon=Bronze Dungeon
+gui.structurescanner.structures.aether.silver_dungeon=Silver Dungeon
+gui.structurescanner.structures.aether.gold_dungeon=Gold Dungeon
+
+# Dimensions - Aether
+gui.structurescanner.dimension.aether=Aether
 
 # Buttons
 gui.structurescanner.blocksButton=[Blocks]
@@ -84,8 +117,10 @@ gui.structurescanner.loot.count=%d loot tables
 gui.structurescanner.loot.unknown=Items unknown
 gui.structurescanner.loot.rateTooltip=Drop rate: %s
 gui.structurescanner.loot.chest=Chest
+gui.structurescanner.loot.crate=Crate
 gui.structurescanner.loot.dispenser=Dispenser
 gui.structurescanner.loot.minecart_chest=Minecart with Chest
+gui.structurescanner.loot.aether.reward=Treasure Chest
 
 # Entities Window
 gui.structurescanner.entities.title=Entities in %s

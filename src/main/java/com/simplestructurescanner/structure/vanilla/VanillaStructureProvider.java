@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -29,6 +30,7 @@ import net.minecraft.world.biome.BiomeProvider;
 import net.minecraft.util.text.translation.I18n;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
@@ -51,6 +53,11 @@ public class VanillaStructureProvider implements StructureProvider {
 
     private List<ResourceLocation> knownStructures;
     private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
+
+    // Cache: seed -> (structureType -> list of positions)
+    // Positions are sorted by distance to search origin when cached
+    private static final Map<Long, Map<String, List<BlockPos>>> positionCache = new HashMap<>();
+    private static final int MAX_CACHED_POSITIONS = 200;
 
     public VanillaStructureProvider() {
     }
@@ -103,10 +110,10 @@ public class VanillaStructureProvider implements StructureProvider {
      * Populates biome, dimension, and rarity info for vanilla structures.
      */
     private void populateStructureMetadata() {
-        // Dimension IDs
-        Set<Integer> overworld = Collections.singleton(0);
-        Set<Integer> nether = Collections.singleton(-1);
-        Set<Integer> end = Collections.singleton(1);
+        // Dimension sets using DimensionInfo
+        Set<DimensionInfo> overworld = Collections.singleton(DimensionInfo.OVERWORLD);
+        Set<DimensionInfo> nether = Collections.singleton(DimensionInfo.NETHER);
+        Set<DimensionInfo> end = Collections.singleton(DimensionInfo.END);
 
         // Village - Plains, Savanna, Desert, Taiga, Snowy Tundra
         setMetadata("village", biomes(Biomes.PLAINS, Biomes.SAVANNA, Biomes.DESERT, Biomes.TAIGA,
@@ -151,7 +158,7 @@ public class VanillaStructureProvider implements StructureProvider {
         return Stream.of(biomes).collect(Collectors.toSet());
     }
 
-    private void setMetadata(String path, Set<Biome> biomes, Set<Integer> dimensions, String rarity) {
+    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, String rarity) {
         StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", path));
         if (info == null) return;
 
@@ -498,9 +505,9 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "zombie"), 1),
-            new EntityEntry(new ResourceLocation("minecraft", "skeleton"), 1),
-            new EntityEntry(new ResourceLocation("minecraft", "spider"), 1)
+            new EntityEntry(new ResourceLocation("minecraft", "zombie"), 1, true),
+            new EntityEntry(new ResourceLocation("minecraft", "skeleton"), 1, true),
+            new EntityEntry(new ResourceLocation("minecraft", "spider"), 1, true)
         );
         info.setEntities(entities);
     }
@@ -532,7 +539,7 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "silverfish"), 1)
+            new EntityEntry(new ResourceLocation("minecraft", "silverfish"), 1, true)
         );
         info.setEntities(entities);
     }
@@ -559,7 +566,7 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "cave_spider"), 1)
+            new EntityEntry(new ResourceLocation("minecraft", "cave_spider"), 1, true)
         );
         info.setEntities(entities);
     }
@@ -586,7 +593,7 @@ public class VanillaStructureProvider implements StructureProvider {
         info.setLootTables(loot);
 
         List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "blaze"), 1),
+            new EntityEntry(new ResourceLocation("minecraft", "blaze"), 1, true),
             new EntityEntry(new ResourceLocation("minecraft", "wither_skeleton"), 1)
         );
         info.setEntities(entities);
@@ -775,9 +782,9 @@ public class VanillaStructureProvider implements StructureProvider {
 
     @Override
     @Nullable
-    public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount) {
-        if (world == null) return null;
-        if (!canBeSearched(structureId)) return null;
+    public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
+            @Nullable Predicate<BlockPos> locationFilter) {
+        if (world == null || !canBeSearched(structureId)) return null;
 
         String path = structureId.getPath();
         Long seed = getWorldSeed(world);
@@ -787,15 +794,28 @@ public class VanillaStructureProvider implements StructureProvider {
             return null;
         }
 
-        List<BlockPos> candidates = findStructuresByType(world, path, pos, seed, skipCount + 20);
+        // Get cached or generate positions
+        List<BlockPos> candidates = getCachedPositions(world, path, pos, seed);
         if (candidates.isEmpty()) return null;
 
         // Sort by distance (Y-agnostic - only use X and Z)
         sortByDistance(candidates, pos);
 
-        if (skipCount >= candidates.size()) return null;
+        // Apply filter and skip to find the target
+        int validIndex = 0;
+        int totalValid = 0;
+        BlockPos targetPos = null;
 
-        BlockPos targetPos = candidates.get(skipCount);
+        for (BlockPos candidate : candidates) {
+            if (locationFilter != null && !locationFilter.test(candidate)) continue;
+
+            if (validIndex == skipCount && targetPos == null) targetPos = candidate;
+
+            validIndex++;
+            totalValid++;
+        }
+
+        if (targetPos == null) return null;
 
         // Calculate terrain height for surface structures with Y=0
         if (targetPos.getY() == 0 && isSurfaceStructure(path)) {
@@ -806,7 +826,21 @@ public class VanillaStructureProvider implements StructureProvider {
 
         boolean yAgnostic = targetPos.getY() == 0;
 
-        return new StructureLocation(targetPos, skipCount, candidates.size(), yAgnostic);
+        return new StructureLocation(targetPos, skipCount, totalValid, yAgnostic);
+    }
+
+    /**
+     * Get cached positions or generate and cache them.
+     */
+    private List<BlockPos> getCachedPositions(World world, String structureType, BlockPos searchPos, long seed) {
+        Map<String, List<BlockPos>> seedCache = positionCache.computeIfAbsent(seed, k -> new HashMap<>());
+
+        if (!seedCache.containsKey(structureType)) {
+            List<BlockPos> positions = findStructuresByType(world, structureType, searchPos, seed, MAX_CACHED_POSITIONS);
+            seedCache.put(structureType, positions);
+        }
+
+        return new ArrayList<>(seedCache.get(structureType));
     }
 
     @Override

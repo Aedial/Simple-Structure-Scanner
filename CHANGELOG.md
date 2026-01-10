@@ -8,9 +8,25 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
+## [0.3.0] - 2026-01-10
+### Added
+- Add AbyssalCraft structure provider
+- Add Aether structure provider
+- Add full documentation for creating structure providers in `docs/STRUCTURE_PROVIDER_GUIDE.md`
+
+### Fixed
+- Fix dimension display names in the structure info panel for modded dimensions
+- Fix guiding arrow and overlay not taking into account the current dimension (so it would point to structures in other dimensions)
+- Fix some entities not showing as spawner entities
+
+### Changed
+- Optimize single structure location scanning
+
+
 ## [0.2.4] - 2026-01-05
 ### Changed
 - Tweak the gradient of the guiding arrow
+
 
 ## [0.2.3] - 2026-01-03
 ### Added
@@ -21,13 +37,16 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Fix safe teleport Y coordinate search to avoid having to go up because you are in the floor
 - Fix overflow in sorting structure locations by distance when very far away from origin
 
+
 ## [0.2.2] - 2026-01-02
 ### Fixed
 - Fix the guiding arrow being drawn incorrectly (culling issues)
 
+
 ## [0.2.1] - 2026-01-01
 ### Fixed
 - Fix structure preview interfering with other item-related modals (blocks, loot, entities windows)
+
 
 ## [0.2.0] - 2026-01-01
 ### Added

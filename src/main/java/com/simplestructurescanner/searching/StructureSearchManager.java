@@ -20,7 +20,6 @@ import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.util.WorldUtils;
 
-// FIXME: all dimensions consider all structures together - nether fortress in overworld, etc.
 
 /**
  * Manages searched structures for live search feature.
@@ -133,6 +132,9 @@ public class StructureSearchManager {
         saveToConfig();
     }
 
+    // FIXME: we need to handle dimensions to only search structures that are valid in the current dimension
+    //        Currently, if a structure is in a dimension the structure doesn't exist in, such as Nether Fortresses in the Overworld,
+    //        the search might fail silently. Similarly, the search should re-trigger when switching dimensions to find valid structures there.
     public static void startTracking(ResourceLocation id) {
         if (searchedStructures.contains(id)) return;
 
@@ -341,7 +343,7 @@ public class StructureSearchManager {
 
             locationCache.computeIfAbsent(worldId, k -> new LinkedHashMap<>()).put(id, positions);
             updateSortedCache(id, playerPos, worldId);
-            updateLocationFromSortedCache(id, serverWorld, worldId);
+            updateLocationFromSortedCache(id);
         } else {
             // Batch not supported, use individual read
             nonBatchStructures.add(id);
@@ -407,13 +409,6 @@ public class StructureSearchManager {
      * Updates the display location from the sorted cache.
      */
     private static void updateLocationFromSortedCache(ResourceLocation id) {
-        updateLocationFromSortedCache(id, null, WorldUtils.getWorldIdentifier());
-    }
-
-    /**
-     * Updates the display location from the sorted cache, with optional server world for height calculation.
-     */
-    private static void updateLocationFromSortedCache(ResourceLocation id, World serverWorld, long worldId) {
         List<BlockPos> sorted = sortedCache.get(id);
         if (sorted == null || sorted.isEmpty()) {
             lastKnownLocations.remove(id);
@@ -430,16 +425,7 @@ public class StructureSearchManager {
 
         BlockPos targetPos = sorted.get(skipOffset);
 
-        // Calculate terrain height for surface structures if we have server world access
-        if (serverWorld != null && targetPos.getY() == 0) {
-            com.simplestructurescanner.structure.TerrainHeightCalculator heightCalc =
-                new com.simplestructurescanner.structure.TerrainHeightCalculator(
-                    worldId, serverWorld.getBiomeProvider()
-                );
-            int terrainY = heightCalc.getTerrainHeight(targetPos.getX(), targetPos.getZ());
-            targetPos = new BlockPos(targetPos.getX(), terrainY, targetPos.getZ());
-        }
-
+        // Y-agnostic if provider returned Y=0 (provider handles terrain height calculation internally)
         boolean yAgnostic = targetPos.getY() == 0;
         StructureLocation location = new StructureLocation(targetPos, skipOffset, sorted.size(), yAgnostic);
         lastKnownLocations.put(id, location);
@@ -472,7 +458,17 @@ public class StructureSearchManager {
 
         if (location != null) {
             long worldId = WorldUtils.getWorldIdentifier();
-            addToLocationCache(worldId, id, location.getPosition());
+            BlockPos pos = location.getPosition();
+
+            // Filter out blacklisted positions (blacklist is client-side config)
+            if (ModConfig.isLocationBlacklisted(worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())) {
+                // Request next result with incremented skip count
+                skipOffsets.put(id, skipCount + 1);
+                pendingSearches.add(id);
+                return;
+            }
+
+            addToLocationCache(worldId, id, pos);
         }
 
         updateLocation(id, location);

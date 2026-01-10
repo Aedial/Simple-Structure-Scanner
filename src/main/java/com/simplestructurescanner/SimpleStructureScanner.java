@@ -19,7 +19,7 @@ import org.apache.logging.log4j.Logger;
 public class SimpleStructureScanner {
     public static final String MODID = "simplestructurescanner";
     public static final String NAME = "Simple Structure Scanner";
-    public static final String VERSION = "0.2.3";
+    public static final String VERSION = "0.3.0";
 
     public static final Logger LOGGER = LogManager.getLogger(MODID);
 

@@ -36,6 +36,7 @@ import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.config.ModConfig;
 import com.simplestructurescanner.network.NetworkHandler;
 import com.simplestructurescanner.network.PacketRequestSafeTeleport;
+import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.util.WorldUtils;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
@@ -91,6 +92,10 @@ public class GuiStructureScanner extends GuiScreen {
     private List<String> tooltipBiomes = null;
     private int tooltipBiomesLabelX, tooltipBiomesLabelY, tooltipBiomesLabelW;
 
+    // Dimension tooltip data (set during drawRightPanel, rendered in drawDimensionTooltip)
+    private List<String> tooltipDimensions = null;
+    private int tooltipDimensionsLabelX, tooltipDimensionsLabelY, tooltipDimensionsLabelW;
+
     // Structure preview (3D block rendering)
     private int previewX, previewY, previewSize;
     private StructurePreviewRenderer previewRenderer = null;
@@ -99,7 +104,8 @@ public class GuiStructureScanner extends GuiScreen {
     static final private List<String> rarities = Arrays.asList(
         "common",
         "uncommon",
-        "rare"
+        "rare",
+        "unique"
     );
 
     private String getI18nButtonString() {
@@ -363,8 +369,11 @@ public class GuiStructureScanner extends GuiScreen {
             confirmDialog.draw(mouseX, mouseY, partialTicks);
         }
 
-        // Draw biome tooltip on top of everything except modals
-        if (!modalBlocking) drawBiomeTooltip(mouseX, mouseY);
+        // Draw tooltips on top of everything except modals
+        if (!modalBlocking) {
+            drawBiomeTooltip(mouseX, mouseY);
+            drawDimensionTooltip(mouseX, mouseY);
+        }
     }
 
     private void drawRightPanel(int mouseX, int mouseY, float partialTicks) {
@@ -387,6 +396,7 @@ public class GuiStructureScanner extends GuiScreen {
 
         // Clear tooltip data
         tooltipBiomes = null;
+        tooltipDimensions = null;
 
         Gui.drawRect(panelX, panelY, panelX + panelW, panelY + panelH, 0x80000000);
 
@@ -486,11 +496,36 @@ public class GuiStructureScanner extends GuiScreen {
 
         // Dimension info
         if (selectedInfo != null) {
-            Set<Integer> dimensions = selectedInfo.getValidDimensions();
-            if (dimensions != null && !dimensions.isEmpty()) {
-                String dimName = getDimensionNames(dimensions);
-                String dimStr = I18n.format("gui.structurescanner.dimension", dimName);
-                textY = drawElidedString(fontRenderer, dimStr, textX, textY, 14, textW, 0xFFCC99);
+            Set<DimensionInfo> dimensions = selectedInfo.getValidDimensions();
+            int dimensionsCount = dimensions != null ? dimensions.size() : 0;
+            boolean hasDimensions = dimensionsCount > 0;
+
+            // Build dimension display
+            String dimensionsLabel;
+            int dimensionsLabelY = textY;
+            if (!hasDimensions) {
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", I18n.format("gui.structurescanner.dimension.any"));
+            } else if (dimensionsCount == 1) {
+                String dimName = dimensions.iterator().next().getDisplayName();
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", dimName);
+            } else {
+                // Multiple dimensions - show count with hover for full list
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", dimensionsCount);
+            }
+            textY = drawElidedString(fontRenderer, dimensionsLabel, textX, textY, 14, textW, 0xFFCC99);
+
+            // Store dimension tooltip data for later rendering
+            if (dimensionsCount > 1) {
+                // Sort dimensions alphabetically by display name
+                List<String> sortedDimensions = new ArrayList<>();
+                for (DimensionInfo dim : dimensions) sortedDimensions.add(dim.getDisplayName());
+                sortedDimensions.sort((a, b) -> a.compareToIgnoreCase(b));
+
+                // Deduplicate dimension names
+                tooltipDimensions = new ArrayList<>(new LinkedHashSet<>(sortedDimensions));
+                tooltipDimensionsLabelX = textX;
+                tooltipDimensionsLabelY = dimensionsLabelY;
+                tooltipDimensionsLabelW = fontRenderer.getStringWidth(dimensionsLabel);
             }
 
             // Biome info
@@ -723,21 +758,11 @@ public class GuiStructureScanner extends GuiScreen {
         }
     }
 
-    private String getDimensionNames(Set<Integer> dimensions) {
-        return dimensions.stream().map(dim -> {
-            switch (dim) {
-                case -1: return I18n.format("gui.structurescanner.dimension.nether");
-                case 0: return I18n.format("gui.structurescanner.dimension.overworld");
-                case 1: return I18n.format("gui.structurescanner.dimension.end");
-                default: return String.valueOf(dim);
-            }
-        }).collect(Collectors.joining(I18n.format("gui.structurescanner.dimension.separator")));
-    }
-
     private int getRarityColor(String rarity) {
         if (rarity.toLowerCase().contains("common")) return 0xAAAAAA;
         if (rarity.toLowerCase().contains("uncommon")) return 0x55FF55;
         if (rarity.toLowerCase().contains("rare")) return 0x55AAFF;
+        if (rarity.toLowerCase().contains("unique")) return 0xFF55FF;
 
         return 0xFFFFFF;
     }
@@ -919,16 +944,28 @@ public class GuiStructureScanner extends GuiScreen {
         if (mouseX < tooltipBiomesLabelX || mouseX > tooltipBiomesLabelX + tooltipBiomesLabelW) return;
         if (mouseY < tooltipBiomesLabelY || mouseY > tooltipBiomesLabelY + 12) return;
 
+        drawMultiColumnTooltip(mouseX, mouseY, tooltipBiomes);
+    }
+
+    private void drawDimensionTooltip(int mouseX, int mouseY) {
+        if (tooltipDimensions == null || tooltipDimensions.isEmpty()) return;
+        if (mouseX < tooltipDimensionsLabelX || mouseX > tooltipDimensionsLabelX + tooltipDimensionsLabelW) return;
+        if (mouseY < tooltipDimensionsLabelY || mouseY > tooltipDimensionsLabelY + 12) return;
+
+        drawMultiColumnTooltip(mouseX, mouseY, tooltipDimensions);
+    }
+
+    private void drawMultiColumnTooltip(int mouseX, int mouseY, List<String> items) {
         // Calculate columns needed
-        int maxBiomesPerColumn = 15;
-        int numColumns = (tooltipBiomes.size() + maxBiomesPerColumn - 1) / maxBiomesPerColumn;
-        int biomesPerColumn = (tooltipBiomes.size() + numColumns - 1) / numColumns;
+        int maxItemsPerColumn = 15;
+        int numColumns = (items.size() + maxItemsPerColumn - 1) / maxItemsPerColumn;
+        int itemsPerColumn = (items.size() + numColumns - 1) / numColumns;
 
         // Calculate column widths
         int[] columnWidths = new int[numColumns];
-        for (int i = 0; i < tooltipBiomes.size(); i++) {
-            int col = i / biomesPerColumn;
-            int w = fontRenderer.getStringWidth(tooltipBiomes.get(i));
+        for (int i = 0; i < items.size(); i++) {
+            int col = i / itemsPerColumn;
+            int w = fontRenderer.getStringWidth(items.get(i));
             if (w > columnWidths[col]) columnWidths[col] = w;
         }
 
@@ -942,7 +979,7 @@ public class GuiStructureScanner extends GuiScreen {
 
         int padding = 6;
         int tooltipWidth = totalWidth + padding * 2;
-        int tooltipHeight = biomesPerColumn * 10 + padding * 2;
+        int tooltipHeight = itemsPerColumn * 10 + padding * 2;
 
         // Position tooltip
         int tooltipX = mouseX + 12;
@@ -963,15 +1000,15 @@ public class GuiStructureScanner extends GuiScreen {
         Gui.drawRect(tooltipX - 1, tooltipY, tooltipX, tooltipY + tooltipHeight, borderLight);
         Gui.drawRect(tooltipX + tooltipWidth, tooltipY, tooltipX + tooltipWidth + 1, tooltipY + tooltipHeight, borderDark);
 
-        // Draw biomes in columns
+        // Draw items in columns
         int textY = tooltipY + padding;
         int colX = tooltipX + padding;
         for (int col = 0; col < numColumns; col++) {
-            int startIdx = col * biomesPerColumn;
-            int endIdx = Math.min(startIdx + biomesPerColumn, tooltipBiomes.size());
+            int startIdx = col * itemsPerColumn;
+            int endIdx = Math.min(startIdx + itemsPerColumn, items.size());
 
             for (int i = startIdx; i < endIdx; i++) {
-                fontRenderer.drawStringWithShadow(tooltipBiomes.get(i), colX, textY + (i - startIdx) * 10, 0xDDDDDD);
+                fontRenderer.drawStringWithShadow(items.get(i), colX, textY + (i - startIdx) * 10, 0xDDDDDD);
             }
 
             colX += columnWidths[col] + columnSpacing;

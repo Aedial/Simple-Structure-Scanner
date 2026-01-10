@@ -74,6 +74,7 @@ public class ClientRenderEvents {
         if (trackedIds.isEmpty()) return;
 
         BlockPos playerPos = mc.player.getPosition();
+        int currentDimension = mc.player.dimension;
         Map<ResourceLocation, StructureLocation> locations = StructureSearchManager.getAllLocations();
 
         // Build display lines
@@ -83,12 +84,15 @@ public class ClientRenderEvents {
         for (ResourceLocation id : trackedIds) {
             if (!ModConfig.isStructureAllowed(id.toString())) continue;
 
+            // Filter by current dimension
+            StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+            if (info != null && !info.isValidForDimension(currentDimension)) continue;
+
             StructureLocation loc = locations.get(id);
 
             // Get display name
             String name;
             if (ClientSettings.i18nNames) {
-                StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
                 name = info != null ? info.getDisplayName() : id.getPath();
             } else {
                 name = id.toString();
@@ -207,6 +211,7 @@ public class ClientRenderEvents {
         Map<ResourceLocation, StructureLocation> locations = StructureSearchManager.getAllLocations();
         if (locations.isEmpty()) return;
 
+        int currentDimension = player.dimension;
         float partialTicks = event.getPartialTicks();
 
         for (Map.Entry<ResourceLocation, StructureLocation> entry : locations.entrySet()) {
@@ -215,6 +220,10 @@ public class ClientRenderEvents {
 
             if (!ModConfig.isStructureAllowed(id.toString())) continue;
             if (loc == null) continue;
+
+            // Filter by current dimension
+            StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+            if (info != null && !info.isValidForDimension(currentDimension)) continue;
 
             double distance = getDistanceFrom(loc, player.getPosition());
 

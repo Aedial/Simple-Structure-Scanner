@@ -9,11 +9,14 @@ import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
+import net.minecraft.util.text.translation.I18n;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.abyssalcraft.AbyssalCraftStructureProvider;
+import com.simplestructurescanner.structure.aether.AetherStructureProvider;
 import com.simplestructurescanner.structure.vanilla.VanillaStructureProvider;
 
 
@@ -27,9 +30,15 @@ public class StructureProviderRegistry {
     private static boolean initialized = false;
 
     private static List<Class<? extends StructureProvider>> providerClasses = Arrays.asList(
-        VanillaStructureProvider.class
-        // Add other provider classes here
+        VanillaStructureProvider.class,
+        AbyssalCraftStructureProvider.class,
+        AetherStructureProvider.class
+        // <b>IMPORTANT:</b> Add other provider classes here
     );
+
+    // TODO: Add JSON-based external providers, that can be loaded without code changes
+    //       This would allow for modpacks to add structure data without needing to PR code changes
+    //       I don't think it would allow for custom search logic (would need ZenScript), but could cover basic info
 
     /**
      * Discover and register all available structure providers.
@@ -69,7 +78,7 @@ public class StructureProviderRegistry {
         }
 
         SimpleStructureScanner.LOGGER.info("Registered structure provider: {} ({} structures)",
-            provider.getModName(), provider.getStructureIds().size());
+            I18n.translateToLocal(provider.getModName()), provider.getStructureIds().size());
     }
 
     /**
@@ -149,6 +158,7 @@ public class StructureProviderRegistry {
 
     /**
      * Find the nearest structure of a given type, with optional location filter.
+     * Delegates filtering to the provider for efficient handling.
      */
     @Nullable
     public static StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
@@ -156,27 +166,7 @@ public class StructureProviderRegistry {
         StructureProvider provider = getProviderForStructure(structureId);
         if (provider == null) return null;
 
-        // If no filter, use the simple path
-        if (locationFilter == null) return provider.findNearest(world, structureId, pos, skipCount);
-
-        // With filter, we need to search with increasing skip counts until we find enough valid locations
-        int additionalSkips = 0;
-        int validFound = 0;
-        int maxAttempts = skipCount + 50;
-
-        for (int attempt = 0; attempt < maxAttempts; attempt++) {
-            StructureLocation location = provider.findNearest(world, structureId, pos, attempt);
-            if (location == null) break;
-
-            BlockPos locationPos = location.getPosition();
-            if (locationFilter.test(locationPos)) {
-                if (validFound == skipCount) return location;
-
-                validFound++;
-            }
-        }
-
-        return null;
+        return provider.findNearest(world, structureId, pos, skipCount, locationFilter);
     }
 
     /**
