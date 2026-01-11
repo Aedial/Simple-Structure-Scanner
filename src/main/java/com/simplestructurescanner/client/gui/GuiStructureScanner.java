@@ -1,6 +1,7 @@
 package com.simplestructurescanner.client.gui;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -29,11 +30,17 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 
+import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.client.ClientSettings;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.network.NetworkHandler;
+import com.simplestructurescanner.network.PacketRequestSafeTeleport;
+import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.StructureInfo;
+import com.simplestructurescanner.util.WorldUtils;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
+import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.searching.StructureSearchManager;
 
@@ -62,13 +69,21 @@ public class GuiStructureScanner extends GuiScreen {
     private boolean entitiesButtonVisible = false;
     private int refreshButtonX, refreshButtonY, refreshButtonW, refreshButtonH;
     private boolean refreshButtonVisible = false;
-    private int skipButtonX, skipButtonY, skipButtonW, skipButtonH;
-    private boolean skipButtonVisible = false;
+    private int prevButtonX, prevButtonY, prevButtonW, prevButtonH;
+    private boolean prevButtonVisible = false;
+    private int nextButtonX, nextButtonY, nextButtonW, nextButtonH;
+    private boolean nextButtonVisible = false;
+    private int blacklistButtonX, blacklistButtonY, blacklistButtonW, blacklistButtonH;
+    private boolean blacklistButtonVisible = false;
+    private int teleportButtonX, teleportButtonY, teleportButtonW, teleportButtonH;
+    private boolean teleportButtonVisible = false;
 
     // Modal windows
     private GuiBlocksWindow blocksWindow = null;
     private GuiLootWindow lootWindow = null;
     private GuiEntitiesWindow entitiesWindow = null;
+    private GuiPreviewWindow previewWindow = null;
+    private GuiConfirmDialog confirmDialog = null;
 
     // Panel bounds
     private int panelMaxY = Integer.MAX_VALUE;
@@ -77,10 +92,21 @@ public class GuiStructureScanner extends GuiScreen {
     private List<String> tooltipBiomes = null;
     private int tooltipBiomesLabelX, tooltipBiomesLabelY, tooltipBiomesLabelW;
 
+    // Dimension tooltip data (set during drawRightPanel, rendered in drawDimensionTooltip)
+    private List<String> tooltipDimensions = null;
+    private int tooltipDimensionsLabelX, tooltipDimensionsLabelY, tooltipDimensionsLabelW;
+
     // Structure preview (3D block rendering)
     private int previewX, previewY, previewSize;
     private StructurePreviewRenderer previewRenderer = null;
     private ResourceLocation lastRenderedStructure = null;
+
+    static final private List<String> rarities = Arrays.asList(
+        "common",
+        "uncommon",
+        "rare",
+        "unique"
+    );
 
     private String getI18nButtonString() {
         return ClientSettings.i18nNames ? I18n.format("gui.structurescanner.i18nIDs.on") : I18n.format("gui.structurescanner.i18nIDs.off");
@@ -107,6 +133,7 @@ public class GuiStructureScanner extends GuiScreen {
         if (blocksWindow != null) blocksWindow.restoreIfHiddenForNavigation();
         if (lootWindow != null) lootWindow.restoreIfHiddenForNavigation();
         if (entitiesWindow != null) entitiesWindow.restoreIfHiddenForNavigation();
+        if (previewWindow != null) previewWindow.restoreIfHiddenForNavigation();
     }
 
     public void selectStructure(ResourceLocation id) {
@@ -124,6 +151,7 @@ public class GuiStructureScanner extends GuiScreen {
         if (button.id == 1) {
             ClientSettings.setI18nNames(!ClientSettings.i18nNames);
             button.displayString = getI18nButtonString();
+            listWidget.applyFilter();
         }
     }
 
@@ -137,7 +165,11 @@ public class GuiStructureScanner extends GuiScreen {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
+        // Handle confirmation dialog first (highest priority)
+        if (confirmDialog != null && confirmDialog.isVisible() && confirmDialog.handleKey(keyCode)) return;
+
         // Handle modal windows first
+        if (previewWindow != null && previewWindow.isVisible() && previewWindow.handleKey(keyCode)) return;
         if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.handleKey(keyCode)) return;
         if (lootWindow != null && lootWindow.isVisible() && lootWindow.handleKey(keyCode)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.handleKey(keyCode)) return;
@@ -150,7 +182,11 @@ public class GuiStructureScanner extends GuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
+        // Handle confirmation dialog first (highest priority)
+        if (confirmDialog != null && confirmDialog.isVisible() && confirmDialog.handleClick(mouseX, mouseY, mouseButton)) return;
+
         // Handle modal windows first
+        if (previewWindow != null && previewWindow.isVisible() && previewWindow.handleClick(mouseX, mouseY, mouseButton)) return;
         if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.handleClick(mouseX, mouseY, mouseButton)) return;
         if (lootWindow != null && lootWindow.isVisible() && lootWindow.handleClick(mouseX, mouseY, mouseButton)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.handleClick(mouseX, mouseY, mouseButton)) return;
@@ -186,8 +222,30 @@ public class GuiStructureScanner extends GuiScreen {
 
                 return;
             }
-            if (skipButtonVisible && isInBounds(mouseX, mouseY, skipButtonX, skipButtonY, skipButtonW, skipButtonH)) {
+            if (prevButtonVisible && isInBounds(mouseX, mouseY, prevButtonX, prevButtonY, prevButtonW, prevButtonH)) {
+                StructureSearchManager.previousResult(selected);
+
+                return;
+            }
+            if (nextButtonVisible && isInBounds(mouseX, mouseY, nextButtonX, nextButtonY, nextButtonW, nextButtonH)) {
                 StructureSearchManager.skipCurrent(selected);
+
+                return;
+            }
+            if (blacklistButtonVisible && isInBounds(mouseX, mouseY, blacklistButtonX, blacklistButtonY, blacklistButtonW, blacklistButtonH)) {
+                showBlacklistConfirmation();
+
+                return;
+            }
+            if (teleportButtonVisible && isInBounds(mouseX, mouseY, teleportButtonX, teleportButtonY, teleportButtonW, teleportButtonH)) {
+                teleportToLocation();
+
+                return;
+            }
+
+            // Check preview click
+            if (isInBounds(mouseX, mouseY, previewX, previewY, previewSize, previewSize)) {
+                openPreviewWindow();
 
                 return;
             }
@@ -224,6 +282,14 @@ public class GuiStructureScanner extends GuiScreen {
         entitiesWindow.show();
     }
 
+    private void openPreviewWindow() {
+        if (selected == null || selectedInfo == null) return;
+        if (previewRenderer == null || previewRenderer.getWorld().renderedBlocks.isEmpty()) return;
+
+        previewWindow = new GuiPreviewWindow(this, selected, selectedInfo, previewRenderer);
+        previewWindow.show();
+    }
+
     @Override
     protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
         super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
@@ -244,12 +310,19 @@ public class GuiStructureScanner extends GuiScreen {
         int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
         int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
 
+        if (previewWindow != null && previewWindow.isVisible() && previewWindow.isMouseOver(mouseX, mouseY)) return;
         if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) return;
-        if (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.isMouseOver(mouseX, mouseY) && entitiesWindow.handleMouseInput(mouseX, mouseY)) return;
 
         int wheel = Mouse.getDWheel();
         if (wheel != 0) {
+            // Loot window handles its own scrolling
+            if (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) {
+                lootWindow.handleScroll(wheel);
+
+                return;
+            }
+
             listWidget.handleScroll(wheel);
         }
     }
@@ -259,7 +332,8 @@ public class GuiStructureScanner extends GuiScreen {
         this.drawDefaultBackground();
 
         // Check if any modal is blocking
-        boolean modalBlocking = (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) ||
+        boolean modalBlocking = (previewWindow != null && previewWindow.isVisible() && previewWindow.isMouseOver(mouseX, mouseY)) ||
+                                (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) ||
                                 (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) ||
                                 (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.isMouseOver(mouseX, mouseY));
 
@@ -285,9 +359,21 @@ public class GuiStructureScanner extends GuiScreen {
             entitiesWindow.draw(mouseX, mouseY, partialTicks);
             entitiesWindow.drawTooltips(mouseX, mouseY);
         }
+        if (previewWindow != null && previewWindow.isVisible()) {
+            previewWindow.draw(mouseX, mouseY, partialTicks);
+            previewWindow.drawTooltips(mouseX, mouseY);
+        }
 
-        // Draw biome tooltip on top of everything except modals
-        if (!modalBlocking) drawBiomeTooltip(mouseX, mouseY);
+        // Draw confirmation dialog on very top
+        if (confirmDialog != null && confirmDialog.isVisible()) {
+            confirmDialog.draw(mouseX, mouseY, partialTicks);
+        }
+
+        // Draw tooltips on top of everything except modals
+        if (!modalBlocking) {
+            drawBiomeTooltip(mouseX, mouseY);
+            drawDimensionTooltip(mouseX, mouseY);
+        }
     }
 
     private void drawRightPanel(int mouseX, int mouseY, float partialTicks) {
@@ -303,10 +389,14 @@ public class GuiStructureScanner extends GuiScreen {
         lootButtonVisible = false;
         entitiesButtonVisible = false;
         refreshButtonVisible = false;
-        skipButtonVisible = false;
+        prevButtonVisible = false;
+        nextButtonVisible = false;
+        blacklistButtonVisible = false;
+        teleportButtonVisible = false;
 
         // Clear tooltip data
         tooltipBiomes = null;
+        tooltipDimensions = null;
 
         Gui.drawRect(panelX, panelY, panelX + panelW, panelY + panelH, 0x80000000);
 
@@ -357,26 +447,26 @@ public class GuiStructureScanner extends GuiScreen {
         boolean blocksHovered = isInBounds(mouseX, mouseY, blocksButtonX, blocksButtonY, blocksButtonW, blocksButtonH);
         drawButton(blocksButtonX, blocksButtonY, blocksButtonW, blocksButtonH, blocksText, blocksHovered);
 
-        int nextButtonX = blocksButtonX + blocksButtonW + buttonSpacing;
+        int buttonX = blocksButtonX + blocksButtonW + buttonSpacing;
 
         // Loot button
         String lootText = I18n.format("gui.structurescanner.lootButton");
         lootButtonW = fontRenderer.getStringWidth(lootText) + 8;
         lootButtonH = 12;
-        lootButtonX = nextButtonX;
+        lootButtonX = buttonX;
         lootButtonY = buttonY;
         lootButtonVisible = true;
 
         boolean lootHovered = isInBounds(mouseX, mouseY, lootButtonX, lootButtonY, lootButtonW, lootButtonH);
         drawButton(lootButtonX, lootButtonY, lootButtonW, lootButtonH, lootText, lootHovered);
 
-        nextButtonX = lootButtonX + lootButtonW + buttonSpacing;
+        buttonX = lootButtonX + lootButtonW + buttonSpacing;
 
         // Entities button
         String entitiesText = I18n.format("gui.structurescanner.entitiesButton");
         entitiesButtonW = fontRenderer.getStringWidth(entitiesText) + 8;
         entitiesButtonH = 12;
-        entitiesButtonX = nextButtonX;
+        entitiesButtonX = buttonX;
         entitiesButtonY = buttonY;
         entitiesButtonVisible = true;
 
@@ -406,11 +496,36 @@ public class GuiStructureScanner extends GuiScreen {
 
         // Dimension info
         if (selectedInfo != null) {
-            Set<Integer> dimensions = selectedInfo.getValidDimensions();
-            if (dimensions != null && !dimensions.isEmpty()) {
-                String dimName = getDimensionNames(dimensions);
-                String dimStr = I18n.format("gui.structurescanner.dimension", dimName);
-                textY = drawElidedString(fontRenderer, dimStr, textX, textY, 14, textW, 0xFFCC99);
+            Set<DimensionInfo> dimensions = selectedInfo.getValidDimensions();
+            int dimensionsCount = dimensions != null ? dimensions.size() : 0;
+            boolean hasDimensions = dimensionsCount > 0;
+
+            // Build dimension display
+            String dimensionsLabel;
+            int dimensionsLabelY = textY;
+            if (!hasDimensions) {
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", I18n.format("gui.structurescanner.dimension.any"));
+            } else if (dimensionsCount == 1) {
+                String dimName = dimensions.iterator().next().getDisplayName();
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", dimName);
+            } else {
+                // Multiple dimensions - show count with hover for full list
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", dimensionsCount);
+            }
+            textY = drawElidedString(fontRenderer, dimensionsLabel, textX, textY, 14, textW, 0xFFCC99);
+
+            // Store dimension tooltip data for later rendering
+            if (dimensionsCount > 1) {
+                // Sort dimensions alphabetically by display name
+                List<String> sortedDimensions = new ArrayList<>();
+                for (DimensionInfo dim : dimensions) sortedDimensions.add(dim.getDisplayName());
+                sortedDimensions.sort((a, b) -> a.compareToIgnoreCase(b));
+
+                // Deduplicate dimension names
+                tooltipDimensions = new ArrayList<>(new LinkedHashSet<>(sortedDimensions));
+                tooltipDimensionsLabelX = textX;
+                tooltipDimensionsLabelY = dimensionsLabelY;
+                tooltipDimensionsLabelW = fontRenderer.getStringWidth(dimensionsLabel);
             }
 
             // Biome info
@@ -449,16 +564,18 @@ public class GuiStructureScanner extends GuiScreen {
             // Rarity
             String rarity = selectedInfo.getRarity();
             if (rarity != null) {
-                String rarityName = I18n.format(rarity);
-                String rarityStr = I18n.format("gui.structurescanner.rarity", rarityName);
+                if (rarities.contains(rarity) || rarity.contains("gui.structurescanner")) {
+                    String rarityName = I18n.format(rarity);
+                    rarity = I18n.format("gui.structurescanner.rarity", rarityName);
+                }
                 int rarityColor = getRarityColor(rarity);
-                textY = drawElidedString(fontRenderer, rarityStr, textX, textY, 14, textW, rarityColor);
+                textY = drawElidedString(fontRenderer, rarity, textX, textY, 14, textW, rarityColor);
             }
         }
 
-        // Draw refresh and skip buttons if structure is being tracked
+        // Draw refresh and navigation buttons if structure is being tracked
         if (StructureSearchManager.isTracked(selected)) {
-            textY += 6;
+            textY += 10;
 
             String refreshText = I18n.format("gui.structurescanner.refreshButton");
             refreshButtonW = fontRenderer.getStringWidth(refreshText) + 8;
@@ -470,23 +587,82 @@ public class GuiStructureScanner extends GuiScreen {
             boolean refreshHovered = isInBounds(mouseX, mouseY, refreshButtonX, refreshButtonY, refreshButtonW, refreshButtonH);
             drawButton(refreshButtonX, refreshButtonY, refreshButtonW, refreshButtonH, refreshText, refreshHovered);
 
-            String skipText = I18n.format("gui.structurescanner.skipButton");
-            skipButtonW = fontRenderer.getStringWidth(skipText) + 8;
-            skipButtonH = 12;
-            skipButtonX = refreshButtonX + refreshButtonW + buttonSpacing;
-            skipButtonY = textY;
-            skipButtonVisible = true;
+            int nextButtonX_local = refreshButtonX + refreshButtonW + buttonSpacing;
 
-            boolean skipHovered = isInBounds(mouseX, mouseY, skipButtonX, skipButtonY, skipButtonW, skipButtonH);
-            drawButton(skipButtonX, skipButtonY, skipButtonW, skipButtonH, skipText, skipHovered);
-
-            textY += 14;
-
-            // Show current skip offset
+            // Draw navigation: < number >
             int skipOffset = StructureSearchManager.getSkipOffset(selected);
-            if (skipOffset > 0) {
-                String resultStr = I18n.format("gui.structurescanner.locate.result", skipOffset + 1, "?");
-                textY = drawElidedString(fontRenderer, resultStr, textX, textY, 14, textW, 0xAAAAFF);
+            String resultNumber = String.valueOf(skipOffset + 1);
+            int numberWidth = fontRenderer.getStringWidth(resultNumber);
+
+            // Previous button "<"
+            String prevText = I18n.format("gui.structurescanner.prevButton");
+            prevButtonW = fontRenderer.getStringWidth(prevText) + 8;
+            prevButtonH = 12;
+            prevButtonX = nextButtonX_local;
+            prevButtonY = textY;
+            prevButtonVisible = true;
+
+            boolean prevHovered = isInBounds(mouseX, mouseY, prevButtonX, prevButtonY, prevButtonW, prevButtonH);
+            boolean prevEnabled = skipOffset > 0;
+            drawNavButton(prevButtonX, prevButtonY, prevButtonW, prevButtonH, prevText, prevHovered, prevEnabled);
+
+            // Result number
+            int numberX = prevButtonX + prevButtonW + 4;
+            fontRenderer.drawString(resultNumber, numberX, textY + 2, 0xFFFFFF);
+
+            // Next button ">"
+            String nextText = I18n.format("gui.structurescanner.nextButton");
+            nextButtonW = fontRenderer.getStringWidth(nextText) + 8;
+            nextButtonH = 12;
+            nextButtonX = numberX + numberWidth + 4;
+            nextButtonY = textY;
+            nextButtonVisible = true;
+
+            boolean nextHovered = isInBounds(mouseX, mouseY, nextButtonX, nextButtonY, nextButtonW, nextButtonH);
+            drawButton(nextButtonX, nextButtonY, nextButtonW, nextButtonH, nextText, nextHovered);
+
+            // Blacklist button "X" (red) - only show if location is known
+            StructureLocation location = StructureSearchManager.getLastKnownLocation(selected);
+            int currentButtonX = nextButtonX + nextButtonW + buttonSpacing;
+
+            if (location != null) {
+                String blacklistText = "x";
+                blacklistButtonW = fontRenderer.getStringWidth(blacklistText) + 8;
+                blacklistButtonH = 12;
+                blacklistButtonX = currentButtonX;
+                blacklistButtonY = textY;
+                blacklistButtonVisible = true;
+
+                boolean blacklistHovered = isInBounds(mouseX, mouseY, blacklistButtonX, blacklistButtonY, blacklistButtonW, blacklistButtonH);
+                drawDangerButton(blacklistButtonX, blacklistButtonY, blacklistButtonW, blacklistButtonH, blacklistText, blacklistHovered);
+
+                currentButtonX = blacklistButtonX + blacklistButtonW + buttonSpacing;
+
+                // Teleport button (blue) - only if space allows and location is known
+                String teleportText = I18n.format("gui.structurescanner.teleportButton");
+                int teleportWidth = fontRenderer.getStringWidth(teleportText) + 8;
+                int panelEndX = panelX + panelW - 6;
+
+                if (currentButtonX + teleportWidth <= panelEndX) {
+                    teleportButtonW = teleportWidth;
+                    teleportButtonH = 12;
+                    teleportButtonX = currentButtonX;
+                    teleportButtonY = textY;
+                    teleportButtonVisible = true;
+
+                    boolean teleportHovered = isInBounds(mouseX, mouseY, teleportButtonX, teleportButtonY, teleportButtonW, teleportButtonH);
+                    boolean canTeleport = canPlayerTeleport();
+                    drawTeleportButton(teleportButtonX, teleportButtonY, teleportButtonW, teleportButtonH, teleportText, teleportHovered, canTeleport);
+                }
+            }
+
+            textY += 16;
+
+            // Show coordinates if location is known
+            if (location != null) {
+                BlockPos pos = location.getPosition();
+                String coordsStr = formatCoordinates(pos, location.isYAgnostic(), textW);
+                textY = drawElidedString(fontRenderer, coordsStr, textX, textY, 14, textW, 0xAAFFAA);
             }
         }
     }
@@ -495,19 +671,48 @@ public class GuiStructureScanner extends GuiScreen {
      * Draws a 3D preview of the structure using actual block rendering.
      * Renders the structure as if viewed in a void world with perspective camera.
      */
-    private void drawStructurePreview(int previewX, int previewY, int panelW, int panelH, int contentEndY) {
-        // Calculate preview size
+    private void drawStructurePreview(int x, int y, int panelW, int panelH, int contentEndY) {
+        // Calculate preview size and store in instance fields for click detection
         previewSize = Math.min(width/4, height / 2);
+        previewX = x;
+        previewY = y;
+
+        // Skip rendering if any item-related modal is open (to avoid GL state conflicts)
+        boolean modalWithItemsVisible = (previewWindow != null && previewWindow.isVisible()) ||
+                                        (blocksWindow != null && blocksWindow.isVisible()) ||
+                                        (lootWindow != null && lootWindow.isVisible()) ||
+                                        (entitiesWindow != null && entitiesWindow.isVisible());
+        if (modalWithItemsVisible) {
+            // Just draw the background placeholder
+            Gui.drawRect(previewX - 1, previewY - 1, previewX + previewSize + 1, previewY + previewSize + 1, 0xFF333333);
+            Gui.drawRect(previewX, previewY, previewX + previewSize, previewY + previewSize, 0xFF1A1A1A);
+
+            return;
+        }
 
         // Draw preview background
         Gui.drawRect(previewX - 1, previewY - 1, previewX + previewSize + 1, previewY + previewSize + 1, 0xFF333333);
         Gui.drawRect(previewX, previewY, previewX + previewSize, previewY + previewSize, 0xFF1A1A1A);
 
-        // Keep empty preview if no layer data
-        if (selectedInfo == null || !selectedInfo.hasLayerData()) return;
+        // Keep empty preview if no layer data - clear stale renderer
+        if (selectedInfo == null || !selectedInfo.hasLayerData()) {
+            if (lastRenderedStructure == null || !lastRenderedStructure.equals(selected)) {
+                previewRenderer = null;
+                lastRenderedStructure = selected;
+            }
+
+            return;
+        }
 
         List<StructureLayer> layers = selectedInfo.getLayers();
-        if (layers == null || layers.isEmpty()) return;
+        if (layers == null || layers.isEmpty()) {
+            if (lastRenderedStructure == null || !lastRenderedStructure.equals(selected)) {
+                previewRenderer = null;
+                lastRenderedStructure = selected;
+            }
+
+            return;
+        }
 
         // Check if we need to rebuild the renderer for this structure
         boolean needsRebuild = (previewRenderer == null) ||
@@ -547,29 +752,70 @@ public class GuiStructureScanner extends GuiScreen {
                     IBlockState state = layer.getBlockState(x, z);
                     if (state == null || state.getBlock() == Blocks.AIR || state.getBlock() == Blocks.STRUCTURE_VOID) continue;
 
-                    previewRenderer.getWorld().addBlock(new BlockPos(x, y, z), state);
+                    previewRenderer.getWorld().addBlock(new BlockPos(x + layer.xOffset, y, z + layer.zOffset), state);
                 }
             }
         }
     }
 
-    private String getDimensionNames(Set<Integer> dimensions) {
-        return dimensions.stream().map(dim -> {
-            switch (dim) {
-                case -1: return I18n.format("gui.structurescanner.dimension.nether");
-                case 0: return I18n.format("gui.structurescanner.dimension.overworld");
-                case 1: return I18n.format("gui.structurescanner.dimension.end");
-                default: return String.valueOf(dim);
-            }
-        }).collect(Collectors.joining(", "));
-    }
-
     private int getRarityColor(String rarity) {
-        if (rarity.endsWith(".common")) return 0xAAAAAA;
-        if (rarity.endsWith(".uncommon")) return 0x55FF55;
-        if (rarity.endsWith(".rare")) return 0x55AAFF;
+        if (rarity.toLowerCase().contains("common")) return 0xAAAAAA;
+        if (rarity.toLowerCase().contains("uncommon")) return 0x55FF55;
+        if (rarity.toLowerCase().contains("rare")) return 0x55AAFF;
+        if (rarity.toLowerCase().contains("unique")) return 0xFF55FF;
 
         return 0xFFFFFF;
+    }
+
+    /**
+     * Formats coordinates for display, shortening if needed to fit width.
+     * For y-agnostic locations, only shows X and Z.
+     */
+    private String formatCoordinates(BlockPos pos, boolean yAgnostic, int maxWidth) {
+        int x = pos.getX();
+        int y = pos.getY();
+        int z = pos.getZ();
+
+        String xStr = String.valueOf(x);
+        String yStr = String.valueOf(y);
+        String zStr = String.valueOf(z);
+
+        // Try full format first
+        String fullFormat = yAgnostic
+            ? I18n.format("gui.structurescanner.locate.xz", x, z)
+            : I18n.format("gui.structurescanner.locate.xyz", x, y, z);
+
+        if (fontRenderer.getStringWidth(fullFormat) <= maxWidth) return fullFormat;
+
+        // Try compact format with decimal k (e.g., "1.2k")
+        String xCompact = formatCompactCoord(x);
+        String zCompact = formatCompactCoord(z);
+        String compactFormat = yAgnostic
+            ? I18n.format("gui.structurescanner.locate.xz", xCompact, zCompact)
+            : I18n.format("gui.structurescanner.locate.xyz", xCompact, y, zCompact);
+
+        if (fontRenderer.getStringWidth(compactFormat) <= maxWidth) return compactFormat;
+
+        // Try minimal format without labels
+        String sep = I18n.format("gui.structurescanner.separator");
+        String minimalFormat = yAgnostic
+            ? Arrays.asList(xCompact, zCompact).stream().collect(Collectors.joining(sep))
+            : Arrays.asList(xCompact, yStr, zCompact).stream().collect(Collectors.joining(sep));
+
+        return minimalFormat;
+    }
+
+    /**
+     * Formats a coordinate value in compact form (e.g., 1234 -> "1.2k", 12345 -> "12k").
+     */
+    private String formatCompactCoord(int value) {
+        int absValue = Math.abs(value);
+        if (absValue < 1000) return String.valueOf(value);
+
+        String k = I18n.format("gui.structurescanner.k");
+        if (absValue < 10000) return String.format("%.1f%s", value / 1000.0, k);
+
+        return String.format("%d%s", value / 1000, k);
     }
 
     private void drawButton(int x, int y, int w, int h, String text, boolean hovered) {
@@ -578,6 +824,108 @@ public class GuiStructureScanner extends GuiScreen {
 
         Gui.drawRect(x, y, x + w, y + h, bgColor);
         fontRenderer.drawString(text, x + 4, y + 2, textColor);
+    }
+
+    private void drawNavButton(int x, int y, int w, int h, String text, boolean hovered, boolean enabled) {
+        int bgColor;
+        int textColor;
+
+        if (!enabled) {
+            bgColor = 0x20FFFFFF;
+            textColor = 0x666666;
+        } else if (hovered) {
+            bgColor = 0x60FFFFFF;
+            textColor = 0xFFFFAA;
+        } else {
+            bgColor = 0x40FFFFFF;
+            textColor = 0xCCCCCC;
+        }
+
+        Gui.drawRect(x, y, x + w, y + h, bgColor);
+        fontRenderer.drawString(text, x + 4, y + 2, textColor);
+    }
+
+    private void drawDangerButton(int x, int y, int w, int h, String text, boolean hovered) {
+        int bgColor = hovered ? 0xFFE81123 : 0xC0C42B1C;
+        int textColor = 0xFFFFFF;
+
+        Gui.drawRect(x, y, x + w, y + h, bgColor);
+        fontRenderer.drawString(text, x + 4, y + 1, textColor);
+    }
+
+    private void drawTeleportButton(int x, int y, int w, int h, String text, boolean hovered, boolean enabled) {
+        int bgColor;
+        int textColor;
+
+        if (!enabled) {
+            bgColor = 0x40223355;
+            textColor = 0x667799;
+        } else if (hovered) {
+            bgColor = 0x805599FF;
+            textColor = 0xFFFFFF;
+        } else {
+            bgColor = 0x603366AA;
+            textColor = 0xAADDFF;
+        }
+
+        Gui.drawRect(x, y, x + w, y + h, bgColor);
+        fontRenderer.drawString(text, x + 4, y + 2, textColor);
+    }
+
+    private boolean canPlayerTeleport() {
+        Minecraft mc = Minecraft.getMinecraft();
+
+        // permissionLevel 2+ allows teleport
+        if (mc.player != null) return mc.player.canUseCommand(2, "tp");
+
+        return false;
+    }
+
+    private void showBlacklistConfirmation() {
+        if (selected == null) return;
+
+        StructureLocation location = StructureSearchManager.getLastKnownLocation(selected);
+        if (location == null) return;
+
+        String name = selectedInfo != null ? selectedInfo.getDisplayName() : selected.getPath();
+        String title = I18n.format("gui.structurescanner.blacklist.title", name);
+        String message = I18n.format("gui.structurescanner.blacklist.message");
+
+        // If title would make dialog too wide, use fallback name
+        int maxDialogWidth = (int)(width * 0.9);
+        int titleWidth = fontRenderer.getStringWidth(title) + 20; // 20 for padding
+        if (titleWidth > maxDialogWidth) {
+            String fallbackName = I18n.format("gui.structurescanner.blacklist.titleFallback");
+            title = I18n.format("gui.structurescanner.blacklist.title", fallbackName);
+            title = fontRenderer.trimStringToWidth(title, maxDialogWidth - 20);
+        }
+
+        ResourceLocation structureId = selected;
+        confirmDialog = new GuiConfirmDialog(title, message, () -> {
+            if (mc.world != null) {
+                long worldId = WorldUtils.getWorldIdentifier();
+                StructureSearchManager.blacklistCurrentLocation(structureId, worldId);
+            }
+        });
+        confirmDialog.show();
+    }
+
+    private void teleportToLocation() {
+        if (!canPlayerTeleport()) return;
+        if (selected == null) return;
+        if (mc.world == null) return;
+
+        StructureLocation location = StructureSearchManager.getLastKnownLocation(selected);
+        if (location == null) return;
+
+        BlockPos pos = location.getPosition();
+
+        // For y-agnostic locations, start search from Y=64 (typical overworld surface)
+        // For known Y locations, use the structure Y as starting point
+        int startY = location.isYAgnostic() ? 64 : pos.getY();
+
+        // Send packet to server - it will find safe Y and teleport
+        NetworkHandler.INSTANCE.sendToServer(new PacketRequestSafeTeleport(pos.getX(), pos.getZ(), startY));
     }
 
     private int drawElidedString(FontRenderer renderer, String text, int x, int y, int lineHeight, int maxWidth, int color) {
@@ -596,16 +944,28 @@ public class GuiStructureScanner extends GuiScreen {
         if (mouseX < tooltipBiomesLabelX || mouseX > tooltipBiomesLabelX + tooltipBiomesLabelW) return;
         if (mouseY < tooltipBiomesLabelY || mouseY > tooltipBiomesLabelY + 12) return;
 
+        drawMultiColumnTooltip(mouseX, mouseY, tooltipBiomes);
+    }
+
+    private void drawDimensionTooltip(int mouseX, int mouseY) {
+        if (tooltipDimensions == null || tooltipDimensions.isEmpty()) return;
+        if (mouseX < tooltipDimensionsLabelX || mouseX > tooltipDimensionsLabelX + tooltipDimensionsLabelW) return;
+        if (mouseY < tooltipDimensionsLabelY || mouseY > tooltipDimensionsLabelY + 12) return;
+
+        drawMultiColumnTooltip(mouseX, mouseY, tooltipDimensions);
+    }
+
+    private void drawMultiColumnTooltip(int mouseX, int mouseY, List<String> items) {
         // Calculate columns needed
-        int maxBiomesPerColumn = 15;
-        int numColumns = (tooltipBiomes.size() + maxBiomesPerColumn - 1) / maxBiomesPerColumn;
-        int biomesPerColumn = (tooltipBiomes.size() + numColumns - 1) / numColumns;
+        int maxItemsPerColumn = 15;
+        int numColumns = (items.size() + maxItemsPerColumn - 1) / maxItemsPerColumn;
+        int itemsPerColumn = (items.size() + numColumns - 1) / numColumns;
 
         // Calculate column widths
         int[] columnWidths = new int[numColumns];
-        for (int i = 0; i < tooltipBiomes.size(); i++) {
-            int col = i / biomesPerColumn;
-            int w = fontRenderer.getStringWidth(tooltipBiomes.get(i));
+        for (int i = 0; i < items.size(); i++) {
+            int col = i / itemsPerColumn;
+            int w = fontRenderer.getStringWidth(items.get(i));
             if (w > columnWidths[col]) columnWidths[col] = w;
         }
 
@@ -619,7 +979,7 @@ public class GuiStructureScanner extends GuiScreen {
 
         int padding = 6;
         int tooltipWidth = totalWidth + padding * 2;
-        int tooltipHeight = biomesPerColumn * 10 + padding * 2;
+        int tooltipHeight = itemsPerColumn * 10 + padding * 2;
 
         // Position tooltip
         int tooltipX = mouseX + 12;
@@ -640,15 +1000,15 @@ public class GuiStructureScanner extends GuiScreen {
         Gui.drawRect(tooltipX - 1, tooltipY, tooltipX, tooltipY + tooltipHeight, borderLight);
         Gui.drawRect(tooltipX + tooltipWidth, tooltipY, tooltipX + tooltipWidth + 1, tooltipY + tooltipHeight, borderDark);
 
-        // Draw biomes in columns
+        // Draw items in columns
         int textY = tooltipY + padding;
         int colX = tooltipX + padding;
         for (int col = 0; col < numColumns; col++) {
-            int startIdx = col * biomesPerColumn;
-            int endIdx = Math.min(startIdx + biomesPerColumn, tooltipBiomes.size());
+            int startIdx = col * itemsPerColumn;
+            int endIdx = Math.min(startIdx + itemsPerColumn, items.size());
 
             for (int i = startIdx; i < endIdx; i++) {
-                fontRenderer.drawStringWithShadow(tooltipBiomes.get(i), colX, textY + (i - startIdx) * 10, 0xDDDDDD);
+                fontRenderer.drawStringWithShadow(items.get(i), colX, textY + (i - startIdx) * 10, 0xDDDDDD);
             }
 
             colX += columnWidths[col] + columnSpacing;
@@ -715,10 +1075,35 @@ public class GuiStructureScanner extends GuiScreen {
                 }
             }
 
+            // Sort: tracked structures first, then alphabetically by display name
+            filteredStructures.sort((a, b) -> {
+                boolean aTracked = StructureSearchManager.isTracked(a);
+                boolean bTracked = StructureSearchManager.isTracked(b);
+
+                // Tracked structures come first
+                if (aTracked != bTracked) return aTracked ? -1 : 1;
+
+                // Then sort alphabetically by display name
+                String aName = getDisplayName(a);
+                String bName = getDisplayName(b);
+
+                return aName.compareToIgnoreCase(bName);
+            });
+
             // Clamp scroll
             float maxScroll = getMaxScroll();
             if (scrollOffset > maxScroll) scrollOffset = maxScroll;
             if (scrollOffset < 0) scrollOffset = 0;
+        }
+
+        private String getDisplayName(ResourceLocation id) {
+            if (ClientSettings.i18nNames) {
+                StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+
+                return info != null ? I18n.format(info.getDisplayName()) : id.getPath();
+            }
+
+            return id.toString();
         }
 
         private float getMaxScroll() {
@@ -750,6 +1135,7 @@ public class GuiStructureScanner extends GuiScreen {
                     // Double-click: toggle searching
                     if (StructureProviderRegistry.canBeSearched(clickedId) && ModConfig.isStructureAllowed(clickedId.toString())) {
                         StructureSearchManager.toggleTracking(clickedId);
+                        applyFilter(); // Re-sort to move tracked items to top
                     }
                     parent.lastClickTime = 0L;
                     parent.lastClickId = null;
@@ -818,8 +1204,6 @@ public class GuiStructureScanner extends GuiScreen {
             int visibleStart = (int) (scrollOffset / entryHeight);
             int visibleEnd = Math.min(filteredStructures.size(), visibleStart + (height / entryHeight) + 2);
 
-            // FIXME: list needs to be sorted by name with currently tracked at the top
-
             for (int i = visibleStart; i < visibleEnd; i++) {
                 int entryY = y + (i * entryHeight) - (int) scrollOffset;
                 if (entryY + entryHeight < y || entryY > y + height) continue;
@@ -846,13 +1230,7 @@ public class GuiStructureScanner extends GuiScreen {
                 }
 
                 // Draw text - use localized name if i18n is enabled
-                String displayName;
-                if (ClientSettings.i18nNames) {
-                    StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
-                    displayName = info != null ? I18n.format(info.getDisplayName()) : id.getPath();
-                } else {
-                    displayName = id.toString();
-                }
+                String displayName = getDisplayName(id);
 
                 int availableWidth = width - (textStartX - x) - 3;
                 String elidedName = font.trimStringToWidth(displayName, availableWidth);

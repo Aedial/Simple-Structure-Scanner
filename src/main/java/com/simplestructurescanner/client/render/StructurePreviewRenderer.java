@@ -39,15 +39,21 @@ public class StructurePreviewRenderer {
     private int backgroundColor = 0xFF1A1A1A;
 
     // Isometric camera settings
-    private enum LightingMode {
+    public enum LightingMode {
+        /** Light rotates with the structure - same faces always lit (default, works with block rendering) */
         STRUCTURE,
+        /**
+         * Light is fixed in world space - intended for different faces to be lit as structure rotates.
+         * Note: Limited effect with Minecraft block rendering as it uses baked vertex colors
+         * without normals. Would require custom rendering with normals for full effect.
+         */
         WORLD
     }
 
-    private static final float ISOMETRIC_PITCH = 30f;
-    private static final float ROTATION_SPEED = 20f;
-    private static final float ZOOM_FACTOR = 0.75f;
-    private static final LightingMode LIGHTING_MODE = LightingMode.STRUCTURE;
+    private static final float ISOMETRIC_PITCH = 30f;   // degrees from horizontal
+    private static final float ROTATION_SPEED = 20f;    // degrees per second
+    private static final float ZOOM_FACTOR = 0.75f;     // higher = smaller structure
+    private LightingMode lightingMode = LightingMode.STRUCTURE;
 
     public StructurePreviewRenderer() {
         this.world = new DummyWorld();
@@ -59,6 +65,14 @@ public class StructurePreviewRenderer {
 
     public void setBackgroundColor(int color) {
         this.backgroundColor = color;
+    }
+
+    public void setLightingMode(LightingMode mode) {
+        this.lightingMode = mode;
+    }
+
+    public LightingMode getLightingMode() {
+        return lightingMode;
     }
 
     /**
@@ -135,16 +149,24 @@ public class StructurePreviewRenderer {
         GlStateManager.loadIdentity();
 
         float aspect = guiWidth / guiHeight;
-        float orthoSize = maxDimension * 0.75f;
+        float orthoSize = maxDimension * ZOOM_FACTOR;
         GL11.glOrtho(-orthoSize * aspect, orthoSize * aspect, -orthoSize, orthoSize, -1000, 1000);
 
         // Set modelview matrix
         GlStateManager.matrixMode(GL11.GL_MODELVIEW);
         GlStateManager.loadIdentity();
 
+        // For WORLD lighting mode, set up light position BEFORE rotation
+        // so light stays fixed while structure rotates
+        if (lightingMode == LightingMode.WORLD) setupLighting();
+
         // Apply isometric view transformation
         GlStateManager.rotate(ISOMETRIC_PITCH, 1, 0, 0);
         GlStateManager.rotate(rotation, 0, 1, 0);
+
+        // For STRUCTURE lighting mode, set up light position AFTER rotation
+        // so light rotates with the structure (same faces always lit)
+        if (lightingMode == LightingMode.STRUCTURE) setupLighting();
 
         // Center the structure
         float centerX = (min.x + max.x) / 2f + 0.5f;
@@ -183,7 +205,41 @@ public class StructurePreviewRenderer {
         if (wasRescale) GlStateManager.enableRescaleNormal(); else GlStateManager.disableRescaleNormal();
         GlStateManager.color(colorBuf.get(0), colorBuf.get(1), colorBuf.get(2), colorBuf.get(3));
         GlStateManager.depthMask(true);
+        GlStateManager.disableColorMaterial();
+        GL11.glDisable(GL11.GL_LIGHT0);
         RenderHelper.disableStandardItemLighting();
+    }
+
+    /**
+     * Sets up OpenGL lighting for the structure preview.
+     * Light position is set in current matrix state, so call before or after
+     * rotation depending on desired lighting mode.
+     */
+    private void setupLighting() {
+        // Enable lighting
+        GlStateManager.enableLighting();
+        GL11.glEnable(GL11.GL_LIGHT0);
+
+        // Light from upper-front-right (typical isometric lighting)
+        FloatBuffer lightPos = BufferUtils.createFloatBuffer(4);
+        lightPos.put(new float[]{0.5f, 1.0f, 0.8f, 0.0f}); // w=0 for directional light
+        lightPos.flip();
+        GL11.glLight(GL11.GL_LIGHT0, GL11.GL_POSITION, lightPos);
+
+        // Bright diffuse and ambient
+        FloatBuffer diffuse = BufferUtils.createFloatBuffer(4);
+        diffuse.put(new float[]{0.9f, 0.9f, 0.9f, 1.0f});
+        diffuse.flip();
+        GL11.glLight(GL11.GL_LIGHT0, GL11.GL_DIFFUSE, diffuse);
+
+        FloatBuffer ambient = BufferUtils.createFloatBuffer(4);
+        ambient.put(new float[]{0.4f, 0.4f, 0.4f, 1.0f});
+        ambient.flip();
+        GL11.glLight(GL11.GL_LIGHT0, GL11.GL_AMBIENT, ambient);
+
+        // Set material to use vertex colors
+        GlStateManager.enableColorMaterial();
+        GL11.glColorMaterial(GL11.GL_FRONT_AND_BACK, GL11.GL_AMBIENT_AND_DIFFUSE);
     }
 
     /**
@@ -197,7 +253,16 @@ public class StructurePreviewRenderer {
         GlStateManager.depthMask(true);
         GlStateManager.enableCull();
         GlStateManager.enableRescaleNormal();
-        GlStateManager.disableLighting();
+
+        // For WORLD lighting mode, keep GL lighting enabled so light affects blocks
+        // For STRUCTURE mode, disable it (blocks use baked vertex colors)
+        if (lightingMode == LightingMode.WORLD) {
+            // Lighting was already set up before rotation
+            GlStateManager.enableLighting();
+        } else {
+            GlStateManager.disableLighting();
+        }
+
         GlStateManager.enableTexture2D();
         GlStateManager.enableAlpha();
         GlStateManager.color(1f, 1f, 1f, 1f);

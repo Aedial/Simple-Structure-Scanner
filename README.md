@@ -6,10 +6,15 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 - GUI accessible via keybinding (default P).
 - Filterable scrolling list of structures on the left; right panel shows details.
 - Live search on the main screen for the nearest selected structure. Double-click a structure in the list to toggle search.
+  - Use the Refresh button to re-query structure locations.
+  - Cycle through multiple found locations for a structure using the arrow buttons in the right panel.
+  - Use the "x" button to blacklist a found location (per structure, per world).
+  - Teleport to the found structure (op only) using the TP button.
+  - X/Y/Z coordinates are shown for the location, if found.
 
-- Support for custom loot tables integrated with JEI.
-  - Custom loot tables viewer cannot be used without server-side installation (if you play singleplayer, you can ignore this).
-  - The custom viewer can use mouse or keys to open JEI: U/Left-click for uses, R/Right-click for recipes.
+- Preview of structure schematic when available. Click on the preview area to open a larger preview window.
+
+- Support for custom loot tables integrated with JEI: U/Left-click for uses, R/Right-click for recipes.
 
 - Configs:
   - enableSearch: Globally disable search.
@@ -27,10 +32,10 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 If you wish the query structure locations, you will need to put the mod on the server as well. However, if you only want to view structure information, you can use it client-side, as long as the mod providing said structures is also installed client-side.
 
 ### How is the structures list filtered?
-The filter box matches both localized and unlocalized structure names. This means you can type the mod name, the name in your selected language, or the default English name.
+The filter box matches both localized and unlocalized structure names. This means you can type the mod name, the name in your selected language, or the default English name. The localization structure is up to the individual providers, but it should generally be `gui.structurescanner.structures.<mod_id>.<structure_id>`.
 
 ### The structure wasn't there.
-Due to how complex the process is, structures from a mod may prevent or overlap with other structures from another mod. In this case, you should try searching for another structure of the same type.
+Due to how complex the process is, structures from a mod may prevent or overlap with other structures from another mod. In this case, you should try searching for another structure of the same type. Use the arrows in the right panel to cycle through multiple results.
 
 ## Building
 Run:

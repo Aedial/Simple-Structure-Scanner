@@ -8,6 +8,7 @@ import java.util.Set;
 import javax.annotation.Nullable;
 
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.client.resources.I18n;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
@@ -31,7 +32,7 @@ public class StructureInfo {
 
     // Biome/dimension/rarity info
     private Set<Biome> validBiomes;
-    private Set<Integer> validDimensions;
+    private Set<DimensionInfo> validDimensions;
     private String rarity;
 
     // Layer data for structure viewer (Y-level indexed)
@@ -111,12 +112,29 @@ public class StructureInfo {
     }
 
     @Nullable
-    public Set<Integer> getValidDimensions() {
+    public Set<DimensionInfo> getValidDimensions() {
         return validDimensions;
     }
 
-    public void setValidDimensions(Set<Integer> validDimensions) {
+    public void setValidDimensions(Set<DimensionInfo> validDimensions) {
         this.validDimensions = validDimensions;
+    }
+
+    /**
+     * Check if this structure can generate in the given dimension.
+     * If no dimension restrictions are set, returns true (allowed in all dimensions).
+     *
+     * @param dimensionId The dimension ID to check
+     * @return true if the structure can generate in this dimension
+     */
+    public boolean isValidForDimension(int dimensionId) {
+        if (validDimensions == null || validDimensions.isEmpty()) return true;
+
+        for (DimensionInfo dim : validDimensions) {
+            if (dim.getDimensionId() == dimensionId) return true;
+        }
+
+        return false;
     }
 
     @Nullable
@@ -153,13 +171,21 @@ public class StructureInfo {
         public final int width;
         public final int depth;
         public final IBlockState[] blockStates;
+        public final int xOffset;
+        public final int zOffset;
 
-        public StructureLayer(int y, int width, int depth) {
+        public StructureLayer(int y, int width, int depth, int xOffset, int zOffset) {
             this.y = y;
             this.width = width;
 
             this.depth = depth;
+            this.xOffset = xOffset;
+            this.zOffset = zOffset;
             this.blockStates = new IBlockState[width * depth];
+        }
+
+        public StructureLayer(int y, int width, int depth) {
+            this(y, width, depth, 0, 0);
         }
 
         public void setBlockState(int x, int z, IBlockState state) {
@@ -189,7 +215,7 @@ public class StructureInfo {
         }
 
         public String formatCount() {
-            if (count >= 1000) return String.format("%.1fk", count / 1000.0);
+            if (count >= 1000) return String.format("%.1f%s", count / 1000.0, I18n.format("gui.structurescanner.k"));
 
             return String.valueOf(count);
         }
