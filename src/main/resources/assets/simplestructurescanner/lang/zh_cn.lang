@@ -16,14 +16,6 @@ gui.structurescanner.searchableNo=可搜索：否
 gui.structurescanner.biomes=生物群系：%s
 gui.structurescanner.biomes.any=任意
 gui.structurescanner.biomes.count=个生物群系
-gui.structurescanner.dimension=维度：%s
-gui.structurescanner.dimension.overworld=主世界
-gui.structurescanner.dimension.nether=下界
-gui.structurescanner.dimension.end=末地
-gui.structurescanner.rarity=稀有度：%s
-gui.structurescanner.rarity.common=常见
-gui.structurescanner.rarity.uncommon=少见
-gui.structurescanner.rarity.rare=稀有
 gui.structurescanner.unknown=未知
 gui.structurescanner.separator=、
 gui.structurescanner.k=k
@@ -36,8 +28,18 @@ gui.structurescanner.i18nIDs.off=ID显示：原始
 
 # Providers
 gui.structurescanner.provider.minecraft=Minecraft
+gui.structurescanner.provider.aether=天境（The Aether）
+gui.structurescanner.provider.abyssalcraft=深渊国度（AbyssalCraft）
 
-# Structures
+# Rarity
+gui.structurescanner.rarity=稀有度：%s
+gui.structurescanner.rarity.common=常见
+gui.structurescanner.rarity.uncommon=少见
+gui.structurescanner.rarity.rare=稀有
+gui.structurescanner.rarity.unique=独有
+gui.structurescanner.rarity.one_in_chunks=每%d个区块生成1个
+
+# Structures - Minecraft
 gui.structurescanner.structures.minecraft.village=村庄
 gui.structurescanner.structures.minecraft.mineshaft=废弃矿井
 gui.structurescanner.structures.minecraft.stronghold=要塞
@@ -52,6 +54,37 @@ gui.structurescanner.structures.minecraft.dungeon=地牢
 gui.structurescanner.structures.minecraft.nether_fortress=下界要塞
 gui.structurescanner.structures.minecraft.end_city=末地城
 gui.structurescanner.structures.minecraft.end_ship=末地船
+
+# Dimensions - Minecraft + misc
+gui.structurescanner.dimension=维度：%s
+gui.structurescanner.dimension.any=任意
+gui.structurescanner.dimension.unknown=未知（%s）
+gui.structurescanner.dimension.overworld=主世界
+gui.structurescanner.dimension.nether=下界
+gui.structurescanner.dimension.end=末地
+
+# Structures - AbyssalCraft
+gui.structurescanner.structures.abyssalcraft.aby_stronghold=深渊要塞
+gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft=恐惧之地矿井
+gui.structurescanner.structures.abyssalcraft.jzahar_temple=扎哈尔神殿
+gui.structurescanner.structures.abyssalcraft.omothol_city=奥穆索城市
+gui.structurescanner.structures.abyssalcraft.omothol_storage=奥穆索储藏室
+gui.structurescanner.structures.abyssalcraft.shoggoth_lair=修格斯巢穴
+gui.structurescanner.structures.abyssalcraft.graveyard=墓园
+
+# Dimensions - AbyssalCraft
+gui.structurescanner.dimension.abyssal_wasteland=深渊荒原
+gui.structurescanner.dimension.dreadlands=恐惧之地
+gui.structurescanner.dimension.omothol=奥穆索
+gui.structurescanner.dimension.dark_realm=黑暗领域
+
+# Structures - Aether
+gui.structurescanner.structures.aether.bronze_dungeon=青铜地牢
+gui.structurescanner.structures.aether.silver_dungeon=白银地牢
+gui.structurescanner.structures.aether.gold_dungeon=黄金地牢
+
+# Dimensions - Aether
+gui.structurescanner.dimension.aether=天境
 
 # Buttons
 gui.structurescanner.blocksButton=[方块]
@@ -84,8 +117,10 @@ gui.structurescanner.loot.count=%d个战利品表
 gui.structurescanner.loot.unknown=物品未知
 gui.structurescanner.loot.rateTooltip=掉落率：%s
 gui.structurescanner.loot.chest=箱子
+gui.structurescanner.loot.crate=板条箱
 gui.structurescanner.loot.dispenser=发射器
 gui.structurescanner.loot.minecart_chest=运输矿车
+gui.structurescanner.loot.aether.reward=藏宝箱
 
 # Entities Window
 gui.structurescanner.entities.title=%s中的实体
