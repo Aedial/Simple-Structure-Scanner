@@ -17,6 +17,7 @@ import net.minecraft.world.World;
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.abyssalcraft.AbyssalCraftStructureProvider;
 import com.simplestructurescanner.structure.aether.AetherStructureProvider;
+import com.simplestructurescanner.structure.iceandfire.IceAndFireStructureProvider;
 import com.simplestructurescanner.structure.vanilla.VanillaStructureProvider;
 
 
@@ -32,7 +33,8 @@ public class StructureProviderRegistry {
     private static List<Class<? extends StructureProvider>> providerClasses = Arrays.asList(
         VanillaStructureProvider.class,
         AbyssalCraftStructureProvider.class,
-        AetherStructureProvider.class
+        AetherStructureProvider.class,
+        IceAndFireStructureProvider.class
         // <b>IMPORTANT:</b> Add other provider classes here
     );
 

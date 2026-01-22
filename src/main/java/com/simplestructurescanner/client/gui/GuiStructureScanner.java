@@ -373,6 +373,7 @@ public class GuiStructureScanner extends GuiScreen {
         if (!modalBlocking) {
             drawBiomeTooltip(mouseX, mouseY);
             drawDimensionTooltip(mouseX, mouseY);
+            drawSmallPreviewTooltip(mouseX, mouseY);
         }
     }
 
@@ -673,7 +674,7 @@ public class GuiStructureScanner extends GuiScreen {
      */
     private void drawStructurePreview(int x, int y, int panelW, int panelH, int contentEndY) {
         // Calculate preview size and store in instance fields for click detection
-        previewSize = Math.min(width/4, height / 2);
+        previewSize = Math.min(width/4, height/4);
         previewX = x;
         previewY = y;
 
@@ -931,8 +932,8 @@ public class GuiStructureScanner extends GuiScreen {
     private int drawElidedString(FontRenderer renderer, String text, int x, int y, int lineHeight, int maxWidth, int color) {
         if (y + lineHeight > panelMaxY) return y;
 
-        String elided = renderer.trimStringToWidth(text, maxWidth - renderer.getStringWidth("…"));
-        if (!elided.equals(text)) elided += "…";
+        String elided = renderer.trimStringToWidth(text, maxWidth - renderer.getStringWidth(""));
+        if (!elided.equals(text)) elided += "...";
 
         renderer.drawString(elided, x, y, color);
 
@@ -953,6 +954,15 @@ public class GuiStructureScanner extends GuiScreen {
         if (mouseY < tooltipDimensionsLabelY || mouseY > tooltipDimensionsLabelY + 12) return;
 
         drawMultiColumnTooltip(mouseX, mouseY, tooltipDimensions);
+    }
+
+    private void drawSmallPreviewTooltip(int mouseX, int mouseY) {
+        if (selectedInfo == null || !selectedInfo.hasLayerData()) return;
+        if (mouseX < previewX || mouseX > previewX + previewSize) return;
+        if (mouseY < previewY || mouseY > previewY + previewSize) return;
+
+        List<String> lines = Arrays.asList(I18n.format("gui.structurescanner.previewTooltip"));
+        drawMultiColumnTooltip(mouseX, mouseY, lines);
     }
 
     private void drawMultiColumnTooltip(int mouseX, int mouseY, List<String> items) {
@@ -1234,7 +1244,7 @@ public class GuiStructureScanner extends GuiScreen {
 
                 int availableWidth = width - (textStartX - x) - 3;
                 String elidedName = font.trimStringToWidth(displayName, availableWidth);
-                if (!elidedName.equals(displayName)) elidedName += "…";
+                if (!elidedName.equals(displayName)) elidedName += "...";
 
                 boolean canSearch = StructureProviderRegistry.canBeSearched(id);
                 int textColor = isSelected ? 0xFFFFFF : (isHovered ? 0xFFFFAA : 0xCCCCCC);
