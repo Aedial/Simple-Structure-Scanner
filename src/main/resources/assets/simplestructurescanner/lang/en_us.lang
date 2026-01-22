@@ -86,6 +86,24 @@ gui.structurescanner.structures.aether.gold_dungeon=Gold Dungeon
 # Dimensions - Aether
 gui.structurescanner.dimension.aether=Aether
 
+# Providers - Ice and Fire
+gui.structurescanner.provider.iceandfire=Ice and Fire
+
+# Structures - Ice and Fire
+gui.structurescanner.structures.iceandfire.fire_dragon_roost=Fire Dragon Roost
+gui.structurescanner.structures.iceandfire.ice_dragon_roost=Ice Dragon Roost
+gui.structurescanner.structures.iceandfire.fire_dragon_cave=Fire Dragon Cave
+gui.structurescanner.structures.iceandfire.ice_dragon_cave=Ice Dragon Cave
+gui.structurescanner.structures.iceandfire.lightning_dragon_roost=Lightning Dragon Roost
+gui.structurescanner.structures.iceandfire.lightning_dragon_cave=Lightning Dragon Cave
+gui.structurescanner.structures.iceandfire.cyclops_cave=Cyclops Cave
+gui.structurescanner.structures.iceandfire.gorgon_temple=Gorgon Temple
+gui.structurescanner.structures.iceandfire.myrmex_hive_desert=Desert Myrmex Hive
+gui.structurescanner.structures.iceandfire.myrmex_hive_jungle=Jungle Myrmex Hive
+
+# Loot containers - Ice and Fire
+gui.structurescanner.loot.iceandfire.cocoon=Myrmex Cocoon
+
 # Buttons
 gui.structurescanner.blocksButton=[Blocks]
 gui.structurescanner.lootButton=[Loot]
