@@ -86,6 +86,24 @@ gui.structurescanner.structures.aether.gold_dungeon=黄金地牢
 # Dimensions - Aether
 gui.structurescanner.dimension.aether=天境
 
+# Providers - Ice and Fire
+gui.structurescanner.provider.iceandfire=冰火传说（Ice and Fire）
+
+# Structures - Ice and Fire
+gui.structurescanner.structures.iceandfire.fire_dragon_roost=火龙巢
+gui.structurescanner.structures.iceandfire.ice_dragon_roost=冰龙巢
+gui.structurescanner.structures.iceandfire.fire_dragon_cave=火龙穴
+gui.structurescanner.structures.iceandfire.ice_dragon_cave=冰龙穴
+gui.structurescanner.structures.iceandfire.lightning_dragon_roost=电龙巢
+gui.structurescanner.structures.iceandfire.lightning_dragon_cave=电龙穴
+gui.structurescanner.structures.iceandfire.cyclops_cave=独眼巨人海湾
+gui.structurescanner.structures.iceandfire.gorgon_temple=蛇发女妖神庙
+gui.structurescanner.structures.iceandfire.myrmex_hive_desert=沙漠恐蚁巢穴
+gui.structurescanner.structures.iceandfire.myrmex_hive_jungle=丛林恐蚁巢穴
+
+# Loot containers - Ice and Fire
+gui.structurescanner.loot.iceandfire.cocoon=蚁茧
+
 # Buttons
 gui.structurescanner.blocksButton=[方块]
 gui.structurescanner.lootButton=[战利品]
@@ -128,6 +146,7 @@ gui.structurescanner.entities.loading=正在加载实体……
 gui.structurescanner.entities.noEntities=未找到实体
 
 # Preview Window
+gui.structurescanner.previewTooltip=点击以放大预览
 gui.structurescanner.preview.title=预览：%s
 gui.structurescanner.preview.unavailable=无可用预览
 gui.structurescanner.entities.count=%d种实体
