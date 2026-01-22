@@ -12,6 +12,9 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Added
 - Add Ice and Fire structure provider
 
+### Changed
+- Tweak the size ratios to better fit different screen resolutions
+
 
 ## [0.3.0] - 2026-01-10
 ### Added

@@ -146,6 +146,7 @@ gui.structurescanner.entities.loading=Loading entities...
 gui.structurescanner.entities.noEntities=No entities found
 
 # Preview Window
+gui.structurescanner.previewTooltip=Click to enlarge preview
 gui.structurescanner.preview.title=Preview: %s
 gui.structurescanner.preview.unavailable=No preview available
 gui.structurescanner.entities.count=%d entities

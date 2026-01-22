@@ -245,7 +245,7 @@ public class GuiEntitiesWindow {
         // Draw header
         String title = I18n.format("gui.structurescanner.entities.title", structureInfo.getDisplayName());
         String elidedTitle = font.trimStringToWidth(title, windowW - 16);
-        if (!elidedTitle.equals(title)) elidedTitle += "…";
+        if (!elidedTitle.equals(title)) elidedTitle += "...";
         font.drawString(elidedTitle, windowX + 6, windowY + 6, 0xFFFFFF);
 
         // Draw footer
@@ -353,7 +353,7 @@ public class GuiEntitiesWindow {
             }
 
             String elidedText = font.trimStringToWidth(displayText, listW - 6);
-            if (!elidedText.equals(displayText)) elidedText += "…";
+            if (!elidedText.equals(displayText)) elidedText += "...";
 
             int textColor = isSelected ? 0xFFFFFF : (isHovered ? 0xFFFFAA : 0xCCCCCC);
             font.drawString(elidedText, listX + 3, entryY + 3, textColor);
@@ -388,13 +388,13 @@ public class GuiEntitiesWindow {
 
         String nameLabel = I18n.format("gui.structurescanner.entities.entityName", entityName);
         String elidedName = font.trimStringToWidth(nameLabel, viewerW - 6);
-        if (!elidedName.equals(nameLabel)) elidedName += "…";
+        if (!elidedName.equals(nameLabel)) elidedName += "...";
         font.drawString(elidedName, viewerX + 3, textY, 0xFFFFFF);
         textY += 12;
 
         String idLabel = I18n.format("gui.structurescanner.entities.entityId", entry.entityId.toString());
         String elidedId = font.trimStringToWidth(idLabel, viewerW - 6);
-        if (!elidedId.equals(idLabel)) elidedId += "…";
+        if (!elidedId.equals(idLabel)) elidedId += "...";
         font.drawString(elidedId, viewerX + 3, textY, 0xCCCCCC);
         textY += 12;
 
