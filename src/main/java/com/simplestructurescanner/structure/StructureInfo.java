@@ -32,7 +32,7 @@ public class StructureInfo {
 
     // Biome/dimension/rarity info
     private Set<Biome> validBiomes;
-    private Set<DimensionInfo> validDimensions;
+    private Set<Integer> validDimensions;
     private String rarity;
 
     // Layer data for structure viewer (Y-level indexed)
@@ -112,29 +112,12 @@ public class StructureInfo {
     }
 
     @Nullable
-    public Set<DimensionInfo> getValidDimensions() {
+    public Set<Integer> getValidDimensions() {
         return validDimensions;
     }
 
-    public void setValidDimensions(Set<DimensionInfo> validDimensions) {
+    public void setValidDimensions(Set<Integer> validDimensions) {
         this.validDimensions = validDimensions;
-    }
-
-    /**
-     * Check if this structure can generate in the given dimension.
-     * If no dimension restrictions are set, returns true (allowed in all dimensions).
-     *
-     * @param dimensionId The dimension ID to check
-     * @return true if the structure can generate in this dimension
-     */
-    public boolean isValidForDimension(int dimensionId) {
-        if (validDimensions == null || validDimensions.isEmpty()) return true;
-
-        for (DimensionInfo dim : validDimensions) {
-            if (dim.getDimensionId() == dimensionId) return true;
-        }
-
-        return false;
     }
 
     @Nullable

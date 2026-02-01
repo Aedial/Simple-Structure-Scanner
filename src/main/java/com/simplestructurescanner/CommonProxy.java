@@ -7,7 +7,6 @@ import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 
 import com.simplestructurescanner.config.ModConfig;
-import com.simplestructurescanner.network.NetworkHandler;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 
 
@@ -15,7 +14,6 @@ public class CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
         File configFile = new File(event.getModConfigurationDirectory(), SimpleStructureScanner.MODID + ".cfg");
         ModConfig.loadConfigs(configFile);
-        NetworkHandler.init();
     }
 
     public void init(FMLInitializationEvent event) {
