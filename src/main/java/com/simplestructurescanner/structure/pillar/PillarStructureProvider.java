@@ -131,11 +131,6 @@ public class PillarStructureProvider implements StructureProvider {
         // Convert ResourceLocation to structure name
         String structureName = structureId.getPath();
 
-        // TEMPORARY: Log verification phase status
-        if (PillarStructurePredictor.isVerificationDisabled()) {
-            SimpleStructureScanner.LOGGER.warn("SSS TEMPORARY MODE: Verification phase DISABLED - using prediction only (Y=0 placeholder)");
-        }
-
         // Get the current dimension ID for dimension-specific cache clearing
         int dimensionId = world.provider.getDimension();
 
@@ -150,13 +145,6 @@ public class PillarStructureProvider implements StructureProvider {
         int chunksSearched = 0;
         int foundCount = 0;
         long startTime = System.currentTimeMillis();
-        int lastProgressUpdate = 0;
-
-        // Reset profiling at start of scan
-        PillarStructurePredictor.resetProfiling();
-
-        SimpleStructureScanner.LOGGER.info("Starting Pillar structure search for '{}' within {} chunks ({} blocks)",
-            structureName, maxRadius, SEARCH_RADIUS);
 
         try {
             // Spiral search outward from player
@@ -201,18 +189,10 @@ public class PillarStructureProvider implements StructureProvider {
                         return null;
                     }
 
-                    // Progress logging and cache clearing every 500 chunks
-                    if (chunksSearched - lastProgressUpdate > 500) {
-                        SimpleStructureScanner.LOGGER.info("Search progress: {} chunks searched, {} found, {}ms elapsed",
-                            chunksSearched, foundCount, elapsed);
-                        lastProgressUpdate = chunksSearched;
-
-                        // Clear chunk cache periodically to prevent unbounded memory growth
-                        // Only clear the current dimension to avoid overhead of clearing all dimensions
+                    // Clear chunk cache periodically to prevent unbounded memory growth
+                    if (chunksSearched % 500 == 0) {
                         int cachedChunks = ValidationContextManager.getTotalCachedChunkCount();
                         if (cachedChunks > 500) {
-                            SimpleStructureScanner.LOGGER.debug("Clearing chunk cache for dimension {} ({} chunks cached)",
-                                dimensionId, cachedChunks);
                             ValidationContextManager.clearDimensionCache(dimensionId);
                         }
                     }
@@ -222,10 +202,6 @@ public class PillarStructureProvider implements StructureProvider {
                             world, chunkX, chunkZ, structureName, foundPositions);
 
                     if (predictedPos != null) {
-                        // Structure would spawn here!
-                        SimpleStructureScanner.LOGGER.info("FOUND '{}' at chunk [{}, {}] after searching {} chunks in {}ms - predictedPos={}, Y={}",
-                            structureName, chunkX, chunkZ, chunksSearched, System.currentTimeMillis() - startTime, predictedPos, predictedPos.getY());
-
                         if (foundCount >= skipCount) {
                             // This is the one we want
                             StructureLocation location = new StructureLocation(predictedPos, foundCount, foundCount + 1);
@@ -246,15 +222,11 @@ public class PillarStructureProvider implements StructureProvider {
         return null;
 
         } finally {
-            // ALWAYS clear chunk cache after scan completes
-            // Only clear the current dimension to avoid overhead of clearing all dimensions
-            // This prevents cross-scan cache accumulation and memory leaks
+            // Clear chunk cache after scan completes
             StructureValidationWorld validationWorld = ValidationContextManager.getValidationWorldByDimension(dimensionId);
             if (validationWorld != null && validationWorld.getChunkProvider() instanceof ValidationChunkProvider) {
                 int cachedChunks = ((ValidationChunkProvider) validationWorld.getChunkProvider()).getCachedChunkCount();
                 if (cachedChunks > 0) {
-                    SimpleStructureScanner.LOGGER.debug("Clearing chunk cache after scan for dimension {}: {} chunks",
-                        dimensionId, cachedChunks);
                     ValidationContextManager.clearDimensionCache(dimensionId);
                 }
             }
@@ -268,7 +240,6 @@ public class PillarStructureProvider implements StructureProvider {
         Map<String, PillarSchemaProxy> schemas = PillarIntegration.getSchemas();
 
         if (schemas == null || schemas.isEmpty()) {
-            SimpleStructureScanner.LOGGER.warn("No Pillar schemas available");
             structureIds = new ArrayList<>();
             schemaMap = new LinkedHashMap<>();
             return;
@@ -282,7 +253,5 @@ public class PillarStructureProvider implements StructureProvider {
             structureIds.add(id);
             schemaMap.put(id, entry.getValue());
         }
-
-        SimpleStructureScanner.LOGGER.info("Loaded {} Pillar structures", structureIds.size());
     }
 }

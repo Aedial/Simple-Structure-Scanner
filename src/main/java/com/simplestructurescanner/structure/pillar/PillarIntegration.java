@@ -43,10 +43,8 @@ public class PillarIntegration {
         try {
             Class.forName("vazkii.pillar.Pillar");
             pillarLoaded = true;
-            SimpleStructureScanner.LOGGER.info("Pillar mod detected - integration enabled");
         } catch (ClassNotFoundException e) {
             pillarLoaded = false;
-            SimpleStructureScanner.LOGGER.info("Pillar mod not found - Pillar structures will not be available");
         }
     }
 
@@ -94,29 +92,17 @@ public class PillarIntegration {
             // We iterate pillarSchemas.values() directly to get the exact order
             // that HashMap's internal iteration produces at this moment.
 
-            SimpleStructureScanner.LOGGER.info("OPTION 10: Capturing Pillar's natural schema iteration order");
-            StringBuilder capturedOrder = new StringBuilder("Captured Pillar schema order (").append(pillarSchemas.size()).append("): ");
-
-            int index = 0;
             for (Object schemaObj : pillarSchemas.values()) {
                 try {
                     PillarSchemaProxy proxy = createProxy(schemaObj);
                     if (proxy != null) {
                         schemas.put(proxy.structureName, proxy);
                         schemasInOrder.add(proxy);
-
-                        if (index > 0) capturedOrder.append(", ");
-                        capturedOrder.append(proxy.structureName);
-                        index++;
                     }
                 } catch (Exception e) {
                     SimpleStructureScanner.LOGGER.error("Failed to create proxy during iteration", e);
                 }
             }
-
-            SimpleStructureScanner.LOGGER.info("{}", capturedOrder.toString());
-            SimpleStructureScanner.LOGGER.info("TOTAL: Loaded {} Pillar structure schemas", schemas.size());
-            SimpleStructureScanner.LOGGER.info("OPTION 10: Schema order captured and stored - will use this order for all predictions");
 
             return schemas;
 
