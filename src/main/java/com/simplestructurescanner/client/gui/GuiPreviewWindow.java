@@ -132,7 +132,7 @@ public class GuiPreviewWindow {
         // Draw header
         String title = I18n.format("gui.structurescanner.preview.title", structureInfo.getDisplayName());
         String elidedTitle = font.trimStringToWidth(title, windowW - 16);
-        if (!elidedTitle.equals(title)) elidedTitle += "…";
+        if (!elidedTitle.equals(title)) elidedTitle += "...";
         font.drawStringWithShadow(elidedTitle, windowX + 8, windowY + 6, 0xFFFFFF);
 
         // Draw header separator line

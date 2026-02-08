@@ -1,4 +1,4 @@
-package com.simplestructurescanner.validation;
+package com.simplestructurescanner.structure.pillar;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
@@ -53,9 +53,7 @@ public class ValidationChunkProvider implements IChunkProvider {
         long chunkKey = ChunkPos.asLong(x, z);
 
         // Return cached chunk if available
-        if (loadedChunks.containsKey(chunkKey)) {
-            return loadedChunks.get(chunkKey);
-        }
+        if (loadedChunks.containsKey(chunkKey)) return loadedChunks.get(chunkKey);
 
         // Generate new chunk with terrain data
         Chunk chunk = chunkGenerator.generateChunk(x, z);

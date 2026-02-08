@@ -1,13 +1,16 @@
-package com.simplestructurescanner.validation;
+package com.simplestructurescanner.structure.pillar;
 
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.GameType;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
+import net.minecraft.world.WorldServer;
 import net.minecraft.world.WorldSettings;
 import net.minecraft.world.biome.BiomeProvider;
-import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraft.world.gen.ChunkProviderServer;
+import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraft.world.storage.WorldInfo;
+import net.minecraftforge.fml.common.FMLCommonHandler;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Field;
@@ -94,9 +97,7 @@ public class ValidationContextManager {
     @Nullable
     private static World getServerWorldCached(World world) {
         // Check cache first - this is the fast path for 111,000 chunks
-        if (serverWorldCache.containsKey(world)) {
-            return serverWorldCache.get(world);
-        }
+        if (serverWorldCache.containsKey(world)) return serverWorldCache.get(world);
 
         // Cache miss - do the expensive lookup once and cache the result
         World serverWorld = getServerWorld(world);
@@ -138,16 +139,12 @@ public class ValidationContextManager {
         // Client worlds don't have ChunkProviderServer
         // Uses cached lookup to avoid repeated iteration through server.worlds
         World world = getServerWorldCached(realWorld);
-        if (world == null) {
-            world = realWorld;
-        }
+        if (world == null) world = realWorld;
 
         int dimension = world.provider.getDimension();
 
         // Return cached world if available
-        if (validationWorlds.containsKey(dimension)) {
-            return validationWorlds.get(dimension);
-        }
+        if (validationWorlds.containsKey(dimension)) return validationWorlds.get(dimension);
 
         // Create new validation world
         StructureValidationWorld validationWorld = createValidationWorld(world);
@@ -167,19 +164,17 @@ public class ValidationContextManager {
     @Nullable
     private static World getServerWorld(World world) {
         // Check if this is already a server world (has ChunkProviderServer)
-        if (world.getChunkProvider() instanceof ChunkProviderServer) {
-            return world;
-        }
+        if (world.getChunkProvider() instanceof ChunkProviderServer) return world;
 
         // This is a client world, try to get the server world
         try {
-            net.minecraftforge.fml.common.FMLCommonHandler handler = net.minecraftforge.fml.common.FMLCommonHandler.instance();
+            FMLCommonHandler handler = FMLCommonHandler.instance();
             if (handler != null) {
-                net.minecraft.server.MinecraftServer server = handler.getMinecraftServerInstance();
+                MinecraftServer server = handler.getMinecraftServerInstance();
                 if (server != null) {
                     int dimension = world.provider.getDimension();
                     // Get the server world for this dimension
-                    for (net.minecraft.world.WorldServer serverWorld : server.worlds) {
+                    for (WorldServer serverWorld : server.worlds) {
                         if (serverWorld.provider.getDimension() == dimension) {
                             return serverWorld;
                         }
@@ -243,9 +238,7 @@ public class ValidationContextManager {
      */
     public static void clearDimensionCache(int dimension) {
         StructureValidationWorld world = validationWorlds.get(dimension);
-        if (world != null) {
-            world.clearChunkCache();
-        }
+        if (world != null) world.clearChunkCache();
     }
 
     /**
@@ -264,9 +257,7 @@ public class ValidationContextManager {
      */
     public static void removeValidationWorld(int dimension) {
         StructureValidationWorld world = validationWorlds.remove(dimension);
-        if (world != null) {
-            world.clearChunkCache();
-        }
+        if (world != null) world.clearChunkCache();
     }
 
     /**

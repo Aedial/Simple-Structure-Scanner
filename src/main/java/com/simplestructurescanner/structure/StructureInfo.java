@@ -22,9 +22,9 @@ public class StructureInfo {
     private final ResourceLocation id;
     private final String displayName;
     private final String modId;
-    private final int sizeX;
-    private final int sizeY;
-    private final int sizeZ;
+    private int sizeX;
+    private int sizeY;
+    private int sizeZ;
 
     private List<BlockEntry> blocks;
     private List<LootEntry> lootTables;
@@ -32,7 +32,7 @@ public class StructureInfo {
 
     // Biome/dimension/rarity info
     private Set<Biome> validBiomes;
-    private Set<Integer> validDimensions;
+    private Set<DimensionInfo> validDimensions;
     private String rarity;
 
     // Layer data for structure viewer (Y-level indexed)
@@ -112,12 +112,29 @@ public class StructureInfo {
     }
 
     @Nullable
-    public Set<Integer> getValidDimensions() {
+    public Set<DimensionInfo> getValidDimensions() {
         return validDimensions;
     }
 
-    public void setValidDimensions(Set<Integer> validDimensions) {
+    public void setValidDimensions(Set<DimensionInfo> validDimensions) {
         this.validDimensions = validDimensions;
+    }
+
+    /**
+     * Check if this structure can generate in the given dimension.
+     * If no dimension restrictions are set, returns true (allowed in all dimensions).
+     *
+     * @param dimensionId The dimension ID to check
+     * @return true if the structure can generate in this dimension
+     */
+    public boolean isValidForDimension(int dimensionId) {
+        if (validDimensions == null || validDimensions.isEmpty()) return true;
+
+        for (DimensionInfo dim : validDimensions) {
+            if (dim.getDimensionId() == dimensionId) return true;
+        }
+
+        return false;
     }
 
     @Nullable
@@ -134,8 +151,37 @@ public class StructureInfo {
         return layers;
     }
 
+    /**
+     * Set the layer data for the structure viewer.
+     * Automatically calculates sizeX, sizeY, and sizeZ based on the layers.
+     *
+     * @param layers List of structure layers (Y-level indexed)
+     */
     public void setLayers(List<StructureLayer> layers) {
         this.layers = layers;
+
+        if (layers == null || layers.isEmpty()) return;
+
+        int minY = Integer.MAX_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int maxWidth = 0;
+        int maxDepth = 0;
+
+        for (StructureLayer layer : layers) {
+            if (layer == null) continue;
+
+            if (layer.y < minY) minY = layer.y;
+            if (layer.y > maxY) maxY = layer.y;
+
+            if (layer.width > maxWidth) maxWidth = layer.width;
+            if (layer.depth > maxDepth) maxDepth = layer.depth;
+        }
+
+        if (minY == Integer.MAX_VALUE || maxY == Integer.MIN_VALUE) return;
+
+        this.sizeY = maxY - minY + 1;
+        this.sizeX = maxWidth;
+        this.sizeZ = maxDepth;
     }
 
     /**

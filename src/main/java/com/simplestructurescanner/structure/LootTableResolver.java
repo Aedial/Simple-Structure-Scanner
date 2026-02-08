@@ -11,6 +11,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Items;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraftforge.fml.common.Loader;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
@@ -37,6 +38,51 @@ public class LootTableResolver {
     private static Field lootEntryItemField;
     private static boolean reflectionInitialized = false;
     private static boolean reflectionFailed = false;
+
+    // Wizardry mod spell book/scroll detection cache
+    private static boolean wizardryChecked = false;
+    private static boolean wizardryLoaded = false;
+    private static Class<?> spellBookClass = null;
+    private static Class<?> spellScrollClass = null;
+
+    // Corail Tombstone scroll_buff detection cache
+    private static boolean tombstoneChecked = false;
+    private static boolean tombstoneLoaded = false;
+    private static Class<?> scrollBuffClass = null;
+
+    /**
+     * NBT tags to strip from items for cleaner display.
+     * These are tags that cause visual noise or grouping issues but aren't essential for item identity.
+     */
+    private static final String[] NBT_TAGS_TO_STRIP = {
+        // Enchantments
+        "ench",                 // Regular enchantments
+        "StoredEnchantments",   // Enchanted books
+        "RepairCost",           // Anvil repair cost
+
+        // Ender IO
+        "eio.yourface",         // EIO addon data
+
+        // Thaumcraft
+        "Aspects",              // Vis crystal aspects
+
+        // Corail Tombstone
+        "stored_xp",            // XP stored in items
+        "dead_pet",             // Pet storage
+
+        // General
+        "Damage",               // Durability damage
+        "display",              // Custom names/lore
+    };
+
+    /**
+     * NBT tag prefixes to strip from items for cleaner display.
+     * These are prefixes of tags that cause visual noise but aren't essential for item identity.
+     */
+    private static final String[] NBT_TAGS_TO_STRIP_STARTING_WITH = {
+        // Ender IO
+        "enderio.darksteel.upgrade.",   // EIO upgrade
+    };
 
     private static void initReflection() {
         if (reflectionInitialized) return;
@@ -191,7 +237,6 @@ public class LootTableResolver {
     private static String getItemKey(ItemStack stack) {
         Item item = stack.getItem();
         int meta = stack.getMetadata();
-        // TODO: add NBT data stripped of enchantments
 
         // Enchanted books - treat all as the same item
         if (item == Items.ENCHANTED_BOOK) return item.getRegistryName().toString() + "@enchanted";
@@ -199,25 +244,105 @@ public class LootTableResolver {
         // Items with durability - ignore damage value (metadata)
         if (stack.isItemStackDamageable()) return item.getRegistryName().toString() + "@0";
 
+        // Wizardry spell books/scrolls and Tombstone scroll_buff - ignore per-spell metadata
+        if (isMetadataStrippedItem(item)) return item.getRegistryName().toString() + "@0";
+
         return item.getRegistryName() + "@" + meta;
     }
 
     /**
+     * Check if an item should have its metadata stripped for grouping.
+     * This includes Wizardry spell books/scrolls and Tombstone scroll_buff.
+     */
+    private static boolean isMetadataStrippedItem(Item item) {
+        return isWizardrySpellItem(item) || isTombstoneScrollBuff(item);
+    }
+
+    /**
+     * Check if an item is a Wizardry mod spell book or scroll.
+     * These have per-spell metadata that should be stripped for display grouping.
+     */
+    private static boolean isWizardrySpellItem(Item item) {
+        if (!wizardryChecked) {
+            wizardryChecked = true;
+            wizardryLoaded = Loader.isModLoaded("ebwizardry");
+
+            if (wizardryLoaded) {
+                try {
+                    spellBookClass = Class.forName("electroblob.wizardry.item.ItemSpellBook");
+                } catch (ClassNotFoundException e) {
+                    SimpleStructureScanner.LOGGER.debug("Wizardry mod detected but ItemSpellBook class not found");
+                }
+
+                try {
+                    spellScrollClass = Class.forName("electroblob.wizardry.item.ItemScroll");
+                } catch (ClassNotFoundException e) {
+                    SimpleStructureScanner.LOGGER.debug("Wizardry mod detected but ItemScroll class not found");
+                }
+            }
+        }
+
+        if (!wizardryLoaded) return false;
+        if (spellBookClass != null && spellBookClass.isInstance(item)) return true;
+        if (spellScrollClass != null && spellScrollClass.isInstance(item)) return true;
+
+        return false;
+    }
+
+    /**
+     * Check if an item is a Corail Tombstone scroll_buff.
+     * These have per-buff metadata that should be stripped for display grouping.
+     */
+    private static boolean isTombstoneScrollBuff(Item item) {
+        if (!tombstoneChecked) {
+            tombstoneChecked = true;
+            tombstoneLoaded = Loader.isModLoaded("tombstone");
+
+            if (tombstoneLoaded) {
+                try {
+                    scrollBuffClass = Class.forName("ovh.corail.tombstone.item.ItemScrollBuff");
+                } catch (ClassNotFoundException e) {
+                    SimpleStructureScanner.LOGGER.debug("Tombstone mod detected but ItemScrollBuff class not found");
+                }
+            }
+        }
+
+        if (!tombstoneLoaded) return false;
+        if (scrollBuffClass != null && scrollBuffClass.isInstance(item)) return true;
+
+        return false;
+    }
+
+    /**
      * Create a normalized ItemStack for display.
-     * Removes enchantments and resets damage for cleaner display.
+     * Strips specific NBT tags that cause noise while preserving item identity.
      */
     public static ItemStack normalizeForDisplay(ItemStack stack) {
         ItemStack normalized = stack.copy();
         Item item = normalized.getItem();
 
-        // Remove all enchantments for display
-        if (normalized.isItemEnchanted() && normalized.hasTagCompound()) normalized.getTagCompound().removeTag("ench");
+        // Strip specific NBT tags that cause noise
+        if (normalized.hasTagCompound()) {
+            for (String tag : NBT_TAGS_TO_STRIP) normalized.getTagCompound().removeTag(tag);
 
-        // Reset damage on damageable items
+            for (String tagStart : NBT_TAGS_TO_STRIP_STARTING_WITH) {
+                List<String> keysToRemove = new ArrayList<>();
+                for (String key : normalized.getTagCompound().getKeySet()) {
+                    if (key.startsWith(tagStart)) keysToRemove.add(key);
+                }
+
+                for (String key : keysToRemove) normalized.getTagCompound().removeTag(key);
+            }
+
+            // Clean up empty compound
+            if (normalized.getTagCompound().isEmpty()) normalized.setTagCompound(null);
+        }
+
+        // Reset damage/metadata on damageable items
         if (normalized.isItemStackDamageable()) normalized.setItemDamage(0);
 
-        // Remove stored enchantments from enchanted books (show as generic book)
-        if (item == Items.ENCHANTED_BOOK && normalized.hasTagCompound()) normalized.getTagCompound().removeTag("StoredEnchantments");
+        // Reset metadata on items that use it for spell/buff variants
+        if (isMetadataStrippedItem(item)) normalized.setItemDamage(0);
 
         return normalized;
     }

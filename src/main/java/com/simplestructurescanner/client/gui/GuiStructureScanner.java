@@ -30,9 +30,13 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 
+import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.client.ClientSettings;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.network.NetworkHandler;
+import com.simplestructurescanner.network.PacketRequestSafeTeleport;
+import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.util.WorldUtils;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
@@ -88,6 +92,10 @@ public class GuiStructureScanner extends GuiScreen {
     private List<String> tooltipBiomes = null;
     private int tooltipBiomesLabelX, tooltipBiomesLabelY, tooltipBiomesLabelW;
 
+    // Dimension tooltip data (set during drawRightPanel, rendered in drawDimensionTooltip)
+    private List<String> tooltipDimensions = null;
+    private int tooltipDimensionsLabelX, tooltipDimensionsLabelY, tooltipDimensionsLabelW;
+
     // Structure preview (3D block rendering)
     private int previewX, previewY, previewSize;
     private StructurePreviewRenderer previewRenderer = null;
@@ -96,7 +104,8 @@ public class GuiStructureScanner extends GuiScreen {
     static final private List<String> rarities = Arrays.asList(
         "common",
         "uncommon",
-        "rare"
+        "rare",
+        "unique"
     );
 
     private String getI18nButtonString() {
@@ -142,6 +151,7 @@ public class GuiStructureScanner extends GuiScreen {
         if (button.id == 1) {
             ClientSettings.setI18nNames(!ClientSettings.i18nNames);
             button.displayString = getI18nButtonString();
+            listWidget.applyFilter();
         }
     }
 
@@ -302,11 +312,17 @@ public class GuiStructureScanner extends GuiScreen {
 
         if (previewWindow != null && previewWindow.isVisible() && previewWindow.isMouseOver(mouseX, mouseY)) return;
         if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) return;
-        if (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.isMouseOver(mouseX, mouseY) && entitiesWindow.handleMouseInput(mouseX, mouseY)) return;
 
         int wheel = Mouse.getDWheel();
         if (wheel != 0) {
+            // Loot window handles its own scrolling
+            if (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) {
+                lootWindow.handleScroll(wheel);
+
+                return;
+            }
+
             listWidget.handleScroll(wheel);
         }
     }
@@ -353,8 +369,12 @@ public class GuiStructureScanner extends GuiScreen {
             confirmDialog.draw(mouseX, mouseY, partialTicks);
         }
 
-        // Draw biome tooltip on top of everything except modals
-        if (!modalBlocking) drawBiomeTooltip(mouseX, mouseY);
+        // Draw tooltips on top of everything except modals
+        if (!modalBlocking) {
+            drawBiomeTooltip(mouseX, mouseY);
+            drawDimensionTooltip(mouseX, mouseY);
+            drawSmallPreviewTooltip(mouseX, mouseY);
+        }
     }
 
     private void drawRightPanel(int mouseX, int mouseY, float partialTicks) {
@@ -377,6 +397,7 @@ public class GuiStructureScanner extends GuiScreen {
 
         // Clear tooltip data
         tooltipBiomes = null;
+        tooltipDimensions = null;
 
         Gui.drawRect(panelX, panelY, panelX + panelW, panelY + panelH, 0x80000000);
 
@@ -476,11 +497,36 @@ public class GuiStructureScanner extends GuiScreen {
 
         // Dimension info
         if (selectedInfo != null) {
-            Set<Integer> dimensions = selectedInfo.getValidDimensions();
-            if (dimensions != null && !dimensions.isEmpty()) {
-                String dimName = getDimensionNames(dimensions);
-                String dimStr = I18n.format("gui.structurescanner.dimension", dimName);
-                textY = drawElidedString(fontRenderer, dimStr, textX, textY, 14, textW, 0xFFCC99);
+            Set<DimensionInfo> dimensions = selectedInfo.getValidDimensions();
+            int dimensionsCount = dimensions != null ? dimensions.size() : 0;
+            boolean hasDimensions = dimensionsCount > 0;
+
+            // Build dimension display
+            String dimensionsLabel;
+            int dimensionsLabelY = textY;
+            if (!hasDimensions) {
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", I18n.format("gui.structurescanner.dimension.any"));
+            } else if (dimensionsCount == 1) {
+                String dimName = dimensions.iterator().next().getDisplayName();
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", dimName);
+            } else {
+                // Multiple dimensions - show count with hover for full list
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", dimensionsCount);
+            }
+            textY = drawElidedString(fontRenderer, dimensionsLabel, textX, textY, 14, textW, 0xFFCC99);
+
+            // Store dimension tooltip data for later rendering
+            if (dimensionsCount > 1) {
+                // Sort dimensions alphabetically by display name
+                List<String> sortedDimensions = new ArrayList<>();
+                for (DimensionInfo dim : dimensions) sortedDimensions.add(dim.getDisplayName());
+                sortedDimensions.sort((a, b) -> a.compareToIgnoreCase(b));
+
+                // Deduplicate dimension names
+                tooltipDimensions = new ArrayList<>(new LinkedHashSet<>(sortedDimensions));
+                tooltipDimensionsLabelX = textX;
+                tooltipDimensionsLabelY = dimensionsLabelY;
+                tooltipDimensionsLabelW = fontRenderer.getStringWidth(dimensionsLabel);
             }
 
             // Biome info
@@ -628,12 +674,16 @@ public class GuiStructureScanner extends GuiScreen {
      */
     private void drawStructurePreview(int x, int y, int panelW, int panelH, int contentEndY) {
         // Calculate preview size and store in instance fields for click detection
-        previewSize = Math.min(width/4, height / 2);
+        previewSize = Math.min(width/4, height/4);
         previewX = x;
         previewY = y;
 
-        // Skip rendering if preview modal is open (to avoid GL state conflicts)
-        if (previewWindow != null && previewWindow.isVisible()) {
+        // Skip rendering if any item-related modal is open (to avoid GL state conflicts)
+        boolean modalWithItemsVisible = (previewWindow != null && previewWindow.isVisible()) ||
+                                        (blocksWindow != null && blocksWindow.isVisible()) ||
+                                        (lootWindow != null && lootWindow.isVisible()) ||
+                                        (entitiesWindow != null && entitiesWindow.isVisible());
+        if (modalWithItemsVisible) {
             // Just draw the background placeholder
             Gui.drawRect(previewX - 1, previewY - 1, previewX + previewSize + 1, previewY + previewSize + 1, 0xFF333333);
             Gui.drawRect(previewX, previewY, previewX + previewSize, previewY + previewSize, 0xFF1A1A1A);
@@ -709,21 +759,11 @@ public class GuiStructureScanner extends GuiScreen {
         }
     }
 
-    private String getDimensionNames(Set<Integer> dimensions) {
-        return dimensions.stream().map(dim -> {
-            switch (dim) {
-                case -1: return I18n.format("gui.structurescanner.dimension.nether");
-                case 0: return I18n.format("gui.structurescanner.dimension.overworld");
-                case 1: return I18n.format("gui.structurescanner.dimension.end");
-                default: return String.valueOf(dim);
-            }
-        }).collect(Collectors.joining(I18n.format("gui.structurescanner.dimension.separator")));
-    }
-
     private int getRarityColor(String rarity) {
         if (rarity.toLowerCase().contains("common")) return 0xAAAAAA;
         if (rarity.toLowerCase().contains("uncommon")) return 0x55FF55;
         if (rarity.toLowerCase().contains("rare")) return 0x55AAFF;
+        if (rarity.toLowerCase().contains("unique")) return 0xFF55FF;
 
         return 0xFFFFFF;
     }
@@ -880,22 +920,20 @@ public class GuiStructureScanner extends GuiScreen {
         if (location == null) return;
 
         BlockPos pos = location.getPosition();
-        int startY = location.isYAgnostic() ? 100 : pos.getY();
 
-        // Find a safe Y coordinate to teleport to
-        int safeY = WorldUtils.findSafeTeleportY(mc.world, pos.getX(), pos.getZ(), startY);
-        // Fallback to original Y if no safe spot found
-        if (safeY < 0) safeY = startY;
+        // For y-agnostic locations, start search from Y=64 (typical overworld surface)
+        // For known Y locations, use the structure Y as starting point
+        int startY = location.isYAgnostic() ? 64 : pos.getY();
 
-        String command = String.format("/tp %d %d %d", pos.getX(), safeY, pos.getZ());
-        mc.player.sendChatMessage(command);
+        // Send packet to server - it will find safe Y and teleport
+        NetworkHandler.INSTANCE.sendToServer(new PacketRequestSafeTeleport(pos.getX(), pos.getZ(), startY));
     }
 
     private int drawElidedString(FontRenderer renderer, String text, int x, int y, int lineHeight, int maxWidth, int color) {
         if (y + lineHeight > panelMaxY) return y;
 
-        String elided = renderer.trimStringToWidth(text, maxWidth - renderer.getStringWidth("…"));
-        if (!elided.equals(text)) elided += "…";
+        String elided = renderer.trimStringToWidth(text, maxWidth - renderer.getStringWidth(""));
+        if (!elided.equals(text)) elided += "...";
 
         renderer.drawString(elided, x, y, color);
 
@@ -907,16 +945,37 @@ public class GuiStructureScanner extends GuiScreen {
         if (mouseX < tooltipBiomesLabelX || mouseX > tooltipBiomesLabelX + tooltipBiomesLabelW) return;
         if (mouseY < tooltipBiomesLabelY || mouseY > tooltipBiomesLabelY + 12) return;
 
+        drawMultiColumnTooltip(mouseX, mouseY, tooltipBiomes);
+    }
+
+    private void drawDimensionTooltip(int mouseX, int mouseY) {
+        if (tooltipDimensions == null || tooltipDimensions.isEmpty()) return;
+        if (mouseX < tooltipDimensionsLabelX || mouseX > tooltipDimensionsLabelX + tooltipDimensionsLabelW) return;
+        if (mouseY < tooltipDimensionsLabelY || mouseY > tooltipDimensionsLabelY + 12) return;
+
+        drawMultiColumnTooltip(mouseX, mouseY, tooltipDimensions);
+    }
+
+    private void drawSmallPreviewTooltip(int mouseX, int mouseY) {
+        if (selectedInfo == null || !selectedInfo.hasLayerData()) return;
+        if (mouseX < previewX || mouseX > previewX + previewSize) return;
+        if (mouseY < previewY || mouseY > previewY + previewSize) return;
+
+        List<String> lines = Arrays.asList(I18n.format("gui.structurescanner.previewTooltip"));
+        drawMultiColumnTooltip(mouseX, mouseY, lines);
+    }
+
+    private void drawMultiColumnTooltip(int mouseX, int mouseY, List<String> items) {
         // Calculate columns needed
-        int maxBiomesPerColumn = 15;
-        int numColumns = (tooltipBiomes.size() + maxBiomesPerColumn - 1) / maxBiomesPerColumn;
-        int biomesPerColumn = (tooltipBiomes.size() + numColumns - 1) / numColumns;
+        int maxItemsPerColumn = 15;
+        int numColumns = (items.size() + maxItemsPerColumn - 1) / maxItemsPerColumn;
+        int itemsPerColumn = (items.size() + numColumns - 1) / numColumns;
 
         // Calculate column widths
         int[] columnWidths = new int[numColumns];
-        for (int i = 0; i < tooltipBiomes.size(); i++) {
-            int col = i / biomesPerColumn;
-            int w = fontRenderer.getStringWidth(tooltipBiomes.get(i));
+        for (int i = 0; i < items.size(); i++) {
+            int col = i / itemsPerColumn;
+            int w = fontRenderer.getStringWidth(items.get(i));
             if (w > columnWidths[col]) columnWidths[col] = w;
         }
 
@@ -930,7 +989,7 @@ public class GuiStructureScanner extends GuiScreen {
 
         int padding = 6;
         int tooltipWidth = totalWidth + padding * 2;
-        int tooltipHeight = biomesPerColumn * 10 + padding * 2;
+        int tooltipHeight = itemsPerColumn * 10 + padding * 2;
 
         // Position tooltip
         int tooltipX = mouseX + 12;
@@ -951,15 +1010,15 @@ public class GuiStructureScanner extends GuiScreen {
         Gui.drawRect(tooltipX - 1, tooltipY, tooltipX, tooltipY + tooltipHeight, borderLight);
         Gui.drawRect(tooltipX + tooltipWidth, tooltipY, tooltipX + tooltipWidth + 1, tooltipY + tooltipHeight, borderDark);
 
-        // Draw biomes in columns
+        // Draw items in columns
         int textY = tooltipY + padding;
         int colX = tooltipX + padding;
         for (int col = 0; col < numColumns; col++) {
-            int startIdx = col * biomesPerColumn;
-            int endIdx = Math.min(startIdx + biomesPerColumn, tooltipBiomes.size());
+            int startIdx = col * itemsPerColumn;
+            int endIdx = Math.min(startIdx + itemsPerColumn, items.size());
 
             for (int i = startIdx; i < endIdx; i++) {
-                fontRenderer.drawStringWithShadow(tooltipBiomes.get(i), colX, textY + (i - startIdx) * 10, 0xDDDDDD);
+                fontRenderer.drawStringWithShadow(items.get(i), colX, textY + (i - startIdx) * 10, 0xDDDDDD);
             }
 
             colX += columnWidths[col] + columnSpacing;
@@ -1026,10 +1085,35 @@ public class GuiStructureScanner extends GuiScreen {
                 }
             }
 
+            // Sort: tracked structures first, then alphabetically by display name
+            filteredStructures.sort((a, b) -> {
+                boolean aTracked = StructureSearchManager.isTracked(a);
+                boolean bTracked = StructureSearchManager.isTracked(b);
+
+                // Tracked structures come first
+                if (aTracked != bTracked) return aTracked ? -1 : 1;
+
+                // Then sort alphabetically by display name
+                String aName = getDisplayName(a);
+                String bName = getDisplayName(b);
+
+                return aName.compareToIgnoreCase(bName);
+            });
+
             // Clamp scroll
             float maxScroll = getMaxScroll();
             if (scrollOffset > maxScroll) scrollOffset = maxScroll;
             if (scrollOffset < 0) scrollOffset = 0;
+        }
+
+        private String getDisplayName(ResourceLocation id) {
+            if (ClientSettings.i18nNames) {
+                StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+
+                return info != null ? I18n.format(info.getDisplayName()) : id.getPath();
+            }
+
+            return id.toString();
         }
 
         private float getMaxScroll() {
@@ -1061,6 +1145,7 @@ public class GuiStructureScanner extends GuiScreen {
                     // Double-click: toggle searching
                     if (StructureProviderRegistry.canBeSearched(clickedId) && ModConfig.isStructureAllowed(clickedId.toString())) {
                         StructureSearchManager.toggleTracking(clickedId);
+                        applyFilter(); // Re-sort to move tracked items to top
                     }
                     parent.lastClickTime = 0L;
                     parent.lastClickId = null;
@@ -1129,8 +1214,6 @@ public class GuiStructureScanner extends GuiScreen {
             int visibleStart = (int) (scrollOffset / entryHeight);
             int visibleEnd = Math.min(filteredStructures.size(), visibleStart + (height / entryHeight) + 2);
 
-            // FIXME: list needs to be sorted by name with currently tracked at the top
-
             for (int i = visibleStart; i < visibleEnd; i++) {
                 int entryY = y + (i * entryHeight) - (int) scrollOffset;
                 if (entryY + entryHeight < y || entryY > y + height) continue;
@@ -1157,17 +1240,11 @@ public class GuiStructureScanner extends GuiScreen {
                 }
 
                 // Draw text - use localized name if i18n is enabled
-                String displayName;
-                if (ClientSettings.i18nNames) {
-                    StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
-                    displayName = info != null ? I18n.format(info.getDisplayName()) : id.getPath();
-                } else {
-                    displayName = id.toString();
-                }
+                String displayName = getDisplayName(id);
 
                 int availableWidth = width - (textStartX - x) - 3;
                 String elidedName = font.trimStringToWidth(displayName, availableWidth);
-                if (!elidedName.equals(displayName)) elidedName += "…";
+                if (!elidedName.equals(displayName)) elidedName += "...";
 
                 boolean canSearch = StructureProviderRegistry.canBeSearched(id);
                 int textColor = isSelected ? 0xFFFFFF : (isHovered ? 0xFFFFAA : 0xCCCCCC);

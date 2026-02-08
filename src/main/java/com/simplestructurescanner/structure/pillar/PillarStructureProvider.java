@@ -1,25 +1,32 @@
 package com.simplestructurescanner.structure.pillar;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.translation.I18n;
 import net.minecraft.world.World;
+import net.minecraft.world.biome.Biome;
+import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProvider;
-import com.simplestructurescanner.validation.StructureValidationWorld;
-import com.simplestructurescanner.validation.ValidationChunkProvider;
-import com.simplestructurescanner.validation.ValidationContextManager;
+import com.simplestructurescanner.structure.util.PositionHelper;
+import com.simplestructurescanner.structure.util.ReflectionHelper;
+import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionException;
+
 
 /**
  * Structure provider for Pillar mod structures.
@@ -27,50 +34,148 @@ import com.simplestructurescanner.validation.ValidationContextManager;
  * This provider uses predictive generation to locate Pillar structures
  * in ungenerated chunks. It replicates Pillar's generation algorithm
  * to predict where structures will spawn.
+ * <p>
+ * Pillar structures are defined by JSON schema files that control where
+ * and how structures generate. This provider reads those schemas via
+ * reflection and replicates the generation decisions without touching
+ * the real world.
  */
 public class PillarStructureProvider implements StructureProvider {
 
-    private static final String PILLAR_MODID = "pillar";
-    private static final int SEARCH_RADIUS = 3000; // Increased for testing Pillar predictions
+    private static final String PROVIDER_ID = "pillar";
+    private static final String MOD_ID = "pillar";
 
-    // PERFORMANCE TIME LIMIT to prevent indefinite freeze
-    private static final long MAX_SCAN_TIME_MS = 30000; // Maximum time to spend scanning (30 seconds)
+    // Max search radius in blocks (1024 = 64 chunks)
+    private static final int SEARCH_RADIUS = 1024;
+    // Max time to spend searching in milliseconds before giving up
+    private static final long MAX_SCAN_TIME_MS = 10000;
 
     private List<ResourceLocation> structureIds = null;
     private Map<ResourceLocation, PillarSchemaProxy> schemaMap = null;
+    private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
+
+    /**
+     * Schemas in Pillar's natural {@code Object2ObjectOpenHashMap} iteration order.
+     * Captured once during {@link #loadSchemas()} so the predictor's shuffle
+     * produces the same result as Pillar's {@code WorldGenerator.generate()}.
+     */
+    private List<PillarSchemaProxy> schemasInOrder = null;
+
+    private float rarityMultiplier = 1.0f;
+    private int maxStructuresInOneChunk = 1;
 
     @Override
     public String getProviderId() {
-        return "pillar";
+        return PROVIDER_ID;
     }
 
     @Override
     public String getModName() {
-        return "Pillar";
+        return I18n.translateToLocal("gui.structurescanner.providers.pillar");
     }
 
     @Override
     public boolean isAvailable() {
-        return PillarIntegration.isPillarLoaded();
+        return Loader.isModLoaded(MOD_ID);
     }
 
     @Override
     public void postInit() {
-        if (!isAvailable()) {
-            return;
+        loadPillarConfig();
+        loadSchemas();
+        populateStructureMetadata();
+        populateStructureContents();
+    }
+
+    private void populateStructureMetadata() {
+        for (Map.Entry<ResourceLocation, PillarSchemaProxy> entry : schemaMap.entrySet()) {
+            ResourceLocation id = entry.getKey();
+            PillarSchemaProxy schema = entry.getValue();
+
+            StructureInfo info = structureInfos.get(id);
+            if (info == null) continue;
+
+            // Set rarity based on schema rarity value
+            long rounded = Math.round(schema.rarity);
+            String rarityStr = I18n.translateToLocalFormatted("gui.structurescanner.rarity.one_in_chunks", rounded);
+            info.setRarity(I18n.translateToLocalFormatted("gui.structurescanner.rarity", rarityStr));
+
+            // Resolve biome name strings to actual Biome objects via the registry
+            Set<Biome> biomes = new HashSet<>();
+            for (String biomeName : schema.getAllBiomeSpawns()) {
+                Biome biome = resolveBiome(biomeName);
+                if (biome != null) biomes.add(biome);
+            }
+            if (!biomes.isEmpty()) info.setValidBiomes(biomes);
+
+            // Set valid dimensions
+            Set<DimensionInfo> dimensions = new HashSet<>();
+            for (Integer dimId : schema.getAllDimensionSpawns()) {
+                dimensions.add(new DimensionInfo(dimId));
+            }
+            if (!dimensions.isEmpty()) info.setValidDimensions(dimensions);
+
+            // TODO: Add generator type info when setNotes() is added to StructureInfo
+            // Generator type: schema.generatorType.name().toLowerCase()
+        }
+    }
+
+    /**
+     * Resolve a biome name string to a {@link Biome} object.
+     * Tries the Forge biome registry with both the raw name and a
+     * "minecraft:" prefixed ResourceLocation.
+     */
+    @Nullable
+    private static Biome resolveBiome(String biomeName) {
+        if (biomeName == null || biomeName.isEmpty()) return null;
+
+        // Try as a ResourceLocation first (e.g., "minecraft:plains" or "modid:biome")
+        ResourceLocation biomeLoc = new ResourceLocation(biomeName);
+        Biome biome = Biome.REGISTRY.getObject(biomeLoc);
+        if (biome != null) return biome;
+
+        // Fallback: iterate the registry and match by biome name (case-insensitive)
+        for (Biome candidate : Biome.REGISTRY) {
+            if (candidate != null && candidate.getBiomeName().equalsIgnoreCase(biomeName)) {
+                return candidate;
+            }
         }
 
-        initializeStructures();
+        SimpleStructureScanner.LOGGER.debug("Could not resolve Pillar biome: {}", biomeName);
+
+        return null;
+    }
+
+    /**
+     * Populate structure contents (blocks, layers, entities, loot tables) by parsing NBT files.
+     */
+    private void populateStructureContents() {
+        for (Map.Entry<ResourceLocation, PillarSchemaProxy> entry : schemaMap.entrySet()) {
+            ResourceLocation id = entry.getKey();
+            PillarSchemaProxy schema = entry.getValue();
+
+            StructureInfo info = structureInfos.get(id);
+            if (info == null) continue;
+
+            PillarNBTParser.ParsedPillarStructure parsed = PillarNBTParser.parseStructure(schema.structureName);
+            if (parsed == null) {
+                SimpleStructureScanner.LOGGER.debug("Failed to parse Pillar structure NBT for: {}", schema.structureName);
+                continue;
+            }
+
+            // Set blocks, layers, entities, and loot tables
+            if (!parsed.blocks.isEmpty()) info.setBlocks(parsed.blocks);
+            if (!parsed.layers.isEmpty()) info.setLayers(parsed.layers);
+            if (!parsed.entities.isEmpty()) info.setEntities(parsed.entities);
+            if (!parsed.lootTables.isEmpty()) info.setLootTables(parsed.lootTables);
+        }
     }
 
     @Override
     public List<ResourceLocation> getStructureIds() {
-        if (!isAvailable()) {
-            return new ArrayList<>();
-        }
-
         if (structureIds == null) {
             SimpleStructureScanner.LOGGER.warn("Pillar structure IDs requested before postInit was called");
+
             return new ArrayList<>();
         }
 
@@ -79,179 +184,289 @@ public class PillarStructureProvider implements StructureProvider {
 
     @Override
     public boolean canBeSearched(ResourceLocation structureId) {
-        if (!isAvailable()) {
-            return false;
-        }
+        if (schemaMap == null) return false;
 
-        // Must be from pillar mod
-        if (!PILLAR_MODID.equals(structureId.getNamespace())) {
-            return false;
-        }
+        PillarSchemaProxy schema = schemaMap.get(structureId);
+        if (schema == null) return false;
 
-        // Check if it exists in our schema map
-        return schemaMap != null && schemaMap.containsKey(structureId);
+        return schema.generatorType != PillarGeneratorType.NONE;
     }
 
     @Override
     @Nullable
     public StructureInfo getStructureInfo(ResourceLocation structureId) {
-        if (!isAvailable() || schemaMap == null) {
-            return null;
-        }
-
-        PillarSchemaProxy schema = schemaMap.get(structureId);
-        if (schema == null) {
-            return null;
-        }
-
-        // Create basic StructureInfo
-        // We don't have detailed info like blocks/entities/loot without actually
-        // loading the structure, so we provide a minimal info object
-        return new StructureInfo(
-                structureId,
-                schema.structureName,
-                "Pillar",
-                0, 0, 0  // Unknown size
-        );
+        return structureInfos.get(structureId);
     }
 
     @Override
     @Nullable
-    public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount) {
-        if (!isAvailable() || schemaMap == null) {
-            return null;
-        }
+    public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
+            @Nullable Predicate<BlockPos> locationFilter) {
+        if (schemaMap == null) return null;
 
         PillarSchemaProxy schema = schemaMap.get(structureId);
         if (schema == null) {
             SimpleStructureScanner.LOGGER.warn("Unknown Pillar structure: {}", structureId);
+
             return null;
         }
 
-        // Convert ResourceLocation to structure name
         String structureName = structureId.getPath();
-
-        // Get the current dimension ID for dimension-specific cache clearing
         int dimensionId = world.provider.getDimension();
 
-        // Search in expanding rings
         int playerChunkX = pos.getX() >> 4;
         int playerChunkZ = pos.getZ() >> 4;
-        int maxRadius = SEARCH_RADIUS >> 4; // Convert to chunks
+        int maxRadius = SEARCH_RADIUS >> 4;
 
-        // Track found positions for minDistance check
         Set<BlockPos> foundPositions = new HashSet<>();
+        List<BlockPos> allCandidates = new ArrayList<>();
 
         int chunksSearched = 0;
-        int foundCount = 0;
         long startTime = System.currentTimeMillis();
 
         try {
-            // Spiral search outward from player
             for (int radius = 0; radius <= maxRadius; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dz = -radius; dz <= radius; dz++) {
-                    // Skip inner chunks (we've already checked them)
-                    if (radius > 0 && dx == -radius && dz == -radius) {
-                        continue; // Will be handled in previous iteration
-                    }
-                    if (radius > 0 && dx > -radius && dx < radius && dz > -radius && dz < radius) {
-                        continue; // Skip interior
-                    }
+                for (int dx = -radius; dx <= radius; dx++) {
+                    for (int dz = -radius; dz <= radius; dz++) {
+                        if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
 
-                    int chunkX = playerChunkX + dx;
-                    int chunkZ = playerChunkZ + dz;
+                        int chunkX = playerChunkX + dx;
+                        int chunkZ = playerChunkZ + dz;
+                        chunksSearched++;
 
-                    // CHUNK GENERATION DISABLED FOR PERFORMANCE
-                    // Generating chunks during scan causes significant lag and crashes in heavy modpacks
-                    // The validation world can predict terrain without loading real chunks
-                    // If you need real world comparison, re-enable this code:
-                    /*
-                    World serverWorld = getServerWorld(world);
-                    if (serverWorld != null && !serverWorld.getChunkProvider().isChunkGeneratedAt(chunkX, chunkZ)) {
-                        net.minecraft.world.gen.ChunkProviderServer chunkProviderServer =
-                            (net.minecraft.world.gen.ChunkProviderServer) serverWorld.getChunkProvider();
-                        chunkProviderServer.loadChunk(chunkX, chunkZ);
-                    }
-                    */
+                        if (System.currentTimeMillis() - startTime > MAX_SCAN_TIME_MS) {
+                            SimpleStructureScanner.LOGGER.warn(
+                                    "Search interrupted: Exceeded maximum time limit ({}ms). Searched {} chunks.",
+                                    MAX_SCAN_TIME_MS, chunksSearched);
 
-                    chunksSearched++;
-
-                    // ENFORCE TIME LIMIT - abort scan if taking too long (safety net to prevent indefinite freeze)
-                    long currentTime = System.currentTimeMillis();
-                    long elapsed = currentTime - startTime;
-                    if (elapsed > MAX_SCAN_TIME_MS) {
-                        SimpleStructureScanner.LOGGER.warn("Search interrupted: Exceeded maximum time limit ({}ms) to prevent game freeze",
-                            MAX_SCAN_TIME_MS);
-                        SimpleStructureScanner.LOGGER.warn("Searched {} chunks in {}ms before timeout",
-                            chunksSearched, elapsed);
-                        SimpleStructureScanner.LOGGER.warn("This indicates a performance issue - structure validation is too slow");
-                        return null;
-                    }
-
-                    // Clear chunk cache periodically to prevent unbounded memory growth
-                    if (chunksSearched % 500 == 0) {
-                        int cachedChunks = ValidationContextManager.getTotalCachedChunkCount();
-                        if (cachedChunks > 500) {
-                            ValidationContextManager.clearDimensionCache(dimensionId);
-                        }
-                    }
-
-                    // Predict if this structure would spawn here
-                    BlockPos predictedPos = PillarStructurePredictor.predictStructureInChunk(
-                            world, chunkX, chunkZ, structureName, foundPositions);
-
-                    if (predictedPos != null) {
-                        if (foundCount >= skipCount) {
-                            // This is the one we want
-                            StructureLocation location = new StructureLocation(predictedPos, foundCount, foundCount + 1);
-                            return location;
+                            return null;
                         }
 
-                        // Skip this one, but remember it for minDistance checks
+                        if (chunksSearched % 500 == 0) {
+                            int cachedChunks = ValidationContextManager.getTotalCachedChunkCount();
+                            if (cachedChunks > 500) {
+                                ValidationContextManager.clearDimensionCache(dimensionId);
+                            }
+                        }
+
+                        BlockPos predictedPos = PillarStructurePredictor.predictStructureInChunk(
+                                world, chunkX, chunkZ, structureName, foundPositions,
+                                schemasInOrder, rarityMultiplier, maxStructuresInOneChunk);
+
+                        if (predictedPos == null) continue;
+
                         foundPositions.add(predictedPos);
-                        foundCount++;
+                        allCandidates.add(predictedPos);
                     }
                 }
             }
+        } finally {
+            ValidationContextManager.clearDimensionCache(dimensionId);
         }
 
-        // No structure found within search radius
-        SimpleStructureScanner.LOGGER.warn("NO '{}' found within search radius after searching {} chunks in {}ms",
-            structureName, chunksSearched, System.currentTimeMillis() - startTime);
-        return null;
+        if (allCandidates.isEmpty()) return null;
 
-        } finally {
-            // Clear chunk cache after scan completes
-            StructureValidationWorld validationWorld = ValidationContextManager.getValidationWorldByDimension(dimensionId);
-            if (validationWorld != null && validationWorld.getChunkProvider() instanceof ValidationChunkProvider) {
-                int cachedChunks = ((ValidationChunkProvider) validationWorld.getChunkProvider()).getCachedChunkCount();
-                if (cachedChunks > 0) {
-                    ValidationContextManager.clearDimensionCache(dimensionId);
+        PositionHelper.sortByHorizontalDistance(allCandidates, pos);
+
+        int validIndex = 0;
+        int totalValid = 0;
+        BlockPos targetPos = null;
+
+        for (BlockPos candidate : allCandidates) {
+            if (locationFilter != null && !locationFilter.test(candidate)) continue;
+
+            if (validIndex == skipCount && targetPos == null) targetPos = candidate;
+
+            validIndex++;
+            totalValid++;
+        }
+
+        if (targetPos == null) return null;
+
+        boolean yAgnostic = targetPos.getY() == 0;
+
+        return new StructureLocation(targetPos, skipCount, totalValid, yAgnostic);
+    }
+
+    @Override
+    @Nullable
+    public List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
+        if (schemaMap == null || !schemaMap.containsKey(structureId)) return null;
+
+        String structureName = structureId.getPath();
+        int dimensionId = world.provider.getDimension();
+
+        int playerChunkX = pos.getX() >> 4;
+        int playerChunkZ = pos.getZ() >> 4;
+        int maxRadius = SEARCH_RADIUS >> 4;
+
+        Set<BlockPos> foundPositions = new HashSet<>();
+        List<BlockPos> results = new ArrayList<>();
+
+        long startTime = System.currentTimeMillis();
+        int chunksSearched = 0;
+
+        try {
+            for (int radius = 0; radius <= maxRadius && results.size() < maxResults; radius++) {
+                for (int dx = -radius; dx <= radius; dx++) {
+                    for (int dz = -radius; dz <= radius; dz++) {
+                        if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+
+                        int chunkX = playerChunkX + dx;
+                        int chunkZ = playerChunkZ + dz;
+                        chunksSearched++;
+
+                        if (System.currentTimeMillis() - startTime > MAX_SCAN_TIME_MS) return results;
+
+                        if (chunksSearched % 500 == 0) {
+                            int cachedChunks = ValidationContextManager.getTotalCachedChunkCount();
+                            if (cachedChunks > 500) {
+                                ValidationContextManager.clearDimensionCache(dimensionId);
+                            }
+                        }
+
+                        BlockPos predictedPos = PillarStructurePredictor.predictStructureInChunk(
+                                world, chunkX, chunkZ, structureName, foundPositions,
+                                schemasInOrder, rarityMultiplier, maxStructuresInOneChunk);
+
+                        if (predictedPos == null) continue;
+
+                        foundPositions.add(predictedPos);
+                        results.add(predictedPos);
+                    }
                 }
             }
+        } finally {
+            ValidationContextManager.clearDimensionCache(dimensionId);
+        }
+
+        PositionHelper.sortByHorizontalDistance(results, pos);
+
+        return results;
+    }
+
+    // ========== Schema & Config Loading ==========
+
+    /**
+     * Load Pillar's global config values via reflection.
+     */
+    private void loadPillarConfig() {
+        try {
+            Class<?> pillarClass = ReflectionHelper.loadClassRequired("vazkii.pillar.Pillar");
+            rarityMultiplier = ReflectionHelper.getFloatField(null, pillarClass, "rarityMultiplier");
+            maxStructuresInOneChunk = ReflectionHelper.getIntField(null, pillarClass, "maxStructuresInOneChunk");
+        } catch (ReflectionException e) {
+            SimpleStructureScanner.LOGGER.error("Failed to load Pillar config", e);
         }
     }
 
     /**
-     * Initialize structure list and schema map from Pillar.
+     * Load all Pillar structure schemas via reflection and build the structure lists.
+     * <p>
+     * <b>IMPORTANT:</b> This method captures Pillar's natural map iteration order.
+     * Pillar uses {@code Object2ObjectOpenHashMap} internally, whose iteration order
+     * is deterministic for a given map state but not insertion-ordered. We capture
+     * this order once in {@link #schemasInOrder} so that the predictor's shuffle
+     * produces the same result as Pillar's {@code WorldGenerator}, which iterates
+     * {@code loadedSchemas.values()} and shuffles.
      */
-    private void initializeStructures() {
-        Map<String, PillarSchemaProxy> schemas = PillarIntegration.getSchemas();
-
-        if (schemas == null || schemas.isEmpty()) {
-            structureIds = new ArrayList<>();
-            schemaMap = new LinkedHashMap<>();
-            return;
-        }
-
+    @SuppressWarnings("unchecked")
+    private void loadSchemas() {
+        Map<String, PillarSchemaProxy> schemas = new HashMap<>();
+        schemasInOrder = new ArrayList<>();
         structureIds = new ArrayList<>();
         schemaMap = new LinkedHashMap<>();
 
+        try {
+            Class<?> structureLoaderClass = ReflectionHelper.loadClassRequired("vazkii.pillar.StructureLoader");
+            Map<String, Object> pillarSchemas = (Map<String, Object>) ReflectionHelper.getStaticField(
+                    structureLoaderClass, "loadedSchemas");
+
+            if (pillarSchemas == null) {
+                SimpleStructureScanner.LOGGER.warn("Pillar loadedSchemas is null");
+
+                return;
+            }
+
+            for (Object schemaObj : pillarSchemas.values()) {
+                try {
+                    PillarSchemaProxy proxy = createSchemaProxy(schemaObj);
+                    if (proxy != null) {
+                        schemas.put(proxy.structureName, proxy);
+                        schemasInOrder.add(proxy);
+                    }
+                } catch (ReflectionException e) {
+                    SimpleStructureScanner.LOGGER.error("Failed to create proxy for schema", e);
+                }
+            }
+
+            SimpleStructureScanner.LOGGER.info("Loaded {} Pillar schemas", schemas.size());
+        } catch (ReflectionException e) {
+            SimpleStructureScanner.LOGGER.error("Failed to access Pillar schemas", e);
+        }
+
         for (Map.Entry<String, PillarSchemaProxy> entry : schemas.entrySet()) {
-            ResourceLocation id = new ResourceLocation(PILLAR_MODID, entry.getKey());
+            ResourceLocation id = new ResourceLocation(MOD_ID, entry.getKey());
+            PillarSchemaProxy proxy = entry.getValue();
             structureIds.add(id);
-            schemaMap.put(id, entry.getValue());
+            schemaMap.put(id, proxy);
+
+            // Build and cache the StructureInfo for this structure
+            String displayName = I18n.translateToLocal("structure.pillar." + proxy.structureName);
+            StructureInfo info = new StructureInfo(id, displayName, PROVIDER_ID, 0, 0, 0);
+            structureInfos.put(id, info);
+        }
+    }
+
+    // ========== Reflection Helpers ==========
+
+    /**
+     * Create a {@link PillarSchemaProxy} from a Pillar StructureSchema instance.
+     */
+    @SuppressWarnings("unchecked")
+    private static PillarSchemaProxy createSchemaProxy(Object pillarSchema) throws ReflectionException {
+        Class<?> cls = pillarSchema.getClass();
+
+        String structureName = ReflectionHelper.getStringField(pillarSchema, cls, "structureName");
+        Object generatorTypeObj = ReflectionHelper.getField(pillarSchema, cls, "generatorType");
+        int maxY = ReflectionHelper.getIntField(pillarSchema, cls, "maxY");
+        int minY = ReflectionHelper.getIntField(pillarSchema, cls, "minY");
+        int rarity = ReflectionHelper.getIntField(pillarSchema, cls, "rarity");
+        int minDistance = ReflectionHelper.getIntField(pillarSchema, cls, "minDistanceToSameTypeStructures");
+        boolean generateEverywhere = ReflectionHelper.getBooleanField(pillarSchema, cls, "generateEverywhere");
+
+        List<Integer> dimensionSpawns = ReflectionHelper.getListField(pillarSchema, cls, "dimensionSpawns");
+        List<String> biomeNameSpawns = ReflectionHelper.getListField(pillarSchema, cls, "biomeNameSpawns");
+        List<String> biomeTagSpawns = ReflectionHelper.getListField(pillarSchema, cls, "biomeTagSpawns");
+
+        boolean isDimBlacklist = ReflectionHelper.getBooleanField(pillarSchema, cls, "isDimensionSpawnsBlacklist");
+        boolean isBiomeNameBlacklist = ReflectionHelper.getBooleanField(pillarSchema, cls, "isBiomeNameSpawnsBlacklist");
+        boolean isBiomeTagBlacklist = ReflectionHelper.getBooleanField(pillarSchema, cls, "isBiomeTagSpawnsBlacklist");
+
+        PillarGeneratorType generatorType = convertGeneratorType(generatorTypeObj);
+
+        return new PillarSchemaProxy(
+                structureName, generatorType,
+                maxY, minY, rarity, minDistance,
+                dimensionSpawns, biomeNameSpawns, biomeTagSpawns,
+                isDimBlacklist, isBiomeNameBlacklist, isBiomeTagBlacklist,
+                generateEverywhere);
+    }
+
+    /**
+     * Convert a Pillar {@code GeneratorType} enum constant to our proxy enum.
+     */
+    private static PillarGeneratorType convertGeneratorType(Object pillarGeneratorType) {
+        if (pillarGeneratorType == null) return PillarGeneratorType.NONE;
+
+        String name = pillarGeneratorType.toString();
+
+        try {
+            return PillarGeneratorType.valueOf(name);
+        } catch (IllegalArgumentException e) {
+            SimpleStructureScanner.LOGGER.warn("Unknown Pillar GeneratorType: {}", name);
+
+            return PillarGeneratorType.NONE;
         }
     }
 }

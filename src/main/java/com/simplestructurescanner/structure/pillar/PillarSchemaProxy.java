@@ -15,7 +15,7 @@ public class PillarSchemaProxy {
     public final PillarGeneratorType generatorType;
     public final int maxY;
     public final int minY;
-    public final float rarity;
+    public final int rarity;
     public final int minDistanceToSameTypeStructures;
     public final List<Integer> dimensionSpawns;
     public final List<String> biomeNameSpawns;
@@ -33,7 +33,7 @@ public class PillarSchemaProxy {
             PillarGeneratorType generatorType,
             int maxY,
             int minY,
-            float rarity,
+            int rarity,
             int minDistanceToSameTypeStructures,
             List<Integer> dimensionSpawns,
             List<String> biomeNameSpawns,
@@ -56,6 +56,15 @@ public class PillarSchemaProxy {
         this.isBiomeNameSpawnsBlacklist = isBiomeNameSpawnsBlacklist;
         this.isBiomeTagSpawnsBlacklist = isBiomeTagSpawnsBlacklist;
         this.generateEverywhere = generateEverywhere;
+    }
+
+    // TODO: handle blacklist/whitelist logic
+    public List<String> getAllBiomeSpawns() {
+        return biomeNameSpawns.isEmpty() ? biomeTagSpawns : biomeNameSpawns;
+    }
+
+    public List<Integer> getAllDimensionSpawns() {
+        return dimensionSpawns;
     }
 
     @Override

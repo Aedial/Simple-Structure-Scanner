@@ -1,4 +1,4 @@
-package com.simplestructurescanner.validation;
+package com.simplestructurescanner.structure.pillar;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.world.World;

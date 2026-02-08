@@ -74,6 +74,7 @@ public class ClientRenderEvents {
         if (trackedIds.isEmpty()) return;
 
         BlockPos playerPos = mc.player.getPosition();
+        int currentDimension = mc.player.dimension;
         Map<ResourceLocation, StructureLocation> locations = StructureSearchManager.getAllLocations();
 
         // Build display lines
@@ -83,12 +84,15 @@ public class ClientRenderEvents {
         for (ResourceLocation id : trackedIds) {
             if (!ModConfig.isStructureAllowed(id.toString())) continue;
 
+            // Filter by current dimension
+            StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+            if (info != null && !info.isValidForDimension(currentDimension)) continue;
+
             StructureLocation loc = locations.get(id);
 
             // Get display name
             String name;
             if (ClientSettings.i18nNames) {
-                StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
                 name = info != null ? info.getDisplayName() : id.getPath();
             } else {
                 name = id.toString();
@@ -103,14 +107,8 @@ public class ClientRenderEvents {
                 String distanceStr = StructureSearchManager.formatDistance(distance);
                 lines.add(name + ": " + distanceStr);
             } else {
-                // No location found - check if search is complete
-                if (StructureSearchManager.isSearchCompleted(id)) {
-                    // Search completed but nothing found
-                    lines.add(name + ": " + I18n.format("gui.structurescanner.locate.notfound"));
-                } else {
-                    // Still searching
-                    lines.add(name + ": " + I18n.format("gui.structurescanner.locate.searching"));
-                }
+                // No location found yet - show "Searching..." status
+                lines.add(name + ": " + I18n.format("gui.structurescanner.locate.searching"));
             }
             colors.add(StructureSearchManager.getColor(id));
         }
@@ -209,11 +207,11 @@ public class ClientRenderEvents {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayer player = mc.player;
         if (player == null || mc.world == null) return;
-        if (mc.gameSettings.showDebugInfo) return;
 
         Map<ResourceLocation, StructureLocation> locations = StructureSearchManager.getAllLocations();
         if (locations.isEmpty()) return;
 
+        int currentDimension = player.dimension;
         float partialTicks = event.getPartialTicks();
 
         for (Map.Entry<ResourceLocation, StructureLocation> entry : locations.entrySet()) {
@@ -222,6 +220,10 @@ public class ClientRenderEvents {
 
             if (!ModConfig.isStructureAllowed(id.toString())) continue;
             if (loc == null) continue;
+
+            // Filter by current dimension
+            StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+            if (info != null && !info.isValidForDimension(currentDimension)) continue;
 
             double distance = getDistanceFrom(loc, player.getPosition());
 
@@ -241,6 +243,16 @@ public class ClientRenderEvents {
     private static final float ARROW_THICKNESS = 0.01f;      // Thickness between top/bottom triangles
     private static final float MIN_PITCH_ANGLE = 10.0f;      // Minimum angle from horizontal (degrees)
     private static final float TEXT_SCALE = 0.0012f;         // Scale for distance text
+    private static final float TEXT_HEIGHT_OFFSET = 0.04f;   // Height offset for distance text above arrow
+    private static final float ARROW_ALPHA = 1.0f;           // Arrow alpha transparency
+
+    // ========== Arrow Gradient Constants ==========
+    private static final float GRADIENT_START_FACTOR = 0.8f;  // Brightness factor at gradient start (back of arrow)
+    private static final float GRADIENT_END_FACTOR = 0.4f;    // Brightness factor at gradient end (tip of arrow)
+    private static final float GRADIENT_CURVE = 0.5f;         // Exponential curve steepness (higher = reaches end faster)
+    private static final int GRADIENT_RINGS = 16;             // Number of segments for gradient (more = smoother)
+    private static final boolean GRADIENT_FRONT_TO_BACK = true;   // false = back-to-front (back light, front dark)
+    private static final boolean ACCENTUATE_BACK = true;      // If true, makes the back face stronger in the gradient
 
     /**
      * Draws a 3D directional arrow pointing towards the target structure.
@@ -330,12 +342,7 @@ public class ClientRenderEvents {
         float r = ((color >> 16) & 0xFF) / 255.0f;
         float g = ((color >> 8) & 0xFF) / 255.0f;
         float b = (color & 0xFF) / 255.0f;
-        float alpha = 0.95f;
-
-        // Darker shade for sides
-        float rd = r * 0.6f;
-        float gd = g * 0.6f;
-        float bd = b * 0.6f;
+        float alpha = ARROW_ALPHA;
 
         // Translate to render coordinates (relative to player position)
         double renderX = arrowX - playerX;
@@ -351,10 +358,11 @@ public class ClientRenderEvents {
 
         GlStateManager.disableTexture2D();
         GlStateManager.disableLighting();
-        GlStateManager.enableBlend();
-        GlStateManager.blendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-        GlStateManager.disableCull();
-        GlStateManager.disableDepth();
+        GlStateManager.disableCull();  // Disable culling so all faces draw, rely on depth testing
+        GlStateManager.enableDepth();
+        GlStateManager.depthFunc(GL11.GL_LEQUAL);
+        // Use a tiny depth range so arrow renders in front of world but arrow triangles test against each other
+        GL11.glDepthRange(0.0, 0.001);
 
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder buffer = tessellator.getBuffer();
@@ -366,48 +374,139 @@ public class ClientRenderEvents {
         float len = ARROW_LENGTH;
         float w = ARROW_WIDTH;
 
-        // TOP triangular face
-        buffer.pos(0, halfThick, -len).color(r, g, b, alpha).endVertex();
-        buffer.pos(w, halfThick, 0).color(r, g, b, alpha).endVertex();
-        buffer.pos(-w, halfThick, 0).color(r, g, b, alpha).endVertex();
+        // Draw arrow with gradient rings
+        for (int i = 0; i < GRADIENT_RINGS; i++) {
+            // Calculate progress along the arrow for this ring (0 = back, 1 = front/tip)
+            float t0 = (float) i / GRADIENT_RINGS;
+            float t1 = (float) (i + 1) / GRADIENT_RINGS;
 
-        // BOTTOM triangular face
-        buffer.pos(0, -halfThick, -len).color(r, g, b, alpha).endVertex();
-        buffer.pos(-w, -halfThick, 0).color(r, g, b, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(r, g, b, alpha).endVertex();
+            // Z positions for this ring segment
+            float z0 = -t0 * len;
+            float z1 = -t1 * len;
 
-        // LEFT side
-        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(-w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(-w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+            // Width at each Z position (linearly decreases to 0 at tip)
+            float w0 = w * (1.0f - t0);
+            float w1 = w * (1.0f - t1);
 
-        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(-w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(0, -halfThick, -len).color(rd, gd, bd, alpha).endVertex();
+            // Calculate gradient factors using exponential curve
+            // Uses 1 - (1-t)^CURVE to create a curve that rises quickly then plateaus
+            float curve0 = (float) (1.0 - Math.pow(1.0 - t0, GRADIENT_CURVE));
+            float curve1 = (float) (1.0 - Math.pow(1.0 - t1, GRADIENT_CURVE));
 
-        // RIGHT side
-        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+            float factor0, factor1;
+            if (GRADIENT_FRONT_TO_BACK) {
+                // Front dark, back light: front (t=1) gets END_FACTOR, back (t=0) gets START_FACTOR
+                factor0 = GRADIENT_START_FACTOR + curve0 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+                factor1 = GRADIENT_START_FACTOR + curve1 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+            } else {
+                // Back light, front dark: back (t=0) gets START_FACTOR, front (t=1) gets END_FACTOR
+                factor0 = GRADIENT_START_FACTOR + curve0 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+                factor1 = GRADIENT_START_FACTOR + curve1 * (GRADIENT_END_FACTOR - GRADIENT_START_FACTOR);
+            }
 
-        buffer.pos(0, halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(0, -halfThick, -len).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+            // Colors for back and front of this segment
+            float r0 = r * factor0, g0 = g * factor0, b0 = b * factor0;
+            float r1 = r * factor1, g1 = g * factor1, b1 = b * factor1;
 
-        // BACK side
-        buffer.pos(-w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+            boolean isTip = (i == GRADIENT_RINGS - 1);
 
-        buffer.pos(-w, halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
-        buffer.pos(-w, -halfThick, 0).color(rd, gd, bd, alpha).endVertex();
+            if (isTip) {
+                // Final segment: triangular tip
+                // TOP triangular face
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                // BOTTOM triangular face
+                buffer.pos(0, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                // LEFT side
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(0, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+
+                // RIGHT side
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(0, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(0, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+            } else {
+                // Intermediate segment: trapezoidal prism
+                // TOP face (trapezoid as 2 triangles)
+                buffer.pos(-w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(-w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                // BOTTOM face (trapezoid as 2 triangles)
+                buffer.pos(-w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(-w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+
+                // LEFT side
+                buffer.pos(-w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(-w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+
+                // RIGHT side
+                buffer.pos(w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(w1, halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w1, -halfThick, z1).color(r1, g1, b1, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+            }
+
+            // BACK face (only for first segment)
+            if (i == 0) {
+                if (ACCENTUATE_BACK) {
+                    // Make back face stronger in gradient
+                    if (!GRADIENT_FRONT_TO_BACK) {       // front dark, back light
+                        r0 = Math.min(r0 / 1.2f, 1.0f);
+                        g0 = Math.min(g0 / 1.2f, 1.0f);
+                        b0 = Math.min(b0 / 1.2f, 1.0f);
+                    } else {                            // back light, front dark
+                        r0 = Math.min(r0 * 1.2f, 1.0f);
+                        g0 = Math.min(g0 * 1.2f, 1.0f);
+                        b0 = Math.min(b0 * 1.2f, 1.0f);
+                    }
+                }
+
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+
+                buffer.pos(-w0, halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+                buffer.pos(-w0, -halfThick, z0).color(r0, g0, b0, alpha).endVertex();
+            }
+        }
 
         tessellator.draw();
 
-        GlStateManager.enableDepth();
-        GlStateManager.enableCull();
-        GlStateManager.disableBlend();
+        GL11.glDepthRange(0.0, 1.0);  // Restore default depth range
+        GlStateManager.enableCull();  // Restore culling
         GlStateManager.enableTexture2D();
         GlStateManager.enableLighting();
 
@@ -417,7 +516,7 @@ public class ClientRenderEvents {
         String distanceStr = StructureSearchManager.formatDistance(distance);
 
         GlStateManager.pushMatrix();
-        GlStateManager.translate(renderX, renderY + 0.04, renderZ);
+        GlStateManager.translate(renderX, renderY + TEXT_HEIGHT_OFFSET, renderZ);
 
         // Billboard: face camera (both yaw and pitch for proper facing)
         GlStateManager.rotate(-cameraYaw, 0, 1, 0);

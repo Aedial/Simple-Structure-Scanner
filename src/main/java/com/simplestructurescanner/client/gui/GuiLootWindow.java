@@ -298,7 +298,7 @@ public class GuiLootWindow {
         // Draw header
         String title = I18n.format("gui.structurescanner.loot.title", structureInfo.getDisplayName());
         String elidedTitle = font.trimStringToWidth(title, windowW - 16);
-        if (!elidedTitle.equals(title)) elidedTitle += "…";
+        if (!elidedTitle.equals(title)) elidedTitle += "...";
         font.drawString(elidedTitle, windowX + 6, windowY + 6, 0xFFFFFF);
 
         // Draw footer
@@ -383,18 +383,11 @@ public class GuiLootWindow {
             }
 
             // Draw entry header
-            String tableName = entry.lootTableId.getPath();
-            String containerKey = "gui.structurescanner.loot." + entry.containerType.toLowerCase();
-            String containerName = I18n.format(containerKey);
-            if (!containerName.equals(containerKey)) {
-                tableName += " (" + containerName + ")";
-            }
+            String tableName = entry.lootTableId.getPath() + " (" + I18n.format(entry.containerType) + ")";
             String elidedName = font.trimStringToWidth(tableName, contentW - 6);
-            if (!elidedName.equals(tableName)) elidedName += "…";
+            if (!elidedName.equals(tableName)) elidedName += "...";
 
-            if (currentY >= contentTop - 10) {
-                font.drawString(elidedName, contentX + 2, currentY + 2, 0xFFFFAA);
-            }
+            if (currentY >= contentTop - 10) font.drawString(elidedName, contentX + 2, currentY + 2, 0xFFFFAA);
 
             int itemY = currentY + ENTRY_HEADER_HEIGHT;
 

@@ -1,4 +1,4 @@
-package com.simplestructurescanner.validation;
+package com.simplestructurescanner.structure.pillar;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 
@@ -159,9 +159,8 @@ public class StructureValidationWorld extends World {
     @Override
     protected boolean isChunkLoaded(int x, int z, boolean allowEmpty) {
         // Guard against null chunkProvider during initialization or edge cases
-        if (chunkProvider == null) {
-            return false;
-        }
+        if (chunkProvider == null) return false;
+
         return chunkProvider.isChunkGeneratedAt(x, z);
     }
 
@@ -248,9 +247,7 @@ public class StructureValidationWorld extends World {
             nextPos = pos.down();
             IBlockState state = chunk.getBlockState(nextPos);
 
-            if (state.getBlock() instanceof BlockLiquid) {
-                return pos;
-            }
+            if (state.getBlock() instanceof BlockLiquid) return pos;
         }
 
         return pos;
