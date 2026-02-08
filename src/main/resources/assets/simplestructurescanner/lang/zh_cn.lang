@@ -104,6 +104,9 @@ gui.structurescanner.structures.iceandfire.myrmex_hive_jungle=丛林恐蚁巢穴
 # Loot containers - Ice and Fire
 gui.structurescanner.loot.iceandfire.cocoon=蚁茧
 
+# Providers - Pillar
+gui.structurescanner.providers.pillar=Pillar
+
 # Buttons
 gui.structurescanner.blocksButton=[方块]
 gui.structurescanner.lootButton=[战利品]
@@ -139,6 +142,7 @@ gui.structurescanner.loot.crate=板条箱
 gui.structurescanner.loot.dispenser=发射器
 gui.structurescanner.loot.minecart_chest=运输矿车
 gui.structurescanner.loot.aether.reward=藏宝箱
+gui.structurescanner.loot.container=容器
 
 # Entities Window
 gui.structurescanner.entities.title=%s中的实体
