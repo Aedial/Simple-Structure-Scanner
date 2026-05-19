@@ -44,6 +44,13 @@ public class StructureProviderRegistry {
     //       This would allow for modpacks to add structure data without needing to PR code changes
     //       I don't think it would allow for custom search logic (would need ZenScript), but could cover basic info
 
+    // TODO: Add text files for preventing searching some structures/dimensions
+    //       For example, one might want to allow Overworld, but not some custom dimension.
+    //       It should be client-side, so there is no need for resolving the user's specific list.
+    //       Not in a config file, since it's not supposed to be edited by hand.
+    //       A command should be added to remove a stucture or dimension from the blacklist.
+    //       There should be one file per integration, as we might want to blacklist only some structures from a mod, not all of them.
+
     /**
      * Discover and register all available structure providers.
      * Called during mod initialization.

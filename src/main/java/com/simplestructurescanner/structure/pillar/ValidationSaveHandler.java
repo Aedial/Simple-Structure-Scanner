@@ -1,6 +1,8 @@
 package com.simplestructurescanner.structure.pillar;
 
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.datafix.DataFixer;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
 import net.minecraft.world.chunk.Chunk;
@@ -9,7 +11,6 @@ import net.minecraft.world.gen.structure.template.TemplateManager;
 import net.minecraft.world.storage.IPlayerFileData;
 import net.minecraft.world.storage.ISaveHandler;
 import net.minecraft.world.storage.WorldInfo;
-import net.minecraft.util.datafix.DataFixer;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -28,6 +29,8 @@ import java.io.File;
  * the validation world from affecting the real game state.
  */
 public class ValidationSaveHandler implements ISaveHandler, IPlayerFileData, IChunkLoader {
+
+    private static final String[] NO_PLAYER_DATA = new String[0];
 
     @Override
     public WorldInfo loadWorldInfo() {
@@ -71,14 +74,14 @@ public class ValidationSaveHandler implements ISaveHandler, IPlayerFileData, ICh
         // No-op - don't save anything
     }
 
-    @Nonnull
+    @Nullable
     @Override
     public File getWorldDirectory() {
         // Return null - validation world has no directory
         return null;
     }
 
-    @Nonnull
+    @Nullable
     @Override
     public File getMapFileFromName(@Nonnull String mapName) {
         // Return null - validation world doesn't save maps
@@ -121,13 +124,13 @@ public class ValidationSaveHandler implements ISaveHandler, IPlayerFileData, ICh
     // Player data methods (all no-ops for validation world)
 
     @Override
-    public void writePlayerData(@Nonnull net.minecraft.entity.player.EntityPlayer player) {
+    public void writePlayerData(@Nonnull EntityPlayer player) {
         // No-op - don't save player data
     }
 
     @Nullable
     @Override
-    public NBTTagCompound readPlayerData(@Nonnull net.minecraft.entity.player.EntityPlayer player) {
+    public NBTTagCompound readPlayerData(@Nonnull EntityPlayer player) {
         // Return null - no player data to load
         return null;
     }
@@ -136,6 +139,6 @@ public class ValidationSaveHandler implements ISaveHandler, IPlayerFileData, ICh
     @Override
     public String[] getAvailablePlayerDat() {
         // Return empty array - no players in validation world
-        return new String[0];
+        return NO_PLAYER_DATA;
     }
 }

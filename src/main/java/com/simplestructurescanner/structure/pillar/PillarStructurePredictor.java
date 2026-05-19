@@ -24,9 +24,14 @@ import net.minecraftforge.common.BiomeDictionary;
  */
 public class PillarStructurePredictor {
 
+    private PillarStructurePredictor() {
+    }
+
     /**
      * Recreates the exact Random that Forge provides to IWorldGenerators.
      * This formula is from GameRegistry.generateWorld() in Forge 1.12.2.
+     * Do not simplify the bit-shift expression here. Pillar inherits Forge's
+     * precedence exactly, and changing it would change every predicted chunk.
      *
      * @param worldSeed The world's seed (world.getSeed())
      * @param chunkX The chunk X coordinate
@@ -81,19 +86,16 @@ public class PillarStructurePredictor {
         int structuresGenerated = 0;
 
         for (PillarSchemaProxy schema : shuffledSchemas) {
-            boolean isTarget = schema.structureName.equals(targetStructureName);
-
-            BlockPos result;
-            if (isTarget) {
-                result = predictSingleStructure(
+            if (schema.structureName.equals(targetStructureName)) {
+                BlockPos predictedPos = predictTargetStructure(
                         schema, random, world, chunkX, chunkZ, knownPositions, rarityMultiplier);
-            } else {
-                result = predictNonTargetStructure(schema, random, rarityMultiplier);
+
+                if (predictedPos != null) return predictedPos;
+
+                continue;
             }
 
-            if (result == null) continue;
-
-            if (isTarget) return result;
+            if (!countsTowardChunkQuota(schema, random, rarityMultiplier)) continue;
 
             structuresGenerated++;
             if (structuresGenerated >= maxStructures) return null;
@@ -116,7 +118,7 @@ public class PillarStructurePredictor {
      * @return Predicted BlockPos with Y from terrain, or null
      */
     @Nullable
-    private static BlockPos predictSingleStructure(
+    private static BlockPos predictTargetStructure(
             PillarSchemaProxy schema,
             Random random,
             World world,
@@ -125,26 +127,13 @@ public class PillarStructurePredictor {
             Collection<BlockPos> knownPositions,
             float rarityMultiplier) {
 
-        if (schema.generatorType == PillarGeneratorType.NONE) return null;
+        if (!passesRarityCheck(schema, random, rarityMultiplier)) return null;
 
-        // Rarity check — matches Pillar's:
-        //   int rarity = (int) (schema.rarity * Pillar.rarityMultiplier);
-        //   if (rarity > 0 && random.nextInt(rarity) == 0) { ... }
-        int rarity = (int) (schema.rarity * rarityMultiplier);
-        if (rarity <= 0) return null;
-        if (random.nextInt(rarity) != 0) return null;
-
-        // X/Z within chunk
-        int x = chunkX * 16 + random.nextInt(16);
-        int z = chunkZ * 16 + random.nextInt(16);
-
-        // Y-coordinate via validation world (never touches the real world)
-        BlockPos xzPos = new BlockPos(x, 0, z);
+        BlockPos xzPos = pickChunkPosition(random, chunkX, chunkZ);
         StructureValidationWorld validationWorld = ValidationContextManager.getValidationWorld(world);
-        BlockPos pos = getYCoordinateForGeneratorType(schema, random, validationWorld, xzPos);
+        BlockPos pos = schema.generatorType.getGenerationPosition(schema, random, validationWorld, xzPos);
 
         if (pos == null) return null;
-
         if (!canSpawnInPosition(schema, world, pos, knownPositions)) return null;
 
         return pos;
@@ -158,210 +147,42 @@ public class PillarStructurePredictor {
      * @param schema The structure schema
      * @param random The Forge-seeded Random (will be advanced)
      * @param rarityMultiplier Pillar's global rarity multiplier
-     * @return Placeholder BlockPos if structure would pass rarity, or null
+     * @return whether the structure would count toward Pillar's per-chunk quota
      */
-    @Nullable
-    private static BlockPos predictNonTargetStructure(
-            PillarSchemaProxy schema,
-            Random random,
-            float rarityMultiplier) {
+    private static boolean countsTowardChunkQuota(
+            PillarSchemaProxy schema, Random random, float rarityMultiplier) {
 
-        if (schema.generatorType == PillarGeneratorType.NONE) return null;
+        if (!passesRarityCheck(schema, random, rarityMultiplier)) return false;
 
-        int rarity = (int) (schema.rarity * rarityMultiplier);
-        if (rarity <= 0) return null;
-        if (random.nextInt(rarity) != 0) return null;
+        consumeChunkPositionRandom(random);
+        schema.generatorType.exhaustRandom(schema, random);
 
-        // Consume X/Z random calls
+        return true;
+    }
+
+    private static boolean passesRarityCheck(PillarSchemaProxy schema, Random random, float rarityMultiplier) {
+        if (schema.generatorType == PillarGeneratorType.NONE) return false;
+
+        int rarity = getRarity(schema, rarityMultiplier);
+        if (rarity <= 0) return false;
+
+        return random.nextInt(rarity) == 0;
+    }
+
+    private static int getRarity(PillarSchemaProxy schema, float rarityMultiplier) {
+        return (int) (schema.rarity * rarityMultiplier);
+    }
+
+    private static BlockPos pickChunkPosition(Random random, int chunkX, int chunkZ) {
+        int x = chunkX * 16 + random.nextInt(16);
+        int z = chunkZ * 16 + random.nextInt(16);
+
+        return new BlockPos(x, 0, z);
+    }
+
+    private static void consumeChunkPositionRandom(Random random) {
         random.nextInt(16);
         random.nextInt(16);
-
-        // Consume Y random calls
-        consumeGeneratorTypeRandom(schema, random);
-
-        // This structure would spawn (return placeholder - Y=0 since we didn't verify)
-        // We return a non-null result to indicate it counts toward the quota
-        return new BlockPos(0, 0, 0);
-    }
-
-    // ========== GeneratorType Y-coordinate logic ==========
-
-    /**
-     * Determines the Y-coordinate using Pillar's GeneratorType logic.
-     * Uses the validation world for terrain queries (never the real world).
-     */
-    @Nullable
-    private static BlockPos getYCoordinateForGeneratorType(
-            PillarSchemaProxy schema,
-            Random random,
-            StructureValidationWorld validationWorld,
-            BlockPos xzPos) {
-
-        switch (schema.generatorType) {
-            case SURFACE:
-                return getSurfacePosition(schema, validationWorld, xzPos);
-            case UNDERGROUND:
-                // UNDERGROUND: Random Y between 0-60, must not see sky
-                return getUndergroundPosition(schema, random, validationWorld, xzPos);
-
-            case UNDERWATER:
-                // UNDERWATER: Uses getTopSolidBlock(), must have liquid above
-                return getUnderwaterPosition(schema, validationWorld, xzPos);
-
-            case ABOVE_WATER:
-                // ABOVE_WATER: Uses getTopLiquidBlock(), Y in bounds
-                return getAboveWaterPosition(schema, validationWorld, xzPos);
-
-            case SKY:
-                // SKY: Random Y between 128-256, must see sky and be air
-                return getSkyPosition(schema, random, validationWorld, xzPos);
-
-            case ANYWHERE:
-                // ANYWHERE: Random Y between 1-256, no terrain checks
-                return getAnywherePosition(schema, random, xzPos);
-
-            case NONE:
-            default:
-                return null;
-        }
-    }
-
-    @Nullable
-    private static BlockPos getSurfacePosition(
-            PillarSchemaProxy schema, StructureValidationWorld world, BlockPos xzPos) {
-
-        BlockPos pos = world.getTopSolidOrLiquidBlock(xzPos);
-        net.minecraft.block.state.IBlockState state = world.getBlockState(pos);
-
-        if (pos.getX() == 0 || state.getBlock() instanceof net.minecraft.block.BlockLiquid) return null;
-        if (!isInYBounds(schema, pos.getY())) return null;
-
-        return pos;
-    }
-
-    @Nullable
-    private static BlockPos getUndergroundPosition(
-            PillarSchemaProxy schema, Random random, StructureValidationWorld world, BlockPos xzPos) {
-
-        int y = getYFromBounds(schema, random, 0, 60);
-        BlockPos pos = new BlockPos(xzPos.getX(), y, xzPos.getZ());
-
-        if (world.canBlockSeeSky(pos)) return null;
-
-        return pos;
-    }
-
-    @Nullable
-    private static BlockPos getUnderwaterPosition(
-            PillarSchemaProxy schema, StructureValidationWorld world, BlockPos xzPos) {
-
-        BlockPos pos = world.getTopSolidBlock(xzPos);
-        net.minecraft.block.state.IBlockState stateAbove = world.getBlockState(pos.up());
-
-        if (pos.getX() == 0 || !(stateAbove.getBlock() instanceof net.minecraft.block.BlockLiquid)) return null;
-
-        return pos;
-    }
-
-    @Nullable
-    private static BlockPos getAboveWaterPosition(
-            PillarSchemaProxy schema, StructureValidationWorld world, BlockPos xzPos) {
-
-        BlockPos pos = world.getTopLiquidBlock(xzPos);
-
-        if (pos.getX() == 0 || !isInYBounds(schema, pos.getY())) return null;
-
-        return pos;
-    }
-
-    @Nullable
-    private static BlockPos getSkyPosition(
-            PillarSchemaProxy schema, Random random, StructureValidationWorld world, BlockPos xzPos) {
-
-        int y = getYFromBounds(schema, random, 128, 256);
-        BlockPos pos = new BlockPos(xzPos.getX(), y, xzPos.getZ());
-        net.minecraft.block.state.IBlockState state = world.getBlockState(pos);
-
-        if (!world.canBlockSeeSky(pos) || !state.getBlock().isAir(state, world, pos)) return null;
-
-        return pos;
-    }
-
-    @Nullable
-    private static BlockPos getAnywherePosition(
-            PillarSchemaProxy schema, Random random, BlockPos xzPos) {
-
-        int y = getYFromBounds(schema, random, 1, 256);
-
-        return new BlockPos(xzPos.getX(), y, xzPos.getZ());
-    }
-
-    // ========== Y-coordinate bounds helpers ==========
-
-    private static boolean isInYBounds(PillarSchemaProxy schema, int y) {
-        if (schema.maxY > -1 && y > schema.maxY) return false;
-
-        return schema.minY <= -1 || y >= schema.minY;
-    }
-
-    private static int getYFromBounds(PillarSchemaProxy schema, Random rand, int defaultMin, int defaultMax) {
-        int maxY = schema.maxY;
-        int minY = schema.minY;
-
-        if (maxY < 0) maxY = defaultMax;
-        if (minY < 0) minY = defaultMin;
-
-        if (minY > maxY) {
-            int temp = maxY;
-            maxY = minY;
-            minY = temp;
-        }
-
-        int diff = maxY - minY;
-
-        return rand.nextInt(diff) + minY;
-    }
-
-    /**
-     * Consume the Random calls that a GeneratorType's getGenerationPosition()
-     * would make, without performing terrain checks. Keeps Random state in sync
-     * for non-target structures.
-     */
-    private static void consumeGeneratorTypeRandom(PillarSchemaProxy schema, Random random) {
-        switch (schema.generatorType) {
-            case SURFACE:
-            case UNDERWATER:
-            case ABOVE_WATER:
-                // These types use world scanning, no random consumed
-                break;
-            case UNDERGROUND:
-                random.nextInt(getYRange(schema, 0, 60));
-                break;
-            case SKY:
-                random.nextInt(getYRange(schema, 128, 256));
-                break;
-            case ANYWHERE:
-                random.nextInt(getYRange(schema, 1, 256));
-                break;
-            case NONE:
-                break;
-        }
-    }
-
-    private static int getYRange(PillarSchemaProxy schema, int defaultMin, int defaultMax) {
-        int maxY = schema.maxY;
-        int minY = schema.minY;
-
-        if (maxY < 0) maxY = defaultMax;
-        if (minY < 0) minY = defaultMin;
-
-        if (minY > maxY) {
-            int temp = maxY;
-            maxY = minY;
-            minY = temp;
-        }
-
-        return Math.max(maxY - minY, 1);
     }
 
     // ========== Spawn condition checks ==========

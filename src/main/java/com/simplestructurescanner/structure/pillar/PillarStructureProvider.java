@@ -44,6 +44,9 @@ public class PillarStructureProvider implements StructureProvider {
 
     private static final String PROVIDER_ID = "pillar";
     private static final String MOD_ID = "pillar";
+    private static final int CHUNK_COORDINATE_SHIFT = 4;
+    private static final int CHUNK_CACHE_MAINTENANCE_INTERVAL = 500;
+    private static final int MAX_CACHED_VALIDATION_CHUNKS = 500;
 
     // Max search radius in blocks (1024 = 64 chunks)
     private static final int SEARCH_RADIUS = 1024;
@@ -52,7 +55,7 @@ public class PillarStructureProvider implements StructureProvider {
 
     private List<ResourceLocation> structureIds = null;
     private Map<ResourceLocation, PillarSchemaProxy> schemaMap = null;
-    private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
+    private final Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
 
     /**
      * Schemas in Pillar's natural {@code Object2ObjectOpenHashMap} iteration order.
@@ -63,6 +66,18 @@ public class PillarStructureProvider implements StructureProvider {
 
     private float rarityMultiplier = 1.0f;
     private int maxStructuresInOneChunk = 1;
+
+    private static final class ScanOutcome {
+        private final List<BlockPos> positions;
+        private final int chunksSearched;
+        private final boolean timedOut;
+
+        private ScanOutcome(List<BlockPos> positions, int chunksSearched, boolean timedOut) {
+            this.positions = positions;
+            this.chunksSearched = chunksSearched;
+            this.timedOut = timedOut;
+        }
+    }
 
     @Override
     public String getProviderId() {
@@ -87,6 +102,34 @@ public class PillarStructureProvider implements StructureProvider {
         populateStructureContents();
     }
 
+    @Nullable
+    private PillarSchemaProxy getSchema(ResourceLocation structureId) {
+        if (schemaMap == null) return null;
+
+        return schemaMap.get(structureId);
+    }
+
+    private static Set<Biome> resolveBiomes(PillarSchemaProxy schema) {
+        Set<Biome> biomes = new HashSet<>();
+
+        for (String biomeName : schema.getDisplayBiomeSpawns()) {
+            Biome biome = resolveBiome(biomeName);
+            if (biome != null) biomes.add(biome);
+        }
+
+        return biomes;
+    }
+
+    private static Set<DimensionInfo> resolveDimensions(PillarSchemaProxy schema) {
+        Set<DimensionInfo> dimensions = new HashSet<>();
+
+        for (Integer dimId : schema.getDisplayDimensionSpawns()) {
+            dimensions.add(new DimensionInfo(dimId));
+        }
+
+        return dimensions;
+    }
+
     private void populateStructureMetadata() {
         for (Map.Entry<ResourceLocation, PillarSchemaProxy> entry : schemaMap.entrySet()) {
             ResourceLocation id = entry.getKey();
@@ -100,19 +143,10 @@ public class PillarStructureProvider implements StructureProvider {
             String rarityStr = I18n.translateToLocalFormatted("gui.structurescanner.rarity.one_in_chunks", rounded);
             info.setRarity(I18n.translateToLocalFormatted("gui.structurescanner.rarity", rarityStr));
 
-            // Resolve biome name strings to actual Biome objects via the registry
-            Set<Biome> biomes = new HashSet<>();
-            for (String biomeName : schema.getAllBiomeSpawns()) {
-                Biome biome = resolveBiome(biomeName);
-                if (biome != null) biomes.add(biome);
-            }
+            Set<Biome> biomes = resolveBiomes(schema);
             if (!biomes.isEmpty()) info.setValidBiomes(biomes);
 
-            // Set valid dimensions
-            Set<DimensionInfo> dimensions = new HashSet<>();
-            for (Integer dimId : schema.getAllDimensionSpawns()) {
-                dimensions.add(new DimensionInfo(dimId));
-            }
+            Set<DimensionInfo> dimensions = resolveDimensions(schema);
             if (!dimensions.isEmpty()) info.setValidDimensions(dimensions);
 
             // TODO: Add generator type info when setNotes() is added to StructureInfo
@@ -122,14 +156,14 @@ public class PillarStructureProvider implements StructureProvider {
 
     /**
      * Resolve a biome name string to a {@link Biome} object.
-     * Tries the Forge biome registry with both the raw name and a
-     * "minecraft:" prefixed ResourceLocation.
+     * Tries the biome registry entry first, then falls back to comparing the
+     * localized biome names already present in the registry.
      */
     @Nullable
     private static Biome resolveBiome(String biomeName) {
         if (biomeName == null || biomeName.isEmpty()) return null;
 
-        // Try as a ResourceLocation first (e.g., "minecraft:plains" or "modid:biome")
+        // Try as a ResourceLocation first (for example, "minecraft:plains" or "modid:biome")
         ResourceLocation biomeLoc = new ResourceLocation(biomeName);
         Biome biome = Biome.REGISTRY.getObject(biomeLoc);
         if (biome != null) return biome;
@@ -184,9 +218,7 @@ public class PillarStructureProvider implements StructureProvider {
 
     @Override
     public boolean canBeSearched(ResourceLocation structureId) {
-        if (schemaMap == null) return false;
-
-        PillarSchemaProxy schema = schemaMap.get(structureId);
+        PillarSchemaProxy schema = getSchema(structureId);
         if (schema == null) return false;
 
         return schema.generatorType != PillarGeneratorType.NONE;
@@ -202,67 +234,23 @@ public class PillarStructureProvider implements StructureProvider {
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {
-        if (schemaMap == null) return null;
-
-        PillarSchemaProxy schema = schemaMap.get(structureId);
+        PillarSchemaProxy schema = getSchema(structureId);
         if (schema == null) {
             SimpleStructureScanner.LOGGER.warn("Unknown Pillar structure: {}", structureId);
 
             return null;
         }
 
-        String structureName = structureId.getPath();
-        int dimensionId = world.provider.getDimension();
+        ScanOutcome scanOutcome = scanStructure(world, schema, pos, Integer.MAX_VALUE);
+        if (scanOutcome.timedOut) {
+            SimpleStructureScanner.LOGGER.warn(
+                    "Search interrupted: Exceeded maximum time limit ({}ms). Searched {} chunks.",
+                    MAX_SCAN_TIME_MS, scanOutcome.chunksSearched);
 
-        int playerChunkX = pos.getX() >> 4;
-        int playerChunkZ = pos.getZ() >> 4;
-        int maxRadius = SEARCH_RADIUS >> 4;
-
-        Set<BlockPos> foundPositions = new HashSet<>();
-        List<BlockPos> allCandidates = new ArrayList<>();
-
-        int chunksSearched = 0;
-        long startTime = System.currentTimeMillis();
-
-        try {
-            for (int radius = 0; radius <= maxRadius; radius++) {
-                for (int dx = -radius; dx <= radius; dx++) {
-                    for (int dz = -radius; dz <= radius; dz++) {
-                        if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
-
-                        int chunkX = playerChunkX + dx;
-                        int chunkZ = playerChunkZ + dz;
-                        chunksSearched++;
-
-                        if (System.currentTimeMillis() - startTime > MAX_SCAN_TIME_MS) {
-                            SimpleStructureScanner.LOGGER.warn(
-                                    "Search interrupted: Exceeded maximum time limit ({}ms). Searched {} chunks.",
-                                    MAX_SCAN_TIME_MS, chunksSearched);
-
-                            return null;
-                        }
-
-                        if (chunksSearched % 500 == 0) {
-                            int cachedChunks = ValidationContextManager.getTotalCachedChunkCount();
-                            if (cachedChunks > 500) {
-                                ValidationContextManager.clearDimensionCache(dimensionId);
-                            }
-                        }
-
-                        BlockPos predictedPos = PillarStructurePredictor.predictStructureInChunk(
-                                world, chunkX, chunkZ, structureName, foundPositions,
-                                schemasInOrder, rarityMultiplier, maxStructuresInOneChunk);
-
-                        if (predictedPos == null) continue;
-
-                        foundPositions.add(predictedPos);
-                        allCandidates.add(predictedPos);
-                    }
-                }
-            }
-        } finally {
-            ValidationContextManager.clearDimensionCache(dimensionId);
+            return null;
         }
+
+        List<BlockPos> allCandidates = scanOutcome.positions;
 
         if (allCandidates.isEmpty()) return null;
 
@@ -291,14 +279,36 @@ public class PillarStructureProvider implements StructureProvider {
     @Override
     @Nullable
     public List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
-        if (schemaMap == null || !schemaMap.containsKey(structureId)) return null;
+        PillarSchemaProxy schema = getSchema(structureId);
+        if (schema == null) return null;
 
-        String structureName = structureId.getPath();
-        int dimensionId = world.provider.getDimension();
+        ScanOutcome scanOutcome = scanStructure(world, schema, pos, maxResults);
+        if (scanOutcome.timedOut) return scanOutcome.positions;
 
-        int playerChunkX = pos.getX() >> 4;
-        int playerChunkZ = pos.getZ() >> 4;
-        int maxRadius = SEARCH_RADIUS >> 4;
+        List<BlockPos> results = scanOutcome.positions;
+
+        PositionHelper.sortByHorizontalDistance(results, pos);
+
+        return results;
+    }
+
+    private ScanOutcome scanStructure(World world, PillarSchemaProxy schema, BlockPos pos, int maxResults) {
+        World generationWorld = ValidationContextManager.getGenerationWorld(world);
+
+        return scanCandidates(generationWorld, pos, schema.structureName, maxResults);
+    }
+
+    /**
+     * Scan chunks in the same spiral order used by the public search methods.
+     * Timeout handling is returned to the caller so each public API keeps its
+     * existing behavior: nearest logs and returns null, while nearby returns
+     * the partial unsorted list gathered so far.
+     */
+    private ScanOutcome scanCandidates(World generationWorld, BlockPos pos, String structureName, int maxResults) {
+        int dimensionId = generationWorld.provider.getDimension();
+        int playerChunkX = pos.getX() >> CHUNK_COORDINATE_SHIFT;
+        int playerChunkZ = pos.getZ() >> CHUNK_COORDINATE_SHIFT;
+        int maxRadius = SEARCH_RADIUS >> CHUNK_COORDINATE_SHIFT;
 
         Set<BlockPos> foundPositions = new HashSet<>();
         List<BlockPos> results = new ArrayList<>();
@@ -310,23 +320,20 @@ public class PillarStructureProvider implements StructureProvider {
             for (int radius = 0; radius <= maxRadius && results.size() < maxResults; radius++) {
                 for (int dx = -radius; dx <= radius; dx++) {
                     for (int dz = -radius; dz <= radius; dz++) {
-                        if (radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
+                        if (shouldSkipChunk(radius, dx, dz)) continue;
 
                         int chunkX = playerChunkX + dx;
                         int chunkZ = playerChunkZ + dz;
                         chunksSearched++;
 
-                        if (System.currentTimeMillis() - startTime > MAX_SCAN_TIME_MS) return results;
-
-                        if (chunksSearched % 500 == 0) {
-                            int cachedChunks = ValidationContextManager.getTotalCachedChunkCount();
-                            if (cachedChunks > 500) {
-                                ValidationContextManager.clearDimensionCache(dimensionId);
-                            }
+                        if (System.currentTimeMillis() - startTime > MAX_SCAN_TIME_MS) {
+                            return new ScanOutcome(results, chunksSearched, true);
                         }
 
+                        maintainValidationCache(dimensionId, chunksSearched);
+
                         BlockPos predictedPos = PillarStructurePredictor.predictStructureInChunk(
-                                world, chunkX, chunkZ, structureName, foundPositions,
+                                generationWorld, chunkX, chunkZ, structureName, foundPositions,
                                 schemasInOrder, rarityMultiplier, maxStructuresInOneChunk);
 
                         if (predictedPos == null) continue;
@@ -340,9 +347,20 @@ public class PillarStructureProvider implements StructureProvider {
             ValidationContextManager.clearDimensionCache(dimensionId);
         }
 
-        PositionHelper.sortByHorizontalDistance(results, pos);
+        return new ScanOutcome(results, chunksSearched, false);
+    }
 
-        return results;
+    private static boolean shouldSkipChunk(int radius, int dx, int dz) {
+        return radius > 0 && Math.abs(dx) != radius && Math.abs(dz) != radius;
+    }
+
+    private static void maintainValidationCache(int dimensionId, int chunksSearched) {
+        if (chunksSearched % CHUNK_CACHE_MAINTENANCE_INTERVAL != 0) return;
+
+        int cachedChunks = ValidationContextManager.getTotalCachedChunkCount();
+        if (cachedChunks > MAX_CACHED_VALIDATION_CHUNKS) {
+            ValidationContextManager.clearDimensionCache(dimensionId);
+        }
     }
 
     // ========== Schema & Config Loading ==========
@@ -372,10 +390,10 @@ public class PillarStructureProvider implements StructureProvider {
      */
     @SuppressWarnings("unchecked")
     private void loadSchemas() {
-        Map<String, PillarSchemaProxy> schemas = new HashMap<>();
         schemasInOrder = new ArrayList<>();
         structureIds = new ArrayList<>();
         schemaMap = new LinkedHashMap<>();
+        structureInfos.clear();
 
         try {
             Class<?> structureLoaderClass = ReflectionHelper.loadClassRequired("vazkii.pillar.StructureLoader");
@@ -390,32 +408,36 @@ public class PillarStructureProvider implements StructureProvider {
 
             for (Object schemaObj : pillarSchemas.values()) {
                 try {
-                    PillarSchemaProxy proxy = createSchemaProxy(schemaObj);
-                    if (proxy != null) {
-                        schemas.put(proxy.structureName, proxy);
-                        schemasInOrder.add(proxy);
-                    }
+                    registerSchema(createSchemaProxy(schemaObj));
                 } catch (ReflectionException e) {
                     SimpleStructureScanner.LOGGER.error("Failed to create proxy for schema", e);
                 }
             }
 
-            SimpleStructureScanner.LOGGER.info("Loaded {} Pillar schemas", schemas.size());
+            SimpleStructureScanner.LOGGER.info("Loaded {} Pillar schemas", schemaMap.size());
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.error("Failed to access Pillar schemas", e);
         }
+    }
 
-        for (Map.Entry<String, PillarSchemaProxy> entry : schemas.entrySet()) {
-            ResourceLocation id = new ResourceLocation(MOD_ID, entry.getKey());
-            PillarSchemaProxy proxy = entry.getValue();
-            structureIds.add(id);
-            schemaMap.put(id, proxy);
+    private void registerSchema(PillarSchemaProxy schema) {
+        ResourceLocation id = new ResourceLocation(MOD_ID, schema.structureName);
 
-            // Build and cache the StructureInfo for this structure
-            String displayName = I18n.translateToLocal("structure.pillar." + proxy.structureName);
-            StructureInfo info = new StructureInfo(id, displayName, PROVIDER_ID, 0, 0, 0);
-            structureInfos.put(id, info);
-        }
+        schemasInOrder.add(schema);
+        if (!schemaMap.containsKey(id)) structureIds.add(id);
+
+        schemaMap.put(id, schema);
+
+        // TODO: Add a static file in config to skip some structures (e.g. ones that are generated via command)
+        //       They need to be in the schemaMap for the predictor to work, but we can skip structureInfos.
+
+        structureInfos.put(id, createStructureInfo(id, schema));
+    }
+
+    private StructureInfo createStructureInfo(ResourceLocation id, PillarSchemaProxy schema) {
+        String displayName = I18n.translateToLocal("structure.pillar." + schema.structureName);
+
+        return new StructureInfo(id, displayName, PROVIDER_ID, 0, 0, 0);
     }
 
     // ========== Reflection Helpers ==========

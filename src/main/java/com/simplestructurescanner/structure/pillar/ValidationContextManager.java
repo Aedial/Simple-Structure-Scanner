@@ -1,7 +1,6 @@
 package com.simplestructurescanner.structure.pillar;
 
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.GameType;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
 import net.minecraft.world.WorldServer;
@@ -25,10 +24,10 @@ import java.util.WeakHashMap;
  * - Creates and caches validation worlds by dimension
  * - Reuses existing validation worlds to avoid regenerating chunks
  * - Cleans up worlds when done to prevent memory leaks
- * - Provides thread-safe access to validation worlds
+ * - Resolves the correct generation world before validation
  *
  * USAGE:
- * 1. Get a validation world for a dimension: getValidationWorld(dimension)
+ * 1. Get a validation world for a world: getValidationWorld(world)
  * 2. Use the world for structure validation
  * 3. Clear cache when done: clearCache()
  *
@@ -36,28 +35,33 @@ import java.util.WeakHashMap;
  */
 public class ValidationContextManager {
 
-    private static final Map<Integer, StructureValidationWorld> validationWorlds = new HashMap<>();
+    private static final Map<Integer, StructureValidationWorld> VALIDATION_WORLDS = new HashMap<>();
 
     // Cache for client world -> server world mapping
     // Uses WeakHashMap to prevent memory leaks when World objects are no longer referenced
-    private static final Map<World, World> serverWorldCache = new WeakHashMap<>();
+    private static final Map<World, World> SERVER_WORLD_CACHE = new WeakHashMap<>();
 
-    private static Field chunkGeneratorField;
+    private static final Field CHUNK_GENERATOR_FIELD = findChunkGeneratorField();
 
-    static {
-        // Use reflection to access the chunkGenerator field from ChunkProviderServer
-        try {
-            chunkGeneratorField = ChunkProviderServer.class.getDeclaredField("chunkGenerator");
-            chunkGeneratorField.setAccessible(true);
-        } catch (NoSuchFieldException e) {
-            // Try obfuscated name
+    private ValidationContextManager() {
+    }
+
+    private static Field findChunkGeneratorField() {
+        String[] fieldNames = {"chunkGenerator", "field_186029_c"};
+
+        // The obfuscated fallback preserves compatibility with production jars.
+        for (String fieldName : fieldNames) {
             try {
-                chunkGeneratorField = ChunkProviderServer.class.getDeclaredField("field_186029_c");
-                chunkGeneratorField.setAccessible(true);
-            } catch (NoSuchFieldException e2) {
-                throw new RuntimeException("Failed to find chunkGenerator field in ChunkProviderServer", e2);
+                Field field = ChunkProviderServer.class.getDeclaredField(fieldName);
+                field.setAccessible(true);
+
+                return field;
+            } catch (NoSuchFieldException e) {
+                // Try the next known field name.
             }
         }
+
+        throw new RuntimeException("Failed to find chunkGenerator field in ChunkProviderServer");
     }
 
     /**
@@ -66,8 +70,6 @@ public class ValidationContextManager {
      * This is critical because some mod providers (like BiomesOPlenty with Lost Cities)
      * may modify the WorldInfo's terrain type during initialization. By using a cloned copy,
      * we prevent these modifications from affecting the actual game world.
-     * <p>
-     * Based on fix from SuperMobTracker: https://github.com/Aedial/SuperMobTracker/commit/6e928f4e
      *
      * @param original The WorldInfo to clone
      * @return A new WorldInfo with the same settings
@@ -97,11 +99,11 @@ public class ValidationContextManager {
     @Nullable
     private static World getServerWorldCached(World world) {
         // Check cache first - this is the fast path for 111,000 chunks
-        if (serverWorldCache.containsKey(world)) return serverWorldCache.get(world);
+        if (SERVER_WORLD_CACHE.containsKey(world)) return SERVER_WORLD_CACHE.get(world);
 
         // Cache miss - do the expensive lookup once and cache the result
         World serverWorld = getServerWorld(world);
-        serverWorldCache.put(world, serverWorld);
+        SERVER_WORLD_CACHE.put(world, serverWorld);
         return serverWorld;
     }
 
@@ -114,12 +116,29 @@ public class ValidationContextManager {
     private static IChunkGenerator getChunkGenerator(World world) {
         if (world.getChunkProvider() instanceof ChunkProviderServer) {
             try {
-                return (IChunkGenerator) chunkGeneratorField.get(world.getChunkProvider());
+                return (IChunkGenerator) CHUNK_GENERATOR_FIELD.get(world.getChunkProvider());
             } catch (IllegalAccessException e) {
                 throw new RuntimeException("Failed to access chunkGenerator field", e);
             }
         }
         throw new IllegalArgumentException("World chunk provider is not a ChunkProviderServer");
+    }
+
+    /**
+     * Resolves the actual world used for terrain generation.
+     * <p>
+     * Pillar receives the server-side dimension world during chunk generation.
+     * Searches started from the client world can report the wrong seed in mods
+     * that override it per dimension, so we resolve the matching server world
+     * when it is available and otherwise fall back to the provided world.
+     *
+     * @param realWorld The world passed to the search code
+     * @return The server generation world, or the original world if unavailable
+     */
+    public static World getGenerationWorld(World realWorld) {
+        World world = getServerWorldCached(realWorld);
+
+        return world != null ? world : realWorld;
     }
 
     /**
@@ -135,20 +154,13 @@ public class ValidationContextManager {
      * @return A validation world with the same seed and terrain generation as the real world
      */
     public static StructureValidationWorld getValidationWorld(World realWorld) {
-        // If this is a client world, get the server world instead
-        // Client worlds don't have ChunkProviderServer
-        // Uses cached lookup to avoid repeated iteration through server.worlds
-        World world = getServerWorldCached(realWorld);
-        if (world == null) world = realWorld;
-
+        World world = getGenerationWorld(realWorld);
         int dimension = world.provider.getDimension();
+        StructureValidationWorld validationWorld = VALIDATION_WORLDS.get(dimension);
+        if (validationWorld != null) return validationWorld;
 
-        // Return cached world if available
-        if (validationWorlds.containsKey(dimension)) return validationWorlds.get(dimension);
-
-        // Create new validation world
-        StructureValidationWorld validationWorld = createValidationWorld(world);
-        validationWorlds.put(dimension, validationWorld);
+        validationWorld = createValidationWorld(world);
+        VALIDATION_WORLDS.put(dimension, validationWorld);
 
         return validationWorld;
     }
@@ -171,15 +183,7 @@ public class ValidationContextManager {
             FMLCommonHandler handler = FMLCommonHandler.instance();
             if (handler != null) {
                 MinecraftServer server = handler.getMinecraftServerInstance();
-                if (server != null) {
-                    int dimension = world.provider.getDimension();
-                    // Get the server world for this dimension
-                    for (WorldServer serverWorld : server.worlds) {
-                        if (serverWorld.provider.getDimension() == dimension) {
-                            return serverWorld;
-                        }
-                    }
-                }
+                if (server != null) return findServerWorld(server, world.provider.getDimension());
             }
         } catch (Exception e) {
             // Failed to get server world, return null
@@ -209,25 +213,13 @@ public class ValidationContextManager {
         return new StructureValidationWorld(worldInfo, biomeProvider, worldProvider, chunkGenerator);
     }
 
-    /**
-     * Checks if a validation world exists for the given dimension.
-     *
-     * @param dimension The dimension ID
-     * @return true if a validation world exists, false otherwise
-     */
-    public static boolean hasValidationWorld(int dimension) {
-        return validationWorlds.containsKey(dimension);
-    }
-
-    /**
-     * Gets a validation world by dimension ID.
-     *
-     * @param dimension The dimension ID
-     * @return The validation world, or null if not found
-     */
     @Nullable
-    public static StructureValidationWorld getValidationWorldByDimension(int dimension) {
-        return validationWorlds.get(dimension);
+    private static World findServerWorld(MinecraftServer server, int dimension) {
+        for (WorldServer serverWorld : server.worlds) {
+            if (serverWorld.provider.getDimension() == dimension) return serverWorld;
+        }
+
+        return null;
     }
 
     /**
@@ -237,27 +229,7 @@ public class ValidationContextManager {
      * @param dimension The dimension ID
      */
     public static void clearDimensionCache(int dimension) {
-        StructureValidationWorld world = validationWorlds.get(dimension);
-        if (world != null) world.clearChunkCache();
-    }
-
-    /**
-     * Clears all chunk caches across all dimensions.
-     * Use this to free memory after validation sessions.
-     */
-    public static void clearAllChunkCaches() {
-        validationWorlds.values().forEach(StructureValidationWorld::clearChunkCache);
-    }
-
-    /**
-     * Removes and cleans up a validation world for a specific dimension.
-     * Use this when completely done with a dimension.
-     *
-     * @param dimension The dimension ID
-     */
-    public static void removeValidationWorld(int dimension) {
-        StructureValidationWorld world = validationWorlds.remove(dimension);
-        if (world != null) world.clearChunkCache();
+        clearChunkCache(VALIDATION_WORLDS.get(dimension));
     }
 
     /**
@@ -266,21 +238,20 @@ public class ValidationContextManager {
      * to prevent memory leaks.
      */
     public static void clearCache() {
-        // Clear all chunk caches first
-        validationWorlds.values().forEach(StructureValidationWorld::clearChunkCache);
-
-        // Remove all worlds
-        validationWorlds.clear();
+        VALIDATION_WORLDS.values().forEach(ValidationContextManager::clearChunkCache);
+        VALIDATION_WORLDS.clear();
     }
 
-    /**
-     * Gets the number of cached validation worlds.
-     * Useful for monitoring memory usage.
-     *
-     * @return The number of validation worlds
-     */
-    public static int getCachedWorldCount() {
-        return validationWorlds.size();
+    private static void clearChunkCache(@Nullable StructureValidationWorld world) {
+        if (world != null) world.clearChunkCache();
+    }
+
+    private static int getCachedChunkCountForWorld(StructureValidationWorld world) {
+        if (world.getChunkProvider() instanceof ValidationChunkProvider) {
+            return ((ValidationChunkProvider) world.getChunkProvider()).getCachedChunkCount();
+        }
+
+        return 0;
     }
 
     /**
@@ -290,13 +261,8 @@ public class ValidationContextManager {
      * @return The total number of cached chunks
      */
     public static int getTotalCachedChunkCount() {
-        return validationWorlds.values().stream()
-                .mapToInt(world -> {
-                    if (world.getChunkProvider() instanceof ValidationChunkProvider) {
-                        return ((ValidationChunkProvider) world.getChunkProvider()).getCachedChunkCount();
-                    }
-                    return 0;
-                })
+        return VALIDATION_WORLDS.values().stream()
+                .mapToInt(ValidationContextManager::getCachedChunkCountForWorld)
                 .sum();
     }
 }

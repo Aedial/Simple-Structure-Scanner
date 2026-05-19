@@ -7,11 +7,8 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.EnumSkyBlock;
-import net.minecraft.world.GameType;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
-import net.minecraft.world.WorldSettings;
-import net.minecraft.world.WorldType;
 import net.minecraft.world.biome.BiomeProvider;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.IChunkProvider;
@@ -19,6 +16,7 @@ import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraft.world.storage.WorldInfo;
 
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 
 /**
@@ -40,15 +38,10 @@ import java.lang.reflect.Field;
  */
 public class StructureValidationWorld extends World {
 
-    private static final WorldSettings DEFAULT_SETTINGS = new WorldSettings(
-        1L, GameType.CREATIVE, false, false, WorldType.DEFAULT
-    );
+    private static final Field BIOME_PROVIDER_FIELD = findBiomeProviderField();
 
-    private static Field biomeProviderField;
-
-    static {
-        // Use reflection to access the biomeProvider field from World
-        // Try multiple possible field names (deobfuscated and various obfuscated versions)
+    @Nullable
+    private static Field findBiomeProviderField() {
         String[] possibleNames = {
             "biomeProvider",  // Deobfuscated/MCP
             "field_72961_K",  // 1.12.2 obfuscated (older mappings)
@@ -58,25 +51,25 @@ public class StructureValidationWorld extends World {
 
         for (String fieldName : possibleNames) {
             try {
-                biomeProviderField = World.class.getDeclaredField(fieldName);
-                biomeProviderField.setAccessible(true);
+                Field field = World.class.getDeclaredField(fieldName);
+                field.setAccessible(true);
                 SimpleStructureScanner.LOGGER.info("Successfully accessed biomeProvider field as: {}", fieldName);
-                break;
+
+                return field;
             } catch (NoSuchFieldException e) {
-                // Try next name
+                // Try next name.
             }
         }
 
-        if (biomeProviderField == null) {
-            // If all names fail, log warning but don't crash
-            // The validation will still work, just without forced BiomeProvider synchronization
-            SimpleStructureScanner.LOGGER.warn("Could not find biomeProvider field in World class using any known name.");
-            SimpleStructureScanner.LOGGER.warn("BiomeProvider synchronization will not be available - validation may have biome mismatches.");
-        }
+        // If all names fail, log warning but do not crash.
+        // Validation still works, just without forced BiomeProvider synchronization.
+        SimpleStructureScanner.LOGGER.warn("Could not find biomeProvider field in World class using any known name.");
+        SimpleStructureScanner.LOGGER.warn("BiomeProvider synchronization will not be available - validation may have biome mismatches.");
+
+        return null;
     }
 
     private final IChunkGenerator chunkGenerator;
-    private final long worldSeed;
 
     /**
      * Creates a new structure validation world.
@@ -104,22 +97,16 @@ public class StructureValidationWorld extends World {
             true  // isRemote (client-side)
         );
 
-        // IMPORTANT: Use WorldProvider.getSeed() instead of WorldInfo.getSeed()
-        // Mods like Advanced Rocketry override getSeed() to return dimension-specific seeds
-        // (e.g., WorldProviderPlanet.getSeed() returns baseSeed + dimensionId)
-        // WorldInfo only contains the base world seed, which would cause incorrect
-        // terrain generation in the validation world for these dimensions.
-        this.worldSeed = worldProvider.getSeed();
         this.chunkGenerator = chunkGenerator;
 
         // Set up the world with proper initialization
-        initializeWorld(biomeProvider, worldProvider);
+        initializeWorld(biomeProvider);
     }
 
     /**
      * Initializes the world with the provided providers.
      */
-    private void initializeWorld(BiomeProvider biomeProvider, WorldProvider worldProvider) {
+    private void initializeWorld(BiomeProvider biomeProvider) {
         // CRITICAL: Do NOT modify the shared WorldProvider or BiomeProvider!
         // These are shared with the real world, and modifying them would cause
         // the real world to reference the validation world, leading to crashes.
@@ -127,9 +114,9 @@ public class StructureValidationWorld extends World {
         // Override the BiomeProvider with the real world's BiomeProvider
         // The WorldProvider creates its own BiomeProvider, which causes biome mismatches.
         // We use reflection to set the biomeProvider field to ensure identical biomes.
-        if (biomeProviderField != null) {
+        if (BIOME_PROVIDER_FIELD != null) {
             try {
-                biomeProviderField.set(this, biomeProvider);
+                BIOME_PROVIDER_FIELD.set(this, biomeProvider);
             } catch (IllegalAccessException e) {
                 SimpleStructureScanner.LOGGER.warn("Failed to set biomeProvider field via reflection: {}", e.getMessage());
                 SimpleStructureScanner.LOGGER.warn("BiomeProvider synchronization will not be available - validation may have biome mismatches.");
@@ -139,7 +126,7 @@ public class StructureValidationWorld extends World {
         }
 
         // Create the chunk provider with terrain generation
-        this.chunkProvider = new ValidationChunkProvider(this, chunkGenerator);
+        this.chunkProvider = createValidationChunkProvider();
 
         // Set world border to a large size
         this.getWorldBorder().setSize(30000000);
@@ -153,7 +140,11 @@ public class StructureValidationWorld extends World {
     @Nonnull
     @Override
     protected IChunkProvider createChunkProvider() {
-        return new ValidationChunkProvider(this, chunkGenerator);
+        return createValidationChunkProvider();
+    }
+
+    private ValidationChunkProvider createValidationChunkProvider() {
+        return new ValidationChunkProvider(chunkGenerator);
     }
 
     @Override
@@ -187,9 +178,7 @@ public class StructureValidationWorld extends World {
              pos = pos.down()) {
 
             IBlockState state = chunk.getBlockState(pos);
-            if (!state.getBlock().isAir(state, this, pos)) {
-                return pos;
-            }
+            if (!state.getBlock().isAir(state, this, pos)) return pos;
         }
 
         return xzPos;
@@ -237,13 +226,10 @@ public class StructureValidationWorld extends World {
     @Nonnull
     public BlockPos getTopLiquidBlock(@Nonnull BlockPos xzPos) {
         Chunk chunk = getChunk(xzPos);
-        BlockPos pos;
         BlockPos nextPos;
 
-        for (pos = new BlockPos(xzPos.getX(), chunk.getTopFilledSegment() + 16, xzPos.getZ());
-             pos.getY() >= 0;
-             pos = nextPos) {
-
+        BlockPos pos = new BlockPos(xzPos.getX(), chunk.getTopFilledSegment() + 16, xzPos.getZ());
+        for (; pos.getY() >= 0; pos = nextPos) {
             nextPos = pos.down();
             IBlockState state = chunk.getBlockState(nextPos);
 
@@ -251,17 +237,6 @@ public class StructureValidationWorld extends World {
         }
 
         return pos;
-    }
-
-    /**
-     * Checks if a block can see the sky.
-     * Used by Pillar's UNDERGROUND and SKY generator types.
-     * Uses the base World implementation which works correctly with generated chunks.
-     */
-    @Override
-    public boolean canBlockSeeSky(@Nonnull BlockPos pos) {
-        // Delegate to base World implementation
-        return super.canBlockSeeSky(pos);
     }
 
     //================================================================================
@@ -304,20 +279,6 @@ public class StructureValidationWorld extends World {
     //================================================================================
     // Utility Methods
     //================================================================================
-
-    /**
-     * Gets the world seed being used for generation.
-     */
-    public long getWorldSeed() {
-        return worldSeed;
-    }
-
-    /**
-     * Gets the chunk generator being used.
-     */
-    public IChunkGenerator getChunkGenerator() {
-        return chunkGenerator;
-    }
 
     /**
      * Clears the chunk cache to free memory.

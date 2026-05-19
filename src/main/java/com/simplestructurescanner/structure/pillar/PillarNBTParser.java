@@ -74,6 +74,9 @@ public class PillarNBTParser {
 
     private static File pillarStructureDir = null;
 
+    private PillarNBTParser() {
+    }
+
     /**
      * Result of parsing a Pillar structure NBT file.
      */

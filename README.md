@@ -25,11 +25,14 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 
 - List of supported structures:
   - Vanilla Minecraft structures.
+  - Dungeons from the Aether mod.
+  - Some specific structures from AbyssalCraft.
+  - Ice&Fire's structures (none can be searched for, due to being non-determinstic).
   - Custom structures from the Pillar mod.
 
 ## FAQ
 ### Do I need to install this on a server?
-If you wish the query structure locations, you will need to put the mod on the server as well. However, if you only want to view structure information, you can use it client-side, as long as the mod providing said structures is also installed client-side.
+If you wish the query structure locations, you will need to put the mod on the server as well. However, if you only want to view structure information, you can use it client-side, as long as the mods providing said structures are also installed client-side.
 
 ### How is the structures list filtered?
 The filter box matches both localized and unlocalized structure names. This means you can type the mod name, the name in your selected language, or the default English name. The localization structure is up to the individual providers, but it should generally be `gui.structurescanner.structures.<mod_id>.<structure_id>`.

@@ -9,7 +9,7 @@ import java.util.List;
  * Pillar to be loaded at compile time. We use reflection to access Pillar's
  * actual StructureSchema objects and extract the data we need.
  */
-public class PillarSchemaProxy {
+public final class PillarSchemaProxy {
 
     public final String structureName;
     public final PillarGeneratorType generatorType;
@@ -58,12 +58,20 @@ public class PillarSchemaProxy {
         this.generateEverywhere = generateEverywhere;
     }
 
-    // TODO: handle blacklist/whitelist logic
-    public List<String> getAllBiomeSpawns() {
+    /**
+     * Returns the configured biome rules for display metadata.
+     * Pillar's real spawn logic still evaluates name and tag rules separately,
+     * including blacklist flags, so this is presentation data only.
+     */
+    public List<String> getDisplayBiomeSpawns() {
         return biomeNameSpawns.isEmpty() ? biomeTagSpawns : biomeNameSpawns;
     }
 
-    public List<Integer> getAllDimensionSpawns() {
+    /**
+     * Returns the configured dimension rules for display metadata.
+     * The raw allow/deny semantics still live on the blacklist flags.
+     */
+    public List<Integer> getDisplayDimensionSpawns() {
         return dimensionSpawns;
     }
 
