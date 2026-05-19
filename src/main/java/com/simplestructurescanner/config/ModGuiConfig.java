@@ -11,8 +11,7 @@ import net.minecraftforge.common.config.ConfigElement;
 import net.minecraftforge.fml.client.config.GuiConfig;
 import net.minecraftforge.fml.client.config.IConfigElement;
 
-import com.simplestructurescanner.SimpleStructureScanner;
-
+import com.simplestructurescanner.Tags;
 
 public class ModGuiConfig extends GuiConfig {
 
@@ -20,7 +19,7 @@ public class ModGuiConfig extends GuiConfig {
         super(
             parentScreen,
             getConfigElements(),
-            SimpleStructureScanner.MODID,
+            Tags.MODID,
             false,
             false,
             I18n.format("config.structurescanner.title")

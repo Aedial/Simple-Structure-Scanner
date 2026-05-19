@@ -43,7 +43,7 @@ Due to how complex the process is, structures from a mod may prevent or overlap 
 ## Building
 Run:
 ```
-./gradlew -q build
+./gradlew build
 ```
 Resulting jar will be under `build/libs/`.
 
