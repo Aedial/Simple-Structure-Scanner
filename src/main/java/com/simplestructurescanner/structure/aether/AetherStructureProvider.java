@@ -15,16 +15,18 @@ import javax.annotation.Nullable;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
-import net.minecraft.util.text.translation.I18n;
 import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.DimensionInfo;
+import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.util.PositionHelper;
+import com.simplestructurescanner.structure.util.SeedHelper;
 
 
 /**
@@ -70,7 +72,7 @@ public class AetherStructureProvider implements StructureProvider {
 
     @Override
     public String getModName() {
-        return I18n.translateToLocal("gui.structurescanner.provider.aether");
+        return "gui.structurescanner.provider.aether";
     }
 
     @Override
@@ -132,8 +134,7 @@ public class AetherStructureProvider implements StructureProvider {
         ResourceLocation id = new ResourceLocation(MOD_ID, path);
         knownStructures.add(id);
 
-        String name = I18n.translateToLocal(displayNameKey);
-        StructureInfo info = new StructureInfo(id, name, PROVIDER_ID, sizeX, sizeY, sizeZ);
+        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayNameKey), PROVIDER_ID, sizeX, sizeY, sizeZ);
         structureInfos.put(id, info);
     }
 
@@ -143,22 +144,22 @@ public class AetherStructureProvider implements StructureProvider {
         // Calculate rarity strings based on spawn chance
         // Silver: 6x6 grid, with chance checks
         // Probability = (1/primary + (1 - 1/primary) * 1/secondary) per grid cell
-        String silverRarity = calculateRarityString(SILVER_GRID_SIZE, silverPrimaryChance, silverSecondaryChance);
+        LocalizedText silverRarity = calculateRarityText(SILVER_GRID_SIZE, silverPrimaryChance, silverSecondaryChance);
         setMetadata("silver_dungeon", null, aetherDim, silverRarity);
 
         // Gold: 10x10 grid, with chance checks
-        String goldRarity = calculateRarityString(GOLD_GRID_SIZE, goldPrimaryChance, goldSecondaryChance);
+        LocalizedText goldRarity = calculateRarityText(GOLD_GRID_SIZE, goldPrimaryChance, goldSecondaryChance);
         setMetadata("gold_dungeon", null, aetherDim, goldRarity);
 
         // Bronze: common but not searchable
-        setMetadata("bronze_dungeon", null, aetherDim, "gui.structurescanner.rarity.common");
+        setMetadata("bronze_dungeon", null, aetherDim, wrapRarity("gui.structurescanner.rarity.common"));
     }
 
     /**
      * Calculate a human-readable rarity string like "1 in 1000 chunks".
      * The dungeon spawns on a grid (every N chunks aligned), with two-stage random check.
      */
-    private String calculateRarityString(int gridSize, int primaryChance, int secondaryChance) {
+    private LocalizedText calculateRarityText(int gridSize, int primaryChance, int secondaryChance) {
         // Probability of passing random check:
         // P(spawn) = P(primary=0) + P(primary!=0) * P(secondary=0)
         // P(spawn) = 1/primary + (1 - 1/primary) * 1/secondary
@@ -174,12 +175,15 @@ public class AetherStructureProvider implements StructureProvider {
 
         // Format nicely
         long rounded = Math.round(chunksPerDungeon);
-        String rarity = I18n.translateToLocalFormatted("gui.structurescanner.rarity.one_in_chunks", rounded);
-    
-        return I18n.translateToLocalFormatted("gui.structurescanner.rarity", rarity);
+        return LocalizedText.translatable("gui.structurescanner.rarity",
+            LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", rounded));
     }
 
-    private void setMetadata(String path, Set<?> biomes, Set<DimensionInfo> dimensions, String rarity) {
+    private LocalizedText wrapRarity(String rarityKey) {
+        return LocalizedText.translatable("gui.structurescanner.rarity", LocalizedText.translatable(rarityKey));
+    }
+
+    private void setMetadata(String path, Set<?> biomes, Set<DimensionInfo> dimensions, LocalizedText rarity) {
         StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, path));
         if (info == null) return;
 
@@ -238,7 +242,7 @@ public class AetherStructureProvider implements StructureProvider {
     }
 
     private LootEntry createLootEntry(String lootTable, String displayNameKey) {
-        return new LootEntry(new ResourceLocation(lootTable), Collections.emptyList(), I18n.translateToLocal(displayNameKey));
+        return new LootEntry(new ResourceLocation(lootTable), Collections.emptyList(), LocalizedText.translatable(displayNameKey));
     }
 
     @Override
@@ -267,7 +271,7 @@ public class AetherStructureProvider implements StructureProvider {
         if (world == null || !canBeSearched(structureId)) return null;
         if (world.provider.getDimension() != aetherDimensionId) return null;
 
-        Long seed = getWorldSeed(world);
+        Long seed = SeedHelper.getWorldSeed(world);
         if (seed == null) {
             SimpleStructureScanner.LOGGER.warn("Could not get world seed for Aether structure search");
             return null;
@@ -279,7 +283,7 @@ public class AetherStructureProvider implements StructureProvider {
 
         // Make a copy for sorting
         candidates = new ArrayList<>(candidates);
-        sortByDistance(candidates, pos);
+        PositionHelper.sortByHorizontalDistance(candidates, pos);
 
         // Apply filter and skip to find the target
         int validIndex = 0;
@@ -313,12 +317,12 @@ public class AetherStructureProvider implements StructureProvider {
         if (world == null || !canBeSearched(structureId)) return Collections.emptyList();
         if (world.provider.getDimension() != aetherDimensionId) return Collections.emptyList();
 
-        Long seed = getWorldSeed(world);
+        Long seed = SeedHelper.getWorldSeed(world);
         if (seed == null) return Collections.emptyList();
 
         String path = structureId.getPath();
         List<BlockPos> results = new ArrayList<>(getCachedDungeons(path, pos, seed));
-        sortByDistance(results, pos);
+        PositionHelper.sortByHorizontalDistance(results, pos);
         results = results.subList(0, Math.min(maxResults, results.size()));
 
         // Add Y coordinates to the results
@@ -336,26 +340,6 @@ public class AetherStructureProvider implements StructureProvider {
         }
 
         return resultsWithY;
-    }
-
-    private void sortByDistance(List<BlockPos> positions, BlockPos from) {
-        final int px = from.getX();
-        final int pz = from.getZ();
-
-        positions.sort((a, b) -> {
-            long dxA = a.getX() - px;
-            long dzA = a.getZ() - pz;
-            long dxB = b.getX() - px;
-            long dzB = b.getZ() - pz;
-            long distA = dxA * dxA + dzA * dzA;
-            long distB = dxB * dxB + dzB * dzB;
-            return Long.compare(distA, distB);
-        });
-    }
-
-    private Long getWorldSeed(World world) {
-        if (world.getWorldInfo() != null) return world.getWorldInfo().getSeed();
-        return null;
     }
 
     // Structure offsets from setStructureOffset() in each component class
@@ -438,11 +422,8 @@ public class AetherStructureProvider implements StructureProvider {
     private boolean canSpawnStructureAtCoords(long seed, int chunkX, int chunkZ, int gridSize,
             int primaryChance, int secondaryChance) {
 
-        // Seed using XOR formula
-        Random rand = new Random(seed);
-        long i = rand.nextLong();
-        long j = rand.nextLong();
-        rand.setSeed(((long) chunkX * i) ^ ((long) chunkZ * j) ^ seed);
+        // Seed using standard chunk random formula
+        Random rand = SeedHelper.seedChunkRandom(seed, chunkX, chunkZ);
 
         // Skip 1 random call - this happens between setSeed and canSpawnStructureAtCoords
         // in the Aether's MapGenStructure flow. Verified through instrumentation.
@@ -505,13 +486,8 @@ public class AetherStructureProvider implements StructureProvider {
      * (from setStructureOffset(31, 24, 30)), giving the actual floor position.
      */
     private int calculateSilverDungeonY(long seed, int chunkX, int chunkZ) {
-        Random random = new Random();
-
         // Seed exactly as StructureStart.create() does
-        random.setSeed(seed);
-        long i = random.nextLong();
-        long j = random.nextLong();
-        random.setSeed((long) chunkX * i ^ (long) chunkZ * j ^ seed);
+        Random random = SeedHelper.seedStructureStartRandom(seed, chunkX, chunkZ);
 
         // Skip the 5 random calls before Y offset
         random.nextInt(3);  // firstStaircaseZ
@@ -532,13 +508,8 @@ public class AetherStructureProvider implements StructureProvider {
      * then offset by random.nextInt(64) in customOffset(). Structure offset Y is 0.
      */
     private int calculateGoldDungeonY(long seed, int chunkX, int chunkZ) {
-        Random random = new Random();
-
         // Seed exactly as StructureStart.create() does
-        random.setSeed(seed);
-        long i = random.nextLong();
-        long j = random.nextLong();
-        random.setSeed((long) chunkX * i ^ (long) chunkZ * j ^ seed);
+        Random random = SeedHelper.seedStructureStartRandom(seed, chunkX, chunkZ);
 
         // dungeonDirection
         random.nextInt(4);

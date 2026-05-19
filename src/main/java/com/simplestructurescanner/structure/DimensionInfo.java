@@ -2,8 +2,6 @@ package com.simplestructurescanner.structure;
 
 import javax.annotation.Nullable;
 
-import net.minecraft.util.text.translation.I18n;
-
 
 /**
  * Holds information about a dimension for display purposes.
@@ -11,8 +9,10 @@ import net.minecraft.util.text.translation.I18n;
  */
 public class DimensionInfo {
 
+    private static final String DIMENSION_ID_KEY_PREFIX = "gui.structurescanner.dimension.id.";
+
     private final int dimensionId;
-    private final String displayKey;
+    private final LocalizedText displayName;
 
     /**
      * Create dimension info with a localization key.
@@ -20,17 +20,20 @@ public class DimensionInfo {
      * @param displayKey The localization key for display (e.g., "gui.structurescanner.dimension.overworld")
      */
     public DimensionInfo(int dimensionId, String displayKey) {
+        this(dimensionId, displayKey != null ? LocalizedText.translatable(displayKey) : getDefaultDisplayName(dimensionId));
+    }
+
+    public DimensionInfo(int dimensionId, LocalizedText displayName) {
         this.dimensionId = dimensionId;
-        this.displayKey = displayKey;
+        this.displayName = displayName;
     }
 
     /**
-     * Create dimension info using the dimension ID as the display name.
-     * Used when no localization is available.
+     * Create dimension info using the default localized fallback for this dimension.
      * @param dimensionId The numeric dimension ID
      */
     public DimensionInfo(int dimensionId) {
-        this(dimensionId, null);
+        this(dimensionId, getDefaultDisplayName(dimensionId));
     }
 
     public int getDimensionId() {
@@ -39,23 +42,31 @@ public class DimensionInfo {
 
     @Nullable
     public String getDisplayKey() {
-        return displayKey;
+        if (!displayName.isTranslatable()) return null;
+
+        return displayName.getValue();
     }
 
     /**
-     * Get the display name for this dimension.
-     * Uses the localization key if available, otherwise falls back to the numeric ID.
+     * Get the localized text descriptor for this dimension.
      */
-    public String getDisplayName() {
-        if (displayKey != null && I18n.canTranslate(displayKey)) return I18n.translateToLocal(displayKey);
+    public LocalizedText getDisplayName() {
+        return displayName;
+    }
 
-        // Fallback: try standard vanilla dimension keys
+    private static LocalizedText getDefaultDisplayName(int dimensionId) {
         switch (dimensionId) {
-            case -1: return I18n.translateToLocal("gui.structurescanner.dimension.nether");
-            case 0: return I18n.translateToLocal("gui.structurescanner.dimension.overworld");
-            case 1: return I18n.translateToLocal("gui.structurescanner.dimension.end");
-            default: return I18n.translateToLocalFormatted("gui.structurescanner.dimension.unknown", dimensionId);
+            case -1: return LocalizedText.translatable("gui.structurescanner.dimension.nether");
+            case 0: return LocalizedText.translatable("gui.structurescanner.dimension.overworld");
+            case 1: return LocalizedText.translatable("gui.structurescanner.dimension.end");
+            default:
+                return LocalizedText.translatableWithFallback(getGeneratedDisplayKey(dimensionId),
+                    LocalizedText.translatable("gui.structurescanner.dimension.unknown", dimensionId));
         }
+    }
+
+    public static String getGeneratedDisplayKey(int dimensionId) {
+        return DIMENSION_ID_KEY_PREFIX + dimensionId;
     }
 
     @Override
@@ -74,7 +85,7 @@ public class DimensionInfo {
 
     @Override
     public String toString() {
-        return getDisplayName();
+        return displayName.toString();
     }
 
     // Common vanilla dimensions as constants

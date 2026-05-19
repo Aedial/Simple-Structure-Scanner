@@ -13,6 +13,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
+import net.minecraftforge.fluids.FluidStack;
 
 
 /**
@@ -20,11 +21,11 @@ import net.minecraft.world.biome.Biome;
  */
 public class StructureInfo {
     private final ResourceLocation id;
-    private final String displayName;
+    private final LocalizedText displayName;
     private final String modId;
-    private final int sizeX;
-    private final int sizeY;
-    private final int sizeZ;
+    private int sizeX;
+    private int sizeY;
+    private int sizeZ;
 
     private List<BlockEntry> blocks;
     private List<LootEntry> lootTables;
@@ -32,13 +33,14 @@ public class StructureInfo {
 
     // Biome/dimension/rarity info
     private Set<Biome> validBiomes;
+    // null means unrestricted, empty means unknown/not applicable, non-empty is an allow-list.
     private Set<DimensionInfo> validDimensions;
-    private String rarity;
+    private LocalizedText rarity;
 
     // Layer data for structure viewer (Y-level indexed)
     private List<StructureLayer> layers;
 
-    public StructureInfo(ResourceLocation id, String displayName, String modId, int sizeX, int sizeY, int sizeZ) {
+    public StructureInfo(ResourceLocation id, LocalizedText displayName, String modId, int sizeX, int sizeY, int sizeZ) {
         this.id = id;
         this.displayName = displayName;
         this.modId = modId;
@@ -58,7 +60,7 @@ public class StructureInfo {
         return id;
     }
 
-    public String getDisplayName() {
+    public LocalizedText getDisplayName() {
         return displayName;
     }
 
@@ -122,13 +124,16 @@ public class StructureInfo {
 
     /**
      * Check if this structure can generate in the given dimension.
-     * If no dimension restrictions are set, returns true (allowed in all dimensions).
+     * If dimension metadata is absent, returns true (allowed in all dimensions).
+     * If dimension metadata is explicitly unknown, returns false.
      *
      * @param dimensionId The dimension ID to check
      * @return true if the structure can generate in this dimension
      */
     public boolean isValidForDimension(int dimensionId) {
-        if (validDimensions == null || validDimensions.isEmpty()) return true;
+        if (StructureSearchOverrides.isStructureHiddenInDimension(modId, id, dimensionId)) return false;
+        if (validDimensions == null) return true;
+        if (validDimensions.isEmpty()) return false;
 
         for (DimensionInfo dim : validDimensions) {
             if (dim.getDimensionId() == dimensionId) return true;
@@ -138,12 +143,22 @@ public class StructureInfo {
     }
 
     @Nullable
-    public String getRarity() {
+    public LocalizedText getRarity() {
         return rarity;
     }
 
-    public void setRarity(String rarity) {
+    public void setRarity(LocalizedText rarity) {
         this.rarity = rarity;
+    }
+
+    public void setRarityKey(String rarityKey) {
+        if (rarityKey == null || rarityKey.isEmpty()) {
+            rarity = null;
+            return;
+        }
+
+        rarity = LocalizedText.translatable("gui.structurescanner.rarity",
+            LocalizedText.translatable(rarityKey));
     }
 
     @Nullable
@@ -151,8 +166,37 @@ public class StructureInfo {
         return layers;
     }
 
+    /**
+     * Set the layer data for the structure viewer.
+     * Automatically calculates sizeX, sizeY, and sizeZ based on the layers.
+     *
+     * @param layers List of structure layers (Y-level indexed)
+     */
     public void setLayers(List<StructureLayer> layers) {
         this.layers = layers;
+
+        if (layers == null || layers.isEmpty()) return;
+
+        int minY = Integer.MAX_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int maxWidth = 0;
+        int maxDepth = 0;
+
+        for (StructureLayer layer : layers) {
+            if (layer == null) continue;
+
+            if (layer.y < minY) minY = layer.y;
+            if (layer.y > maxY) maxY = layer.y;
+
+            if (layer.width > maxWidth) maxWidth = layer.width;
+            if (layer.depth > maxDepth) maxDepth = layer.depth;
+        }
+
+        if (minY == Integer.MAX_VALUE || maxY == Integer.MIN_VALUE) return;
+
+        this.sizeY = maxY - minY + 1;
+        this.sizeX = maxWidth;
+        this.sizeZ = maxDepth;
     }
 
     /**
@@ -205,13 +249,25 @@ public class StructureInfo {
      */
     public static class BlockEntry {
         public final IBlockState blockState;
+        @Nullable
         public final ItemStack displayStack;
+        @Nullable
+        public final FluidStack displayFluid;
         public final int count;
 
         public BlockEntry(IBlockState blockState, @Nullable ItemStack displayStack, int count) {
+            this(blockState, displayStack, null, count);
+        }
+
+        public BlockEntry(IBlockState blockState, @Nullable ItemStack displayStack, @Nullable FluidStack displayFluid, int count) {
             this.blockState = blockState;
-            this.displayStack = displayStack;
+            this.displayStack = displayStack != null && !displayStack.isEmpty() ? displayStack.copy() : null;
+            this.displayFluid = displayFluid != null ? displayFluid.copy() : null;
             this.count = count;
+        }
+
+        public BlockEntry withCount(int newCount) {
+            return new BlockEntry(blockState, displayStack, displayFluid, newCount);
         }
 
         public String formatCount() {
@@ -227,9 +283,9 @@ public class StructureInfo {
     public static class LootEntry {
         public final ResourceLocation lootTableId;
         public final List<ItemStack> possibleDrops;
-        public final String containerType;
+        public final LocalizedText containerType;
 
-        public LootEntry(ResourceLocation lootTableId, List<ItemStack> possibleDrops, String containerType) {
+        public LootEntry(ResourceLocation lootTableId, List<ItemStack> possibleDrops, LocalizedText containerType) {
             this.lootTableId = lootTableId;
             this.possibleDrops = possibleDrops;
             this.containerType = containerType;

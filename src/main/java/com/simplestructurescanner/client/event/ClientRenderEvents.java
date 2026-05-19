@@ -24,6 +24,7 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.TickEvent;
 
 import com.simplestructurescanner.client.ClientSettings;
+import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.config.ModConfig;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
@@ -83,6 +84,7 @@ public class ClientRenderEvents {
 
         for (ResourceLocation id : trackedIds) {
             if (!ModConfig.isStructureAllowed(id.toString())) continue;
+            if (StructureProviderRegistry.getProviderForStructure(id) == null) continue;
 
             // Filter by current dimension
             StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
@@ -93,7 +95,7 @@ public class ClientRenderEvents {
             // Get display name
             String name;
             if (ClientSettings.i18nNames) {
-                name = info != null ? info.getDisplayName() : id.getPath();
+                name = info != null ? ClientTextResolver.resolve(info.getDisplayName()) : id.getPath();
             } else {
                 name = id.toString();
             }
@@ -220,6 +222,7 @@ public class ClientRenderEvents {
 
             if (!ModConfig.isStructureAllowed(id.toString())) continue;
             if (loc == null) continue;
+            if (StructureProviderRegistry.getProviderForStructure(id) == null) continue;
 
             // Filter by current dimension
             StructureInfo info = StructureProviderRegistry.getStructureInfo(id);

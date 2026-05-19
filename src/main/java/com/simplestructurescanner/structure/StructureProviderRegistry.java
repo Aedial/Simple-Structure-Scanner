@@ -2,14 +2,14 @@ package com.simplestructurescanner.structure;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
-import net.minecraft.util.text.translation.I18n;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -17,7 +17,9 @@ import net.minecraft.world.World;
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.abyssalcraft.AbyssalCraftStructureProvider;
 import com.simplestructurescanner.structure.aether.AetherStructureProvider;
+import com.simplestructurescanner.structure.external.ExternalStructureProviderLoader;
 import com.simplestructurescanner.structure.iceandfire.IceAndFireStructureProvider;
+import com.simplestructurescanner.structure.pillar.PillarStructureProvider;
 import com.simplestructurescanner.structure.vanilla.VanillaStructureProvider;
 
 
@@ -27,20 +29,17 @@ import com.simplestructurescanner.structure.vanilla.VanillaStructureProvider;
  */
 public class StructureProviderRegistry {
     private static final List<StructureProvider> providers = new ArrayList<>();
-    private static final Map<ResourceLocation, StructureProvider> structureToProvider = new HashMap<>();
+    private static final Map<ResourceLocation, StructureProvider> structureToProvider = new LinkedHashMap<>();
     private static boolean initialized = false;
 
     private static List<Class<? extends StructureProvider>> providerClasses = Arrays.asList(
         VanillaStructureProvider.class,
         AbyssalCraftStructureProvider.class,
         AetherStructureProvider.class,
-        IceAndFireStructureProvider.class
-        // <b>IMPORTANT:</b> Add other provider classes here
+        IceAndFireStructureProvider.class,
+        PillarStructureProvider.class
+        // <b>IMPORTANT, DO NOT REMOVE:</b> Add other provider classes here
     );
-
-    // TODO: Add JSON-based external providers, that can be loaded without code changes
-    //       This would allow for modpacks to add structure data without needing to PR code changes
-    //       I don't think it would allow for custom search logic (would need ZenScript), but could cover basic info
 
     /**
      * Discover and register all available structure providers.
@@ -48,6 +47,8 @@ public class StructureProviderRegistry {
      */
     public static void discoverProviders() {
         if (initialized) return;
+
+        StructureSearchOverrides.load();
 
         for (Class<? extends StructureProvider> providerClass : providerClasses) {
             try {
@@ -63,8 +64,37 @@ public class StructureProviderRegistry {
             }
         }
 
+        for (StructureProvider provider : ExternalStructureProviderLoader.loadProviders()) {
+            if (!provider.isAvailable()) {
+                SimpleStructureScanner.LOGGER.debug("Skipping unavailable external provider: {}", provider.getProviderId());
+                continue;
+            }
+
+            registerProvider(provider);
+        }
+
         initialized = true;
         SimpleStructureScanner.LOGGER.info("Registered {} structure providers", providers.size());
+    }
+
+    public static void reloadProviders() {
+        clear();
+        discoverProviders();
+    }
+
+    public static void reloadProvider(String providerId) {
+        if (!initialized) {
+            discoverProviders();
+            return;
+        }
+        if (providerId == null || providerId.isEmpty()) return;
+
+        removeProviderMappings(providerId);
+
+        StructureProvider provider = findProvider(providerId);
+        if (provider == null) return;
+
+        indexProviderStructures(provider);
     }
 
     /**
@@ -73,14 +103,37 @@ public class StructureProviderRegistry {
     public static void registerProvider(StructureProvider provider) {
         provider.postInit();  // Allow provider to set up structure data
         providers.add(provider);
+        int visibleStructures = indexProviderStructures(provider);
+
+        SimpleStructureScanner.LOGGER.info("Registered structure provider: {} ({} structures)",
+            provider.getModName(), visibleStructures);
+    }
+
+    private static int indexProviderStructures(StructureProvider provider) {
+        int visibleStructures = 0;
 
         // Map all structures to their provider
         for (ResourceLocation structureId : provider.getStructureIds()) {
+            if (StructureSearchOverrides.isStructureHidden(provider.getProviderId(), structureId)) continue;
+
             structureToProvider.put(structureId, provider);
+            visibleStructures++;
         }
 
-        SimpleStructureScanner.LOGGER.info("Registered structure provider: {} ({} structures)",
-            I18n.translateToLocal(provider.getModName()), provider.getStructureIds().size());
+        return visibleStructures;
+    }
+
+    private static void removeProviderMappings(String providerId) {
+        structureToProvider.entrySet().removeIf(entry -> providerId.equals(entry.getValue().getProviderId()));
+    }
+
+    @Nullable
+    private static StructureProvider findProvider(String providerId) {
+        for (StructureProvider provider : providers) {
+            if (providerId.equals(provider.getProviderId())) return provider;
+        }
+
+        return null;
     }
 
     /**
@@ -102,10 +155,7 @@ public class StructureProviderRegistry {
      * Get all known structure IDs from all providers.
      */
     public static List<ResourceLocation> getAllStructureIds() {
-        List<ResourceLocation> allIds = new ArrayList<>();
-        for (StructureProvider provider : providers) allIds.addAll(provider.getStructureIds());
-
-        return allIds;
+        return new ArrayList<>(structureToProvider.keySet());
     }
 
     /**
@@ -133,7 +183,7 @@ public class StructureProviderRegistry {
      * Get the display name for a structure.
      */
     @Nullable
-    public static String getNameForStructure(ResourceLocation structureId) {
+    public static LocalizedText getNameForStructure(ResourceLocation structureId) {
         StructureInfo info = getStructureInfo(structureId);
         if (info == null) return null;
 
@@ -144,10 +194,26 @@ public class StructureProviderRegistry {
      * Check if a structure can be searched for.
      */
     public static boolean canBeSearched(ResourceLocation structureId) {
+        return canBeSearched(structureId, null);
+    }
+
+    /**
+     * Check if a structure can be searched for in the current dimension context.
+     */
+    public static boolean canBeSearched(ResourceLocation structureId, @Nullable Integer dimensionId) {
         StructureProvider provider = getProviderForStructure(structureId);
         if (provider == null) return false;
 
-        return provider.canBeSearched(structureId);
+        return StructureSearchOverrides.canStructureBeSearched(
+            provider.getProviderId(), structureId, dimensionId, provider.canBeSearched(structureId));
+    }
+
+    public static boolean isStructureHiddenInDimension(ResourceLocation structureId, int dimensionId) {
+        StructureProvider provider = getProviderForStructure(structureId);
+        if (provider == null) return false;
+
+        return StructureSearchOverrides.isStructureHiddenInDimension(
+            provider.getProviderId(), structureId, dimensionId);
     }
 
     /**
@@ -167,6 +233,7 @@ public class StructureProviderRegistry {
             @Nullable Predicate<BlockPos> locationFilter) {
         StructureProvider provider = getProviderForStructure(structureId);
         if (provider == null) return null;
+        if (world != null && !canBeSearched(structureId, world.provider.getDimension())) return null;
 
         return provider.findNearest(world, structureId, pos, skipCount, locationFilter);
     }
@@ -180,6 +247,9 @@ public class StructureProviderRegistry {
     public static List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
         StructureProvider provider = getProviderForStructure(structureId);
         if (provider == null) return null;
+        if (world != null && !canBeSearched(structureId, world.provider.getDimension())) {
+            return Collections.emptyList();
+        }
 
         return provider.findAllNearby(world, structureId, pos, maxResults);
     }

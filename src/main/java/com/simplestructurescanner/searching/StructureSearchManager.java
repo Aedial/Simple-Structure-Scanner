@@ -16,6 +16,7 @@ import net.minecraft.world.World;
 import com.simplestructurescanner.config.ModConfig;
 import com.simplestructurescanner.network.NetworkHandler;
 import com.simplestructurescanner.network.PacketRequestStructureSearch;
+import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.util.WorldUtils;
@@ -26,7 +27,7 @@ import com.simplestructurescanner.util.WorldUtils;
  * Structures can be added to searching list via double-click in the GUI.
  *
  * Caching strategy:
- * - locationCache: Raw structure positions indexed by (worldId, structureId).
+ * - locationCache: Raw structure positions indexed by (worldId, dimensionId, structureId).
  *   These positions are deterministic and don't change for a given world.
  *   Populated via batch read if provider supports it, otherwise via individual reads.
  * - sortedCache: Positions sorted by distance from player's position at time of refresh.
@@ -41,19 +42,46 @@ public class StructureSearchManager {
     private static final Set<Integer> usedColorIndices = new LinkedHashSet<>();
     private static final Map<ResourceLocation, Integer> skipOffsets = new LinkedHashMap<>();
 
+    private static final class SearchCacheKey {
+        private final long worldId;
+        private final int dimensionId;
+
+        private SearchCacheKey(long worldId, int dimensionId) {
+            this.worldId = worldId;
+            this.dimensionId = dimensionId;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (obj == null || getClass() != obj.getClass()) return false;
+
+            SearchCacheKey that = (SearchCacheKey) obj;
+            return worldId == that.worldId && dimensionId == that.dimensionId;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = Long.hashCode(worldId);
+            return 31 * result + Integer.hashCode(dimensionId);
+        }
+    }
+
     // Cache for raw structure positions by world id
-    // Map<WorldId, Map<StructureId, List<BlockPos>>>
-    private static final Map<Long, Map<ResourceLocation, List<BlockPos>>> locationCache = new LinkedHashMap<>();
+    // Map<(WorldId, DimensionId), Map<StructureId, List<BlockPos>>>
+    private static final Map<SearchCacheKey, Map<ResourceLocation, List<BlockPos>>> locationCache = new LinkedHashMap<>();
 
     // Cache for sorted positions (sorted by player position at time of refresh)
-    // Map<StructureId, List<BlockPos>>
-    private static final Map<ResourceLocation, List<BlockPos>> sortedCache = new LinkedHashMap<>();
+    // Map<(WorldId, DimensionId), Map<StructureId, List<BlockPos>>>
+    private static final Map<SearchCacheKey, Map<ResourceLocation, List<BlockPos>>> sortedCache = new LinkedHashMap<>();
 
     // Track structures that don't support batch reads (use individual caching instead)
     private static final Set<ResourceLocation> nonBatchStructures = new LinkedHashSet<>();
 
     // Pending search requests
     private static final Set<ResourceLocation> pendingSearches = new LinkedHashSet<>();
+
+    private static SearchCacheKey lastSearchContext = null;
 
     private static final int MAX_CACHE_RESULTS = 100;
 
@@ -93,6 +121,82 @@ public class StructureSearchManager {
         ModConfig.setClientTrackedIds(ids);
     }
 
+    private static SearchCacheKey getCacheKey(World world) {
+        return new SearchCacheKey(WorldUtils.getWorldIdentifier(), world.provider.getDimension());
+    }
+
+    private static SearchCacheKey getCurrentCacheKey() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.world == null) return lastSearchContext;
+
+        return getCacheKey(mc.world);
+    }
+
+    private static Map<ResourceLocation, List<BlockPos>> getLocationCache(SearchCacheKey cacheKey) {
+        return locationCache.get(cacheKey);
+    }
+
+    private static Map<ResourceLocation, List<BlockPos>> getOrCreateLocationCache(SearchCacheKey cacheKey) {
+        return locationCache.computeIfAbsent(cacheKey, ignored -> new LinkedHashMap<>());
+    }
+
+    private static List<BlockPos> getSortedPositions(SearchCacheKey cacheKey, ResourceLocation id) {
+        if (cacheKey == null) return null;
+
+        Map<ResourceLocation, List<BlockPos>> cache = sortedCache.get(cacheKey);
+        if (cache == null) return null;
+
+        return cache.get(id);
+    }
+
+    private static void removeSortedCacheEntry(SearchCacheKey cacheKey, ResourceLocation id) {
+        if (cacheKey == null) return;
+
+        Map<ResourceLocation, List<BlockPos>> cache = sortedCache.get(cacheKey);
+        if (cache == null) return;
+
+        cache.remove(id);
+        if (cache.isEmpty()) sortedCache.remove(cacheKey);
+    }
+
+    private static void queueSearchIfAllowed(ResourceLocation id) {
+        if (!searchedStructures.contains(id)) return;
+
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.world == null) {
+            pendingSearches.add(id);
+            return;
+        }
+
+        StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+        if (StructureProviderRegistry.getProviderForStructure(id) == null) {
+            lastKnownLocations.remove(id);
+            return;
+        }
+
+        if (info != null && !info.isValidForDimension(mc.world.provider.getDimension())) {
+            lastKnownLocations.remove(id);
+            return;
+        }
+
+        pendingSearches.add(id);
+    }
+
+    private static void updateSearchContext(World world) {
+        SearchCacheKey cacheKey = getCacheKey(world);
+        if (cacheKey.equals(lastSearchContext)) return;
+
+        lastSearchContext = cacheKey;
+        lastKnownLocations.clear();
+        pendingSearches.clear();
+        sortedCache.remove(cacheKey);
+
+        for (ResourceLocation id : searchedStructures) {
+            skipOffsets.put(id, 0);
+            queueSearchIfAllowed(id);
+        }
+    }
+
     private static void assignColor(ResourceLocation id) {
         if (structureColors.containsKey(id)) return;
 
@@ -120,28 +224,25 @@ public class StructureSearchManager {
             lastKnownLocations.remove(id);
             skipOffsets.remove(id);
             pendingSearches.remove(id);
-            sortedCache.remove(id);
+            removeSortedCacheEntry(getCurrentCacheKey(), id);
             freeColor(id);
         } else {
             searchedStructures.add(id);
             assignColor(id);
             skipOffsets.put(id, 0);
-            pendingSearches.add(id);
+            queueSearchIfAllowed(id);
         }
 
         saveToConfig();
     }
 
-    // FIXME: we need to handle dimensions to only search structures that are valid in the current dimension
-    //        Currently, if a structure is in a dimension the structure doesn't exist in, such as Nether Fortresses in the Overworld,
-    //        the search might fail silently. Similarly, the search should re-trigger when switching dimensions to find valid structures there.
     public static void startTracking(ResourceLocation id) {
         if (searchedStructures.contains(id)) return;
 
         searchedStructures.add(id);
         assignColor(id);
         skipOffsets.put(id, 0);
-        pendingSearches.add(id);
+        queueSearchIfAllowed(id);
         saveToConfig();
     }
 
@@ -162,7 +263,7 @@ public class StructureSearchManager {
      * Uses cached data if available, otherwise fetches from world.
      */
     public static void requestSearch(ResourceLocation id) {
-        if (searchedStructures.contains(id)) pendingSearches.add(id);
+        if (searchedStructures.contains(id)) queueSearchIfAllowed(id);
     }
 
     /**
@@ -172,7 +273,7 @@ public class StructureSearchManager {
     public static void refreshSearch(ResourceLocation id) {
         skipOffsets.put(id, 0);
         lastKnownLocations.remove(id);
-        sortedCache.remove(id);  // Force re-sort on next search
+        removeSortedCacheEntry(getCurrentCacheKey(), id);  // Force re-sort on next search
         requestSearch(id);
     }
 
@@ -182,14 +283,15 @@ public class StructureSearchManager {
     public static void forceRefresh(ResourceLocation id) {
         skipOffsets.put(id, 0);
         lastKnownLocations.remove(id);
-        sortedCache.remove(id);
+        removeSortedCacheEntry(getCurrentCacheKey(), id);
         nonBatchStructures.remove(id);  // Re-check if batch is supported
 
         // Clear from location cache
-        long worldId = WorldUtils.getWorldIdentifier();
-        Map<ResourceLocation, List<BlockPos>> worldCache = locationCache.get(worldId);
+        SearchCacheKey cacheKey = getCurrentCacheKey();
+        Map<ResourceLocation, List<BlockPos>> worldCache = getLocationCache(cacheKey);
         if (worldCache != null) {
             worldCache.remove(id);
+            if (worldCache.isEmpty()) locationCache.remove(cacheKey);
         }
 
         requestSearch(id);
@@ -200,23 +302,24 @@ public class StructureSearchManager {
      * Uses cached data if available.
      */
     public static void skipCurrent(ResourceLocation id) {
-        List<BlockPos> sorted = sortedCache.get(id);
+        SearchCacheKey cacheKey = getCurrentCacheKey();
+        List<BlockPos> sorted = getSortedPositions(cacheKey, id);
         int currentOffset = skipOffsets.getOrDefault(id, 0);
 
         if (sorted != null) {
             // Have batch cache, just increment offset
             if (currentOffset < sorted.size() - 1) {
                 skipOffsets.put(id, currentOffset + 1);
-                updateLocationFromSortedCache(id);
+                updateLocationFromSortedCache(id, cacheKey);
             }
         } else if (!nonBatchStructures.contains(id)) {
             // No cache yet, trigger a search
             skipOffsets.put(id, currentOffset + 1);
-            pendingSearches.add(id);
+            queueSearchIfAllowed(id);
         } else {
             // Non-batch structure, need server request for new skip count
             skipOffsets.put(id, currentOffset + 1);
-            pendingSearches.add(id);
+            queueSearchIfAllowed(id);
         }
     }
 
@@ -230,13 +333,13 @@ public class StructureSearchManager {
 
         skipOffsets.put(id, currentOffset - 1);
 
-        List<BlockPos> sorted = sortedCache.get(id);
+        List<BlockPos> sorted = getSortedPositions(getCurrentCacheKey(), id);
         if (sorted != null) {
             // Have batch cache, just update display
-            updateLocationFromSortedCache(id);
+            updateLocationFromSortedCache(id, getCurrentCacheKey());
         } else {
             // Need server request
-            pendingSearches.add(id);
+            queueSearchIfAllowed(id);
         }
     }
 
@@ -253,13 +356,14 @@ public class StructureSearchManager {
             pos.getX(), pos.getY(), pos.getZ(), location.isYAgnostic());
 
         // Remove from sorted cache
-        List<BlockPos> sorted = sortedCache.get(id);
+        SearchCacheKey cacheKey = getCurrentCacheKey();
+        List<BlockPos> sorted = getSortedPositions(cacheKey, id);
         if (sorted != null) {
             sorted.removeIf(p -> p.getX() == pos.getX() && p.getZ() == pos.getZ());
         }
 
         // Remove from location cache
-        Map<ResourceLocation, List<BlockPos>> worldCache = locationCache.get(worldId);
+        Map<ResourceLocation, List<BlockPos>> worldCache = getLocationCache(cacheKey);
         if (worldCache != null) {
             List<BlockPos> cached = worldCache.get(id);
             if (cached != null) cached.removeIf(p -> p.getX() == pos.getX() && p.getZ() == pos.getZ());
@@ -269,9 +373,9 @@ public class StructureSearchManager {
         lastKnownLocations.remove(id);
 
         if (sorted != null && !sorted.isEmpty()) {
-            updateLocationFromSortedCache(id);
+            updateLocationFromSortedCache(id, cacheKey);
         } else {
-            pendingSearches.add(id);
+            queueSearchIfAllowed(id);
         }
 
         return true;
@@ -281,31 +385,50 @@ public class StructureSearchManager {
      * Processes any pending search requests. Called from client tick.
      */
     public static void processPendingSearches(World world, BlockPos playerPos) {
+        updateSearchContext(world);
         if (pendingSearches.isEmpty()) return;
 
         // Process only one search per tick to avoid lag
         ResourceLocation id = pendingSearches.iterator().next();
         pendingSearches.remove(id);
 
-        if (!ModConfig.isStructureAllowed(id.toString())) return;
-        if (!StructureProviderRegistry.canBeSearched(id)) return;
+        if (!ModConfig.isStructureAllowed(id.toString())) {
+            lastKnownLocations.remove(id);
+            return;
+        }
 
-        long worldId = WorldUtils.getWorldIdentifier();
+        StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+        if (StructureProviderRegistry.getProviderForStructure(id) == null) {
+            lastKnownLocations.remove(id);
+            return;
+        }
+
+        if (info != null && !info.isValidForDimension(world.provider.getDimension())) {
+            lastKnownLocations.remove(id);
+            return;
+        }
+
+        if (!StructureProviderRegistry.canBeSearched(id, world.provider.getDimension())) {
+            lastKnownLocations.remove(id);
+            return;
+        }
+
+        SearchCacheKey cacheKey = getCacheKey(world);
         int skipOffset = skipOffsets.getOrDefault(id, 0);
 
         // Check if we have a sorted cache we can use
-        List<BlockPos> sorted = sortedCache.get(id);
+        List<BlockPos> sorted = getSortedPositions(cacheKey, id);
         if (sorted != null && skipOffset < sorted.size()) {
-            updateLocationFromSortedCache(id);
+            updateLocationFromSortedCache(id, cacheKey);
             return;
         }
 
         // Check if we have a location cache that needs sorting
-        Map<ResourceLocation, List<BlockPos>> worldCache = locationCache.get(worldId);
+        Map<ResourceLocation, List<BlockPos>> worldCache = getLocationCache(cacheKey);
         if (worldCache != null && worldCache.containsKey(id)) {
             // Sort and use
-            updateSortedCache(id, playerPos, worldId);
-            updateLocationFromSortedCache(id);
+            updateSortedCache(id, playerPos, cacheKey);
+            updateLocationFromSortedCache(id, cacheKey);
             return;
         }
 
@@ -315,7 +438,7 @@ public class StructureSearchManager {
         if (mc.isSingleplayer() && mc.getIntegratedServer() != null) {
             World serverWorld = mc.getIntegratedServer().getWorld(world.provider.getDimension());
             if (serverWorld != null) {
-                processSingleplayerSearch(serverWorld, id, playerPos, skipOffset, worldId);
+                processSingleplayerSearch(serverWorld, id, playerPos, skipOffset, cacheKey);
                 return;
             }
         }
@@ -328,7 +451,7 @@ public class StructureSearchManager {
      * Processes a search in singleplayer mode.
      */
     private static void processSingleplayerSearch(World serverWorld, ResourceLocation id,
-            BlockPos playerPos, int skipOffset, long worldId) {
+            BlockPos playerPos, int skipOffset, SearchCacheKey cacheKey) {
 
         // Try batch search first
         List<BlockPos> positions = StructureProviderRegistry.findAllNearby(
@@ -338,23 +461,23 @@ public class StructureSearchManager {
         if (positions != null) {
             // Batch supported, cache and sort
             positions.removeIf(pos ->
-                ModConfig.isLocationBlacklisted(worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())
+                ModConfig.isLocationBlacklisted(cacheKey.worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())
             );
 
-            locationCache.computeIfAbsent(worldId, k -> new LinkedHashMap<>()).put(id, positions);
-            updateSortedCache(id, playerPos, worldId);
-            updateLocationFromSortedCache(id);
+            getOrCreateLocationCache(cacheKey).put(id, positions);
+            updateSortedCache(id, playerPos, cacheKey);
+            updateLocationFromSortedCache(id, cacheKey);
         } else {
             // Batch not supported, use individual read
             nonBatchStructures.add(id);
 
             StructureLocation location = StructureProviderRegistry.findNearest(
                 serverWorld, id, playerPos, skipOffset,
-                pos -> !ModConfig.isLocationBlacklisted(worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())
+                pos -> !ModConfig.isLocationBlacklisted(cacheKey.worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())
             );
 
             // Cache the individual result
-            if (location != null) addToLocationCache(worldId, id, location.getPosition());
+            if (location != null) addToLocationCache(cacheKey, id, location.getPosition());
 
             updateLocation(id, location);
         }
@@ -363,9 +486,8 @@ public class StructureSearchManager {
     /**
      * Adds a position to the location cache (for non-batch providers).
      */
-    private static void addToLocationCache(long worldId, ResourceLocation id, BlockPos pos) {
-        Map<ResourceLocation, List<BlockPos>> worldCache =
-            locationCache.computeIfAbsent(worldId, k -> new LinkedHashMap<>());
+    private static void addToLocationCache(SearchCacheKey cacheKey, ResourceLocation id, BlockPos pos) {
+        Map<ResourceLocation, List<BlockPos>> worldCache = getOrCreateLocationCache(cacheKey);
         List<BlockPos> positions = worldCache.computeIfAbsent(id, k -> new ArrayList<>());
 
         // Avoid duplicates
@@ -379,8 +501,8 @@ public class StructureSearchManager {
     /**
      * Updates the sorted cache for a structure based on player position.
      */
-    private static void updateSortedCache(ResourceLocation id, BlockPos playerPos, long worldId) {
-        Map<ResourceLocation, List<BlockPos>> worldCache = locationCache.get(worldId);
+    private static void updateSortedCache(ResourceLocation id, BlockPos playerPos, SearchCacheKey cacheKey) {
+        Map<ResourceLocation, List<BlockPos>> worldCache = getLocationCache(cacheKey);
         if (worldCache == null) return;
 
         List<BlockPos> rawPositions = worldCache.get(id);
@@ -402,14 +524,14 @@ public class StructureSearchManager {
             return Long.compare(distA, distB);
         });
 
-        sortedCache.put(id, sorted);
+        sortedCache.computeIfAbsent(cacheKey, ignored -> new LinkedHashMap<>()).put(id, sorted);
     }
 
     /**
      * Updates the display location from the sorted cache.
      */
-    private static void updateLocationFromSortedCache(ResourceLocation id) {
-        List<BlockPos> sorted = sortedCache.get(id);
+    private static void updateLocationFromSortedCache(ResourceLocation id, SearchCacheKey cacheKey) {
+        List<BlockPos> sorted = getSortedPositions(cacheKey, id);
         if (sorted == null || sorted.isEmpty()) {
             lastKnownLocations.remove(id);
             return;
@@ -435,19 +557,20 @@ public class StructureSearchManager {
      * Called when server sends batch results (provider supports batch reads).
      */
     public static void handleBatchResponse(ResourceLocation id, List<BlockPos> positions, BlockPos playerPos) {
-        long worldId = WorldUtils.getWorldIdentifier();
+        SearchCacheKey cacheKey = getCurrentCacheKey();
+        if (cacheKey == null) return;
 
         // Filter out blacklisted positions
         positions.removeIf(pos ->
-            ModConfig.isLocationBlacklisted(worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())
+            ModConfig.isLocationBlacklisted(cacheKey.worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())
         );
 
         // Store in location cache
-        locationCache.computeIfAbsent(worldId, k -> new LinkedHashMap<>()).put(id, positions);
+        getOrCreateLocationCache(cacheKey).put(id, positions);
 
         // Sort and update display
-        updateSortedCache(id, playerPos, worldId);
-        updateLocationFromSortedCache(id);
+        updateSortedCache(id, playerPos, cacheKey);
+        updateLocationFromSortedCache(id, cacheKey);
     }
 
     /**
@@ -455,20 +578,21 @@ public class StructureSearchManager {
      */
     public static void handleSingleResponse(ResourceLocation id, StructureLocation location, int skipCount) {
         nonBatchStructures.add(id);
+        SearchCacheKey cacheKey = getCurrentCacheKey();
+        if (cacheKey == null) return;
 
         if (location != null) {
-            long worldId = WorldUtils.getWorldIdentifier();
             BlockPos pos = location.getPosition();
 
             // Filter out blacklisted positions (blacklist is client-side config)
-            if (ModConfig.isLocationBlacklisted(worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())) {
+            if (ModConfig.isLocationBlacklisted(cacheKey.worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())) {
                 // Request next result with incremented skip count
                 skipOffsets.put(id, skipCount + 1);
-                pendingSearches.add(id);
+                queueSearchIfAllowed(id);
                 return;
             }
 
-            addToLocationCache(worldId, id, pos);
+            addToLocationCache(cacheKey, id, pos);
         }
 
         updateLocation(id, location);
@@ -510,7 +634,9 @@ public class StructureSearchManager {
         usedColorIndices.clear();
         pendingSearches.clear();
         sortedCache.clear();
+        locationCache.clear();
         nonBatchStructures.clear();
+        lastSearchContext = null;
         saveToConfig();
     }
 
@@ -521,11 +647,13 @@ public class StructureSearchManager {
         sortedCache.clear();
         lastKnownLocations.clear();
         nonBatchStructures.clear();
+        lastSearchContext = null;
+        pendingSearches.clear();
 
         // Re-queue searches for all tracked structures
         for (ResourceLocation id : searchedStructures) {
             skipOffsets.put(id, 0);
-            pendingSearches.add(id);
+            queueSearchIfAllowed(id);
         }
     }
 
@@ -533,7 +661,8 @@ public class StructureSearchManager {
      * Clears the location cache for a specific world.
      */
     public static void clearWorldCache(long worldId) {
-        locationCache.remove(worldId);
+        locationCache.entrySet().removeIf(entry -> entry.getKey().worldId == worldId);
+        sortedCache.entrySet().removeIf(entry -> entry.getKey().worldId == worldId);
     }
 
     /**

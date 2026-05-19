@@ -1,11 +1,13 @@
 package com.simplestructurescanner.client;
 
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 
 import com.simplestructurescanner.CommonProxy;
+import com.simplestructurescanner.client.command.CommandStructureSearchBlacklist;
 import com.simplestructurescanner.client.event.ClientRenderEvents;
 
 
@@ -22,6 +24,7 @@ public class ClientProxy extends CommonProxy {
         super.init(event);
         KeybindHandler.registerKeybinds();
         ClientSettings.syncFromConfig();
+        ClientCommandHandler.instance.registerCommand(new CommandStructureSearchBlacklist());
     }
 
     @Override

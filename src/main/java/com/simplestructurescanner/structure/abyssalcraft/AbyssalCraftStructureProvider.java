@@ -14,7 +14,6 @@ import javax.annotation.Nullable;
 
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.text.translation.I18n;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.BiomeProvider;
@@ -23,11 +22,15 @@ import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.DimensionInfo;
+import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.util.PositionHelper;
+import com.simplestructurescanner.structure.util.ReflectionHelper;
+import com.simplestructurescanner.structure.util.SeedHelper;
 
 
 /**
@@ -38,7 +41,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
 
     private static final String PROVIDER_ID = "abyssalcraft";
     private static final String MOD_ID = "abyssalcraft";
-    private static final String MOD_NAME = I18n.translateToLocal("gui.structurescanner.provider.abyssalcraft");
+    private static final String MOD_NAME = "gui.structurescanner.provider.abyssalcraft";
 
     private List<ResourceLocation> knownStructures;
     private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
@@ -79,21 +82,21 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
     public void postInit() {
         // Get dimension IDs from ACLib
         try {
-            Class<?> acLibClass = Class.forName("com.shinoow.abyssalcraft.lib.ACLib");
-            abyssalWastelandId = acLibClass.getField("abyssal_wasteland_id").getInt(null);
-            dreadlandsId = acLibClass.getField("dreadlands_id").getInt(null);
-            omotholId = acLibClass.getField("omothol_id").getInt(null);
-            darkRealmId = acLibClass.getField("dark_realm_id").getInt(null);
+            Class<?> acLibClass = ReflectionHelper.loadClassRequired("com.shinoow.abyssalcraft.lib.ACLib");
+            abyssalWastelandId = ReflectionHelper.getStaticIntField(acLibClass, "abyssal_wasteland_id");
+            dreadlandsId = ReflectionHelper.getStaticIntField(acLibClass, "dreadlands_id");
+            omotholId = ReflectionHelper.getStaticIntField(acLibClass, "omothol_id");
+            darkRealmId = ReflectionHelper.getStaticIntField(acLibClass, "dark_realm_id");
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.error("Failed to get AbyssalCraft dimension IDs", e);
         }
 
         // Get biomes from ACBiomes
         try {
-            Class<?> acBiomesClass = Class.forName("com.shinoow.abyssalcraft.api.biome.ACBiomes");
-            abyssalWastelandsBiome = (Biome) acBiomesClass.getField("abyssal_wastelands").get(null);
-            dreadlandsBiome = (Biome) acBiomesClass.getField("dreadlands").get(null);
-            omotholBiome = (Biome) acBiomesClass.getField("omothol").get(null);
+            Class<?> acBiomesClass = ReflectionHelper.loadClassRequired("com.shinoow.abyssalcraft.api.biome.ACBiomes");
+            abyssalWastelandsBiome = (Biome) ReflectionHelper.getStaticField(acBiomesClass, "abyssal_wastelands");
+            dreadlandsBiome = (Biome) ReflectionHelper.getStaticField(acBiomesClass, "dreadlands");
+            omotholBiome = (Biome) ReflectionHelper.getStaticField(acBiomesClass, "omothol");
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.error("Failed to get AbyssalCraft biomes", e);
         }
@@ -125,8 +128,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         ResourceLocation id = new ResourceLocation(MOD_ID, path);
         knownStructures.add(id);
 
-        String name = I18n.translateToLocal(displayName);
-        StructureInfo info = new StructureInfo(id, name, PROVIDER_ID, sizeX, sizeY, sizeZ);
+        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayName), PROVIDER_ID, sizeX, sizeY, sizeZ);
         structureInfos.put(id, info);
     }
 
@@ -196,7 +198,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
 
         info.setValidBiomes(biomes);
         info.setValidDimensions(dimensions);
-        info.setRarity(rarity);
+        info.setRarityKey(rarity);
     }
 
     private void populateStructureContents() {
@@ -205,9 +207,9 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (abyStronghold != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/stronghold_corridor"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/stronghold_crossing"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             abyStronghold.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -220,7 +222,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (dreadMine != null) {
             List<LootEntry> loot = Collections.singletonList(
                 new LootEntry(new ResourceLocation("abyssalcraft", "chests/mineshaft"),
-                    Collections.emptyList(), "gui.structurescanner.loot.minecart_chest")
+                    Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.minecart_chest"))
             );
             dreadMine.setLootTables(loot);
         }
@@ -239,13 +241,13 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (omotholCity != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/blacksmith"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/house"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/library"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/farmhouse"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             omotholCity.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -258,9 +260,9 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (omotholStorage != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/storage_junk"),
-                Collections.emptyList(), "gui.structurescanner.loot.crate"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.crate")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/storage_treasure"),
-                Collections.emptyList(), "gui.structurescanner.loot.crate"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.crate")));
             omotholStorage.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -303,7 +305,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (world == null || !canBeSearched(structureId)) return null;
 
         String path = structureId.getPath();
-        Long seed = getWorldSeed(world);
+        Long seed = SeedHelper.getWorldSeed(world);
         if (seed == null) return null;
 
         List<BlockPos> candidates;
@@ -327,7 +329,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
 
         // Make a copy for sorting
         candidates = new ArrayList<>(candidates);
-        sortByDistance(candidates, pos);
+        PositionHelper.sortByHorizontalDistance(candidates, pos);
 
         // Apply filter and skip to find the target
         int validIndex = 0;
@@ -367,7 +369,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (world == null || !canBeSearched(structureId)) return Collections.emptyList();
 
         String path = structureId.getPath();
-        Long seed = getWorldSeed(world);
+        Long seed = SeedHelper.getWorldSeed(world);
         if (seed == null) return Collections.emptyList();
 
         List<BlockPos> results;
@@ -376,7 +378,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
             case "aby_stronghold":
                 if (world.provider.getDimension() != abyssalWastelandId) return Collections.emptyList();
                 results = new ArrayList<>(getCachedAbyStrongholds(world, seed));
-                sortByDistance(results, pos);
+                PositionHelper.sortByHorizontalDistance(results, pos);
                 return results.subList(0, Math.min(maxResults, results.size()));
 
             case "jzahar_temple":
@@ -467,27 +469,4 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         return new BlockPos(4, 0, 7);
     }
 
-    // ========== Utility Methods ==========
-
-    private Long getWorldSeed(World world) {
-        if (world.getWorldInfo() != null) return world.getWorldInfo().getSeed();
-
-        return null;
-    }
-
-    private void sortByDistance(List<BlockPos> positions, BlockPos from) {
-        final int px = from.getX();
-        final int pz = from.getZ();
-
-        positions.sort((a, b) -> {
-            long dxA = a.getX() - px;
-            long dzA = a.getZ() - pz;
-            long dxB = b.getX() - px;
-            long dzB = b.getZ() - pz;
-            long distA = dxA * dxA + dzA * dzA;
-            long distB = dxB * dxB + dzB * dzB;
-
-            return Long.compare(distA, distB);
-        });
-    }
 }

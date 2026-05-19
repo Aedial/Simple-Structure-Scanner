@@ -24,6 +24,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.util.ResourceLocation;
 
+import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
@@ -243,7 +244,7 @@ public class GuiEntitiesWindow {
         Gui.drawRect(windowX, windowY, windowX + windowW, windowY + windowH, 0x801A1A1A);
 
         // Draw header
-        String title = I18n.format("gui.structurescanner.entities.title", structureInfo.getDisplayName());
+        String title = I18n.format("gui.structurescanner.entities.title", ClientTextResolver.resolve(structureInfo.getDisplayName()));
         String elidedTitle = font.trimStringToWidth(title, windowW - 16);
         if (!elidedTitle.equals(title)) elidedTitle += "...";
         font.drawString(elidedTitle, windowX + 6, windowY + 6, 0xFFFFFF);

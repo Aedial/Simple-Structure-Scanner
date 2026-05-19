@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.lwjgl.opengl.GL11;
 import org.lwjgl.input.Keyboard;
 
 import net.minecraft.client.Minecraft;
@@ -11,13 +12,22 @@ import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.ScaledResolution;
+import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderHelper;
+import net.minecraft.client.renderer.Tessellator;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.client.resources.I18n;
+import net.minecraftforge.fluids.Fluid;
+import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.FluidUtil;
 
+import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.integration.JEIHelper;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
@@ -167,6 +177,12 @@ public class GuiBlocksWindow {
                 } else if (mouseButton == 1) {
                     JEIHelper.showItemUses(entry.displayStack);
                 }
+            } else if (entry.displayFluid != null) {
+                if (mouseButton == 0) {
+                    JEIHelper.showFluidRecipes(entry.displayFluid);
+                } else if (mouseButton == 1) {
+                    JEIHelper.showFluidUses(entry.displayFluid);
+                }
             }
         }
 
@@ -192,6 +208,16 @@ public class GuiBlocksWindow {
                     return true;
                 } else if (keyCode == Keyboard.KEY_U) {
                     JEIHelper.showItemUses(entry.displayStack);
+
+                    return true;
+                }
+            } else if (entry.displayFluid != null) {
+                if (keyCode == Keyboard.KEY_R) {
+                    JEIHelper.showFluidRecipes(entry.displayFluid);
+
+                    return true;
+                } else if (keyCode == Keyboard.KEY_U) {
+                    JEIHelper.showFluidUses(entry.displayFluid);
 
                     return true;
                 }
@@ -222,7 +248,7 @@ public class GuiBlocksWindow {
         Gui.drawRect(windowX, windowY, windowX + windowW, windowY + windowH, 0x801A1A1A);
 
         // Draw header
-        String title = I18n.format("gui.structurescanner.blocks.title", structureInfo.getDisplayName());
+        String title = I18n.format("gui.structurescanner.blocks.title", ClientTextResolver.resolve(structureInfo.getDisplayName()));
         String elidedTitle = font.trimStringToWidth(title, windowW - 16);
         if (!elidedTitle.equals(title)) elidedTitle += "...";
         font.drawString(elidedTitle, windowX + 6, windowY + 6, 0xFFFFFF);
@@ -281,8 +307,7 @@ public class GuiBlocksWindow {
                 Gui.drawRect(itemX - 1, itemY - 1, itemX + 17, itemY + 17, 0xFF555555);
             }
 
-            // Render item
-            if (entry.displayStack != null) mc.getRenderItem().renderItemIntoGUI(entry.displayStack, itemX, itemY);
+            drawBlockEntry(mc, entry, itemX, itemY);
 
             // Draw count below item
             String countStr = entry.formatCount();
@@ -309,6 +334,76 @@ public class GuiBlocksWindow {
         GlStateManager.popMatrix();
     }
 
+    /**
+     * Draw the block or fluid entry in the item slot.
+     *
+     * @param mc The Minecraft instance
+     * @param entry The block entry to draw
+     * @param itemX The X position of the item slot
+     * @param itemY The Y position of the item slot
+     */
+    private void drawBlockEntry(Minecraft mc, BlockEntry entry, int itemX, int itemY) {
+        if (entry.displayStack != null) {
+            mc.getRenderItem().renderItemIntoGUI(entry.displayStack, itemX, itemY);
+
+            return;
+        }
+
+        if (entry.displayFluid == null || renderFluidIntoGui(mc, entry.displayFluid, itemX, itemY)) return;
+
+        ItemStack filledBucket = FluidUtil.getFilledBucket(entry.displayFluid);
+        if (!filledBucket.isEmpty()) mc.getRenderItem().renderItemIntoGUI(filledBucket, itemX, itemY);
+    }
+
+    private boolean renderFluidIntoGui(Minecraft mc, FluidStack fluidStack, int itemX, int itemY) {
+        Fluid fluid = fluidStack.getFluid();
+        if (fluid == null) return false;
+
+        ResourceLocation stillTexture = fluid.getStill();
+        if (stillTexture == null) return false;
+
+        TextureAtlasSprite sprite = mc.getTextureMapBlocks().getAtlasSprite(stillTexture.toString());
+        if (sprite == null) return false;
+
+        int color = fluid.getColor(fluidStack);
+        float alpha = (float) (color >> 24 & 255) / 255.0F;
+        float red = (float) (color >> 16 & 255) / 255.0F;
+        float green = (float) (color >> 8 & 255) / 255.0F;
+        float blue = (float) (color & 255) / 255.0F;
+        if (alpha <= 0.0F) alpha = 1.0F;
+
+        RenderHelper.disableStandardItemLighting();
+        GlStateManager.disableLighting();
+        GlStateManager.enableBlend();
+        GlStateManager.color(red, green, blue, alpha);
+
+        mc.getTextureManager().bindTexture(TextureMap.LOCATION_BLOCKS_TEXTURE);
+        drawTexturedRect(itemX, itemY, sprite, 16, 16);
+
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
+        GlStateManager.disableBlend();
+        RenderHelper.enableGUIStandardItemLighting();
+
+        return true;
+    }
+
+    /**
+     * Draw a textured rectangle using a sprite.
+     * This handles proper UV mapping for animated textures.
+     */
+    public static void drawTexturedRect(int x, int y, TextureAtlasSprite sprite, int width, int height) {
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.getBuffer();
+
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX);
+        buffer.pos(x, y + height, 0.0).tex(sprite.getMinU(), sprite.getMaxV()).endVertex();
+        buffer.pos(x + width, y + height, 0.0).tex(sprite.getMaxU(), sprite.getMaxV()).endVertex();
+        buffer.pos(x + width, y, 0.0).tex(sprite.getMaxU(), sprite.getMinV()).endVertex();
+        buffer.pos(x, y, 0.0).tex(sprite.getMinU(), sprite.getMinV()).endVertex();
+
+        tessellator.draw();
+    }
+
     public void drawTooltips(int mouseX, int mouseY) {
         if (!visible) return;
 
@@ -322,6 +417,15 @@ public class GuiBlocksWindow {
                 ITooltipFlag.TooltipFlags tooltipFlag = mc.gameSettings.advancedItemTooltips ?
                     ITooltipFlag.TooltipFlags.ADVANCED : ITooltipFlag.TooltipFlags.NORMAL;
                 List<String> tooltip = entry.displayStack.getTooltip(mc.player, tooltipFlag);
+
+                GlStateManager.pushMatrix();
+                GlStateManager.translate(0, 0, 500);
+                drawHoveringText(tooltip, mouseX, mouseY, mc.fontRenderer);
+                GlStateManager.popMatrix();
+            } else if (entry.displayFluid != null) {
+                List<String> tooltip = new ArrayList<>();
+                tooltip.add(entry.displayFluid.getLocalizedName());
+                tooltip.add(I18n.format("gui.structurescanner.blocks.fluidAmount", (long) entry.displayFluid.amount * entry.count));
 
                 GlStateManager.pushMatrix();
                 GlStateManager.translate(0, 0, 500);

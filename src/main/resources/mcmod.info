@@ -1,16 +1,13 @@
-[
-  {
-    "modid": "simplestructurescanner",
-    "name": "Simple Structure Scanner",
-    "description": "A simple mod to scan for and preview structures in the world.",
-    "version": "${version}",
-    "mcversion": "${mcversion}",
-    "url": "",
-    "updateUrl": "",
-    "authorList": ["Aedial", "DipNChips"],
-    "credits": "",
-    "logoFile": "",
+[{
+    "modid": "${mod_id}",
+    "name": "${mod_name}",
+    "version": "${mod_version}",
+    "mcversion": "1.12.2",
+    "description": "${mod_description}",
+    "authorList": ["${mod_authors}"],
+    "credits": "${mod_credits}",
+    "url": "${mod_url}",
+    "logoFile": "${mod_logo_path}",
     "screenshots": [],
     "dependencies": []
-  }
-]
+}]

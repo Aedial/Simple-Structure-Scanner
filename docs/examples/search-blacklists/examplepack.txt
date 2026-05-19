@@ -1,0 +1,8 @@
+# Make a structure non-searchable everywhere for this provider
+structure examplepack:ruined_tower
+
+# Make all structures from this provider non-searchable in dimension 7
+dimension 7
+
+# Make one structure non-searchable only in one dimension
+dimension examplepack:sunken_library -1

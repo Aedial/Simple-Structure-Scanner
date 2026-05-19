@@ -24,11 +24,11 @@ gradle setupDecompWorkspace
 gradle build
 ```
 
-If this adds/changes runtime behavior, include a minimal OC program or steps to verify in-game.
+If this adds or changes runtime behavior, include in-game verification steps.
 
 ## Checklist
-- [ ] I built the project locally with Java 8 using `gradle build`.
-- [ ] I updated documentation (README/DEVELOPMENT.md) as needed.
+- [ ] I built the project locally with Java 25 using `gradle build`.
+- [ ] I updated documentation (README.md or other) as needed.
 - [ ] I followed the existing code style.
 - [ ] I did not include secrets or private data.
 - [ ] If touching `mcmod.info`, it remains valid and accurate.

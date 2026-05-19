@@ -13,7 +13,7 @@ import com.simplestructurescanner.structure.StructureProviderRegistry;
 
 public class CommonProxy {
     public void preInit(FMLPreInitializationEvent event) {
-        File configFile = new File(event.getModConfigurationDirectory(), SimpleStructureScanner.MODID + ".cfg");
+        File configFile = new File(event.getModConfigurationDirectory(), Tags.MODID + ".cfg");
         ModConfig.loadConfigs(configFile);
         NetworkHandler.init();
     }
