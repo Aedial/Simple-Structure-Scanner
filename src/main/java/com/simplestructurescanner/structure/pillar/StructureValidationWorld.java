@@ -2,6 +2,7 @@ package com.simplestructurescanner.structure.pillar;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.profiler.Profiler;
@@ -39,6 +40,10 @@ import java.lang.reflect.Field;
 public class StructureValidationWorld extends World {
 
     private static final Field BIOME_PROVIDER_FIELD = findBiomeProviderField();
+
+    // TODO: Clean the reflection code. It has no business being this complex,
+    //       We're targeting only 1.12.2 (dunno what the implementer was thinking).
+    //       I didn't implement this, just cleaned it up.
 
     @Nullable
     private static Field findBiomeProviderField() {
@@ -159,6 +164,10 @@ public class StructureValidationWorld extends World {
     // World Methods Pillar Uses for Structure Placement
     //================================================================================
 
+    BlockPos getTopBlock(@Nonnull BlockPos xzPos, @Nonnull Chunk chunk) {
+        return new BlockPos(xzPos.getX(), chunk.getTopFilledSegment() + 16, xzPos.getZ());
+    }
+
     /**
      * Gets the highest solid or liquid block at the given XZ position.
      * Used by Pillar's SURFACE generator type.
@@ -170,13 +179,9 @@ public class StructureValidationWorld extends World {
     @Override
     public BlockPos getTopSolidOrLiquidBlock(@Nonnull BlockPos xzPos) {
         Chunk chunk = getChunk(xzPos);
-        BlockPos pos;
 
         // Start from the top and work down
-        for (pos = new BlockPos(xzPos.getX(), chunk.getTopFilledSegment() + 16, xzPos.getZ());
-             pos.getY() >= 0;
-             pos = pos.down()) {
-
+        for (BlockPos pos = getTopBlock(xzPos, chunk); pos.getY() >= 0; pos = pos.down()) {
             IBlockState state = chunk.getBlockState(pos);
             if (!state.getBlock().isAir(state, this, pos)) return pos;
         }
@@ -195,13 +200,10 @@ public class StructureValidationWorld extends World {
     @Nonnull
     public BlockPos getTopSolidBlock(@Nonnull BlockPos xzPos) {
         Chunk chunk = getChunk(xzPos);
-        BlockPos pos;
         BlockPos nextPos;
 
-        for (pos = new BlockPos(xzPos.getX(), chunk.getTopFilledSegment() + 16, xzPos.getZ());
-             pos.getY() >= 0;
-             pos = nextPos) {
-
+        BlockPos pos = getTopBlock(xzPos, chunk);
+        for (; pos.getY() >= 0; pos = nextPos) {
             nextPos = pos.down();
             IBlockState state = chunk.getBlockState(nextPos);
 
@@ -228,7 +230,7 @@ public class StructureValidationWorld extends World {
         Chunk chunk = getChunk(xzPos);
         BlockPos nextPos;
 
-        BlockPos pos = new BlockPos(xzPos.getX(), chunk.getTopFilledSegment() + 16, xzPos.getZ());
+        BlockPos pos = getTopBlock(xzPos, chunk);
         for (; pos.getY() >= 0; pos = nextPos) {
             nextPos = pos.down();
             IBlockState state = chunk.getBlockState(nextPos);

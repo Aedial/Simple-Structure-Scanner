@@ -1,6 +1,7 @@
 package com.simplestructurescanner.structure.pillar;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -11,18 +12,23 @@ import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
+import it.unimi.dsi.fastutil.ints.IntSortedSet;
+
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.text.translation.I18n;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
+import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.DimensionInfo;
+import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.StructureSearchOverrides;
+import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionException;
@@ -86,7 +92,7 @@ public class PillarStructureProvider implements StructureProvider {
 
     @Override
     public String getModName() {
-        return I18n.translateToLocal("gui.structurescanner.providers.pillar");
+        return "gui.structurescanner.providers.pillar";
     }
 
     @Override
@@ -109,22 +115,41 @@ public class PillarStructureProvider implements StructureProvider {
         return schemaMap.get(structureId);
     }
 
+    @Nullable
     private static Set<Biome> resolveBiomes(PillarSchemaProxy schema) {
+        if (schema.generateEverywhere) return null;
+
         Set<Biome> biomes = new HashSet<>();
 
-        for (String biomeName : schema.getDisplayBiomeSpawns()) {
-            Biome biome = resolveBiome(biomeName);
-            if (biome != null) biomes.add(biome);
+        // StructureInfo only stores allow-lists, so blacklist-based Pillar rules
+        // must be expanded against the live biome registry instead of displayed raw.
+        for (Biome biome : Biome.REGISTRY) {
+            if (biome != null && schema.canSpawnInBiome(biome)) biomes.add(biome);
         }
 
         return biomes;
     }
 
+    @Nullable
     private static Set<DimensionInfo> resolveDimensions(PillarSchemaProxy schema) {
+        if (schema.generateEverywhere || schema.dimensionSpawns.isEmpty()) return null;
+
         Set<DimensionInfo> dimensions = new HashSet<>();
 
-        for (Integer dimId : schema.getDisplayDimensionSpawns()) {
-            dimensions.add(new DimensionInfo(dimId));
+        if (!schema.isDimensionSpawnsBlacklist) {
+            for (Integer dimId : schema.dimensionSpawns) {
+                dimensions.add(new DimensionInfo(dimId));
+            }
+
+            return dimensions;
+        }
+
+        // Dimension blacklists need the same expansion as biome blacklists so the
+        // UI and search gating see the actual allowed dimensions.
+        for (IntSortedSet dimensionIds : DimensionManager.getRegisteredDimensions().values()) {
+            for (int dimensionId : dimensionIds) {
+                if (schema.canSpawnInDimension(dimensionId)) dimensions.add(new DimensionInfo(dimensionId));
+            }
         }
 
         return dimensions;
@@ -140,44 +165,24 @@ public class PillarStructureProvider implements StructureProvider {
 
             // Set rarity based on schema rarity value
             long rounded = Math.round(schema.rarity);
-            String rarityStr = I18n.translateToLocalFormatted("gui.structurescanner.rarity.one_in_chunks", rounded);
-            info.setRarity(I18n.translateToLocalFormatted("gui.structurescanner.rarity", rarityStr));
+            info.setRarity(LocalizedText.translatable("gui.structurescanner.rarity",
+                LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", rounded)));
 
             Set<Biome> biomes = resolveBiomes(schema);
-            if (!biomes.isEmpty()) info.setValidBiomes(biomes);
+            if (biomes != null && !biomes.isEmpty()) info.setValidBiomes(biomes);
 
             Set<DimensionInfo> dimensions = resolveDimensions(schema);
-            if (!dimensions.isEmpty()) info.setValidDimensions(dimensions);
+            if (dimensions != null) {
+                info.setValidDimensions(dimensions);
+            } else if (schema.generatorType == PillarGeneratorType.NONE) {
+                // Summon-only Pillar schemas do not have a natural generation dimension,
+                // so the scanner should treat missing dimension data as unknown, not Any.
+                info.setValidDimensions(Collections.emptySet());
+            }
 
             // TODO: Add generator type info when setNotes() is added to StructureInfo
             // Generator type: schema.generatorType.name().toLowerCase()
         }
-    }
-
-    /**
-     * Resolve a biome name string to a {@link Biome} object.
-     * Tries the biome registry entry first, then falls back to comparing the
-     * localized biome names already present in the registry.
-     */
-    @Nullable
-    private static Biome resolveBiome(String biomeName) {
-        if (biomeName == null || biomeName.isEmpty()) return null;
-
-        // Try as a ResourceLocation first (for example, "minecraft:plains" or "modid:biome")
-        ResourceLocation biomeLoc = new ResourceLocation(biomeName);
-        Biome biome = Biome.REGISTRY.getObject(biomeLoc);
-        if (biome != null) return biome;
-
-        // Fallback: iterate the registry and match by biome name (case-insensitive)
-        for (Biome candidate : Biome.REGISTRY) {
-            if (candidate != null && candidate.getBiomeName().equalsIgnoreCase(biomeName)) {
-                return candidate;
-            }
-        }
-
-        SimpleStructureScanner.LOGGER.debug("Could not resolve Pillar biome: {}", biomeName);
-
-        return null;
     }
 
     /**
@@ -191,7 +196,7 @@ public class PillarStructureProvider implements StructureProvider {
             StructureInfo info = structureInfos.get(id);
             if (info == null) continue;
 
-            PillarNBTParser.ParsedPillarStructure parsed = PillarNBTParser.parseStructure(schema.structureName);
+            StructureNBTParser.ParsedStructure parsed = PillarNBTParser.parseStructure(schema.structureName);
             if (parsed == null) {
                 SimpleStructureScanner.LOGGER.debug("Failed to parse Pillar structure NBT for: {}", schema.structureName);
                 continue;
@@ -422,22 +427,19 @@ public class PillarStructureProvider implements StructureProvider {
 
     private void registerSchema(PillarSchemaProxy schema) {
         ResourceLocation id = new ResourceLocation(MOD_ID, schema.structureName);
+        boolean hidden = StructureSearchOverrides.isStructureHidden(PROVIDER_ID, id);
 
         schemasInOrder.add(schema);
-        if (!schemaMap.containsKey(id)) structureIds.add(id);
+        if (!hidden && !schemaMap.containsKey(id)) structureIds.add(id);
 
         schemaMap.put(id, schema);
-
-        // TODO: Add a static file in config to skip some structures (e.g. ones that are generated via command)
-        //       They need to be in the schemaMap for the predictor to work, but we can skip structureInfos.
+        if (hidden) return;
 
         structureInfos.put(id, createStructureInfo(id, schema));
     }
 
     private StructureInfo createStructureInfo(ResourceLocation id, PillarSchemaProxy schema) {
-        String displayName = I18n.translateToLocal("structure.pillar." + schema.structureName);
-
-        return new StructureInfo(id, displayName, PROVIDER_ID, 0, 0, 0);
+        return new StructureInfo(id, LocalizedText.translatable("structure.pillar." + schema.structureName), PROVIDER_ID, 0, 0, 0);
     }
 
     // ========== Reflection Helpers ==========

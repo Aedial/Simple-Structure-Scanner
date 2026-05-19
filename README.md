@@ -30,6 +30,17 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
   - Ice&Fire's structures (none can be searched for, due to being non-determinstic).
   - Custom structures from the Pillar mod.
 
+- Config-driven external providers:
+  - Define structure metadata in JSON under `config/simplestructurescanner/external-providers/`.
+  - Point each entry to an NBT file (`nbtPath`) so blocks/layers/entities/loot are read from the actual structure NBT data.
+
+## Examples
+- External provider example (JSON + NBT layout): [docs/examples/external-providers/README.md](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/examples/external-providers/README.md)
+- Sample provider JSON: [docs/examples/external-providers/example_provider.json](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/examples/external-providers/example_provider.json)
+- Sample provider, structure, and shared dimension lang entries: [docs/examples/en_us.lang](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/examples/en_us.lang)
+- Search blacklist file example: [docs/examples/search-blacklists/examplepack.txt](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/examples/search-blacklists/examplepack.txt)
+- Full provider implementation guide: [docs/STRUCTURE_PROVIDER_GUIDE.md](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/STRUCTURE_PROVIDER_GUIDE.md)
+
 ## FAQ
 ### Do I need to install this on a server?
 If you wish the query structure locations, you will need to put the mod on the server as well. However, if you only want to view structure information, you can use it client-side, as long as the mods providing said structures are also installed client-side.

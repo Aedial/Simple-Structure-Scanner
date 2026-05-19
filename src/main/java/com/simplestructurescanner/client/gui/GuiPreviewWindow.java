@@ -10,6 +10,7 @@ import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.util.ResourceLocation;
 
+import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.structure.StructureInfo;
 
@@ -130,7 +131,7 @@ public class GuiPreviewWindow {
         Gui.drawRect(windowX, windowY, windowX + windowW, windowY + windowH, 0xFF1A1A1A);
 
         // Draw header
-        String title = I18n.format("gui.structurescanner.preview.title", structureInfo.getDisplayName());
+        String title = I18n.format("gui.structurescanner.preview.title", ClientTextResolver.resolve(structureInfo.getDisplayName()));
         String elidedTitle = font.trimStringToWidth(title, windowW - 16);
         if (!elidedTitle.equals(title)) elidedTitle += "...";
         font.drawStringWithShadow(elidedTitle, windowX + 8, windowY + 6, 0xFFFFFF);

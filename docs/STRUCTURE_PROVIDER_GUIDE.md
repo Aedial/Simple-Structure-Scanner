@@ -126,6 +126,35 @@ The registry will:
 3. Call `postInit()` to allow structure setup
 4. Index all structure IDs returned by `getStructureIds()`
 
+The registry also loads config-driven external providers from `config/simplestructurescanner/external-providers/`.
+These providers split data in two parts:
+- JSON metadata (translation keys, dimensions, biomes, rarity, mod requirements)
+- NBT structure data (`nbtPath`) for blocks, layers, entities, and loot tables
+
+This NBT parsing path uses the shared `StructureNBTParser`.
+
+Per-provider hidden blacklist files live in `config/simplestructurescanner/hidden-blacklists/`.
+Per-provider search blacklist files live in `config/simplestructurescanner/search-blacklists/`.
+Each file is named after the provider ID, for example `minecraft.txt` or `pillar.txt`.
+Supported entries are identical in both directories:
+
+```text
+# Hide a structure everywhere for that provider
+structure minecraft:village
+
+# Hide all structures from that provider in one dimension
+dimension -1
+
+# Hide one structure only in one dimension
+dimension minecraft:end_city 1
+```
+
+Entries in `hidden-blacklists` remove matching structures from the list.
+Entries in `search-blacklists` keep matching structures visible but make them non-searchable.
+Of course, both can be used together to hide have a 3-steps process: hidden, visible but non-searchable, and fully searchable.
+
+These blacklist files are consumed client-side. The `sssblacklist <hidden|search> remove` client command removes existing entries without requiring manual file edits.
+
 ---
 
 ## Structure Information
@@ -133,19 +162,30 @@ The registry will:
 ### Creating StructureInfo Objects
 
 ```java
+import com.simplestructurescanner.structure.LocalizedText;
+
 private void addStructure(String path, String displayNameKey, int sizeX, int sizeY, int sizeZ) {
     ResourceLocation id = new ResourceLocation(MOD_ID, path);
     knownStructures.add(id);
-    
-    String name = I18n.translateToLocal(displayNameKey);
-    StructureInfo info = new StructureInfo(id, name, PROVIDER_ID, sizeX, sizeY, sizeZ);
+
+    StructureInfo info = new StructureInfo(
+        id,
+        LocalizedText.translatable(displayNameKey),
+        PROVIDER_ID,
+        sizeX,
+        sizeY,
+        sizeZ
+    );
     structureInfos.put(id, info);
 }
 ```
 
+`StructureInfo` now stores unresolved text descriptors.
+The GUI resolves those descriptors on the client, so providers should pass translation keys for user-facing text instead of calling localization APIs during registration.
+
 **Parameters:**
 - `id`: Unique identifier (e.g., `yourmod:tower`)
-- `displayName`: Localized display name for the GUI
+- `displayName`: A `LocalizedText` descriptor for the GUI name
 - `modId`: Provider ID for grouping in the UI
 - `sizeX/Y/Z`: Structure dimensions (use 0 if unknown/variable)
 
@@ -177,8 +217,9 @@ info.setValidDimensions(multipleDims);
 ```
 
 **DimensionInfo Constructors:**
-- `DimensionInfo(int dimensionId)` - Uses ID as display name  - **not recommended**, will show as "Unknown (dimensionId)"
-- `DimensionInfo(int dimensionId, String displayKey)` - Uses localization key
+- `DimensionInfo(int dimensionId)` - Uses built-in defaults for vanilla dimensions, then tries `gui.structurescanner.dimension.id.<dimensionId>`, then falls back to `Unknown (dimensionId)`
+- `DimensionInfo(int dimensionId, String displayKey)` - Uses a localization key
+- `DimensionInfo(int dimensionId, LocalizedText displayName)` - Uses either a literal or translatable descriptor
 
 If no dimensions are set (`null` or empty), the structure is assumed valid in all dimensions.
 
@@ -222,21 +263,26 @@ If no biomes are set (`null`), the structure has no biome restrictions.
 
 ### Rarity
 
-Rarity can be specified as either a localization key or a literal string:
+Rarity should be specified as either a translation key or a numeric chunk rarity:
 
 ```java
-// Using localization key
-info.setRarity("gui.structurescanner.rarity.common");
-info.setRarity("gui.structurescanner.rarity.uncommon");
-info.setRarity("gui.structurescanner.rarity.rare");
-info.setRarity("gui.structurescanner.rarity.unique");
+// Using the built-in wrapped rarity helper
+info.setRarityKey("gui.structurescanner.rarity.common");
+info.setRarityKey("gui.structurescanner.rarity.uncommon");
+info.setRarityKey("gui.structurescanner.rarity.rare");
+info.setRarityKey("gui.structurescanner.rarity.unique");
 
-// Using literal "1 in X" format
-String rarityString = I18n.translateToLocalFormatted("gui.structurescanner.rarity.one_in_chunks", chunksPerOccurrence);
-info.setRarity(I18n.translateToLocalFormatted("gui.structurescanner.rarity", rarityString));
+// Using a nested translatable descriptor
+info.setRarity(LocalizedText.translatable(
+    "gui.structurescanner.rarity",
+    LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", chunksPerOccurrence)
+));
 
-// Custom localized rarity (you must add the lang string yourself)
-info.setRarity("gui.yourmod.rarity.legendary");
+// Numeric chunk rarity
+info.setRarity(LocalizedText.translatable(
+    "gui.structurescanner.rarity",
+    LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", 96)
+));
 ```
 
 Standard rarity keys provided by the mod:
@@ -244,6 +290,51 @@ Standard rarity keys provided by the mod:
 - `gui.structurescanner.rarity.uncommon`
 - `gui.structurescanner.rarity.rare`
 - `gui.structurescanner.rarity.unique`
+
+### External Providers (JSON Metadata + NBT Data)
+
+External provider JSON files define lightweight metadata and reference NBT files for structure contents.
+All user-visible text in this format should be translation keys.
+Each JSON file defines one provider object with a `providerId`, a `modName` or `modNameKey`, and a `structures` array.
+
+```json
+{
+    "providerId": "examplepack",
+    "modNameKey": "gui.structurescanner.provider.examplepack",
+    "requiredMods": ["minecraft"],  // Gates provider loading on mod presence
+    "nbtRoot": "nbt",               // Optional root directory for NBT files, defaults to "nbt"
+    "structures": [
+        {
+            "id": "examplepack:ruined_tower",
+            // You will need to provide the localization for this key
+            "displayNameKey": "gui.structurescanner.structures.examplepack.ruined_tower",
+            "nbtPath": "examplepack/ruined_tower",  // Relative to nbtRoot, without .nbt extension
+            "dimensions": [0, 7],                   // Valid dimensions
+            "biomes": ["minecraft:plains", "minecraft:forest"], // Valid biomes (optional)
+            "rarityKey": "gui.structurescanner.rarity.uncommon" // May also use a number (per-chunk rarity)
+        }
+    ]
+}
+```
+
+`nbtPath` is relative to `nbtRoot` (default `nbt`) under `config/simplestructurescanner/external-providers/`.
+
+Custom dimensions should define translations through the shared key format `gui.structurescanner.dimension.id.<dimensionId>`.
+This keeps dimension names shared across every provider instead of redefining them per integration.
+
+Provider, structure, and shared dimension name examples live together in `docs/examples/en_us.lang`.
+
+For the example above, the NBT file path is:
+- `config/simplestructurescanner/external-providers/nbt/examplepack/ruined_tower.nbt`
+
+If `nbtPath` is present, structure block/layer/entity/loot information is loaded from NBT.
+If `nbtPath` is missing, only the JSON metadata is available.
+
+If `modNameKey` or `displayNameKey` are omitted, the loader falls back to generated keys:
+- `gui.structurescanner.provider.<providerId>`
+- `gui.structurescanner.structures.<namespace>.<path>`
+
+External providers remain non-searchable unless a Java provider supplies custom location logic.
 
 ---
 

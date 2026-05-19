@@ -9,9 +9,12 @@ import java.util.List;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.common.config.Property;
 
+import com.simplestructurescanner.Tags;
+
 
 public class ModConfig {
     private static Configuration config;
+    private static File configRootDirectory;
 
     // HUD position enum
     public enum HudPosition {
@@ -25,6 +28,8 @@ public class ModConfig {
     public static boolean clientI18nNames = true;
     public static String clientLastSelectedStructure = "";
     public static String clientFilterText = "";
+    public static boolean clientShowNonSearchable = true;
+    public static boolean clientShowCurrentDimensionOnly = false;
     public static List<String> clientTrackedStructureIds = new ArrayList<>();
     public static List<String> clientStructureWhitelist = new ArrayList<>();
     public static List<String> clientStructureBlacklist = new ArrayList<>();
@@ -46,10 +51,14 @@ public class ModConfig {
         "searchedStructureIds",
         "lastSelectedStructure",
         "filterText",
+        "showNonSearchable",
+        "showCurrentDimensionOnly",
         "hudPosition"
     );
 
     public static void loadConfigs(File configFile) {
+        configRootDirectory = new File(configFile.getParentFile(), Tags.MODID);
+        if (!configRootDirectory.exists()) configRootDirectory.mkdirs();
         if (config == null) config = new Configuration(configFile);
 
         syncFromFile();
@@ -133,6 +142,14 @@ public class ModConfig {
         prop.setLanguageKey("config.structurescanner.client.filterText");
         clientFilterText = prop.getString();
 
+        prop = config.get("client", "showNonSearchable", clientShowNonSearchable);
+        prop.setLanguageKey("config.structurescanner.client.showNonSearchable");
+        clientShowNonSearchable = prop.getBoolean();
+
+        prop = config.get("client", "showCurrentDimensionOnly", clientShowCurrentDimensionOnly);
+        prop.setLanguageKey("config.structurescanner.client.showCurrentDimensionOnly");
+        clientShowCurrentDimensionOnly = prop.getBoolean();
+
         prop = config.get("client", "searchedStructureIds", new String[0]);
         prop.setLanguageKey("config.structurescanner.client.searchedStructureIds");
         clientTrackedStructureIds = new ArrayList<>();
@@ -157,6 +174,10 @@ public class ModConfig {
 
     public static Configuration getConfig() {
         return config;
+    }
+
+    public static File getConfigRootDirectory() {
+        return configRootDirectory;
     }
 
     public static boolean isConfigHidden(String name) {
@@ -330,6 +351,26 @@ public class ModConfig {
         clientFilterText = text;
         if (config != null) {
             config.get("client", "filterText", "").set(text);
+            config.save();
+        }
+    }
+
+    public static void setClientShowNonSearchable(boolean value) {
+        if (clientShowNonSearchable == value) return;
+
+        clientShowNonSearchable = value;
+        if (config != null) {
+            config.get("client", "showNonSearchable", true).set(value);
+            config.save();
+        }
+    }
+
+    public static void setClientShowCurrentDimensionOnly(boolean value) {
+        if (clientShowCurrentDimensionOnly == value) return;
+
+        clientShowCurrentDimensionOnly = value;
+        if (config != null) {
+            config.get("client", "showCurrentDimensionOnly", false).set(value);
             config.save();
         }
     }

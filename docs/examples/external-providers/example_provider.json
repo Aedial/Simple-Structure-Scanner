@@ -1,0 +1,24 @@
+{
+    "providerId": "examplepack",
+    "modNameKey": "gui.structurescanner.provider.examplepack",
+    "requiredMods": ["minecraft"],
+    "nbtRoot": "nbt",
+    "structures": [
+        {
+            "id": "examplepack:ruined_tower",
+            "displayNameKey": "gui.structurescanner.structures.examplepack.ruined_tower",
+            "nbtPath": "examplepack/ruined_tower",
+            "dimensions": [0, 7],
+            "biomes": ["minecraft:plains", "minecraft:forest"],
+            "rarityKey": "gui.structurescanner.rarity.uncommon"
+        },
+        {
+            "id": "examplepack:sunken_library",
+            "displayNameKey": "gui.structurescanner.structures.examplepack.sunken_library",
+            "nbtPath": "examplepack/ocean/sunken_library.nbt",
+            "dimensions": [0],
+            "biomes": ["minecraft:ocean"],
+            "rarityChunks": 96
+        }
+    ]
+}

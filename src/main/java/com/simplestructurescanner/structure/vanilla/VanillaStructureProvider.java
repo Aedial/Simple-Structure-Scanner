@@ -27,10 +27,10 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.BiomeProvider;
-import net.minecraft.util.text.translation.I18n;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.DimensionInfo;
+import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
@@ -51,7 +51,7 @@ import com.simplestructurescanner.structure.util.SeedHelper;
 public class VanillaStructureProvider implements StructureProvider {
     private static final String PROVIDER_ID = "minecraft";
     private static final Random RANDOM = new Random();
-    private static final String MOD_NAME = I18n.translateToLocal("gui.structurescanner.provider.minecraft");
+    private static final String MOD_NAME = "gui.structurescanner.provider.minecraft";
 
     private List<ResourceLocation> knownStructures;
     private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
@@ -166,7 +166,7 @@ public class VanillaStructureProvider implements StructureProvider {
 
         info.setValidBiomes(biomes);
         info.setValidDimensions(dimensions);
-        info.setRarity(rarity);
+        info.setRarityKey(rarity);
     }
 
     /**
@@ -293,7 +293,7 @@ public class VanillaStructureProvider implements StructureProvider {
 
             if (existing != null) {
                 // Add counts
-                blockMap.put(key, new BlockEntry(existing.blockState, existing.displayStack, existing.count + newEntry.count));
+                blockMap.put(key, existing.withCount(existing.count + newEntry.count));
             } else {
                 blockMap.put(key, newEntry);
             }
@@ -719,33 +719,8 @@ public class VanillaStructureProvider implements StructureProvider {
 
     private BlockEntry createBlockEntry(Block block, int meta, int count) {
         IBlockState state = block.getStateFromMeta(meta);
-        ItemStack stack = ItemStack.EMPTY;
 
-        // Strategy 1: Use Item.getItemFromBlock with damageDropped
-        Item blockItem = Item.getItemFromBlock(block);
-        if (blockItem != null && blockItem != Items.AIR) {
-            int damage = block.damageDropped(state);
-            stack = new ItemStack(blockItem, 1, damage);
-        }
-
-        // Strategy 2: Use getItemDropped if direct item form failed
-        if (stack.isEmpty()) {
-            Item droppedItem = block.getItemDropped(state, RANDOM, 0);
-            if (droppedItem != null && droppedItem != Items.AIR) {
-                int damage = block.damageDropped(state);
-                stack = new ItemStack(droppedItem, 1, damage);
-            }
-        }
-
-        // Strategy 3: Fallback to direct ItemStack creation
-        if (stack.isEmpty()) stack = new ItemStack(block, 1, meta);
-
-        if (stack.isEmpty()) {
-            stack = new ItemStack(block);
-            if (stack.isEmpty()) return null;
-        }
-
-        return new BlockEntry(state, stack, count);
+        return StructureNBTParser.createBlockEntry(state, count);
     }
 
     @SafeVarargs
@@ -754,15 +729,15 @@ public class VanillaStructureProvider implements StructureProvider {
     }
 
     private LootEntry createLootEntry(String lootTableId, String containerType) {
-        return new LootEntry(new ResourceLocation(lootTableId), Collections.emptyList(), containerType);
+        return new LootEntry(new ResourceLocation(lootTableId), Collections.emptyList(),
+            LocalizedText.translatable(containerType));
     }
 
     private void addStructure(String path, String displayName, int sizeX, int sizeY, int sizeZ) {
         ResourceLocation id = new ResourceLocation("minecraft", path);
         knownStructures.add(id);
 
-        String name = I18n.translateToLocal(displayName);
-        StructureInfo info = new StructureInfo(id, name, PROVIDER_ID, sizeX, sizeY, sizeZ);
+        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayName), PROVIDER_ID, sizeX, sizeY, sizeZ);
         structureInfos.put(id, info);
     }
 
@@ -1109,7 +1084,8 @@ public class VanillaStructureProvider implements StructureProvider {
     }
 
     private BlockPos getMonumentPosForRegion(long seed, int maxDist, int minDist, int salt, int regionX, int regionZ) {
-        // FIXME: less than 50% chance to find a monument, something is wrong here
+        // FIXME: less than 50% chance to find a monument, something might be wrong here
+        //        maybe some positions are invalid due to to terrain?
         Random random = SeedHelper.seedRegionRandom(seed, regionX, regionZ, salt);
 
         // Monument uses averaged offset (triangular distribution)
@@ -1175,6 +1151,7 @@ public class VanillaStructureProvider implements StructureProvider {
 
     private BlockPos getMansionPosForRegion(long seed, int maxDist, int minDist, int salt, int regionX, int regionZ) {
         // FIXME: 1/10 chance to find a mansion, something is wrong here
+        //        Is it terrain generation? Mansions require a lot of flat space, maybe many candidates are invalid due to terrain?
         Random random = SeedHelper.seedRegionRandom(seed, regionX, regionZ, salt);
 
         // MC formula: regionX * spacing + (rand(range) + rand(range)) / 2

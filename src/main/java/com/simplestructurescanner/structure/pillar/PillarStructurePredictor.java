@@ -5,14 +5,11 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Random;
-import java.util.Set;
 
 import javax.annotation.Nullable;
 
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
-import net.minecraft.world.biome.Biome;
-import net.minecraftforge.common.BiomeDictionary;
 
 
 /**
@@ -216,43 +213,8 @@ public class PillarStructurePredictor {
             }
         }
 
-        // Dimension whitelist/blacklist
-        if (!schema.dimensionSpawns.isEmpty()) {
-            int dim = world.provider.getDimension();
+        if (!schema.canSpawnInDimension(world.provider.getDimension())) return false;
 
-            if (schema.isDimensionSpawnsBlacklist && schema.dimensionSpawns.contains(dim)) return false;
-            if (!schema.isDimensionSpawnsBlacklist && !schema.dimensionSpawns.contains(dim)) return false;
-        }
-
-        // Biome name check — Pillar's exact logic:
-        //   if blacklist && name NOT in list → return true (allowed, skip tags)
-        //   if name IS in list → return !blacklist (blacklist=denied, whitelist=allowed)
-        //   otherwise (whitelist && name NOT in list) → fall through to tags
-        Biome biome = world.getBiome(pos);
-        String name = biome.getRegistryName().toString();
-
-        if (schema.isBiomeNameSpawnsBlacklist && !schema.biomeNameSpawns.contains(name)) return true;
-        if (schema.biomeNameSpawns.contains(name)) return !schema.isBiomeNameSpawnsBlacklist;
-
-        // Biome tag check (BiomeDictionary-based)
-        try {
-            Set<BiomeDictionary.Type> types = BiomeDictionary.getTypes(biome);
-
-            if (schema.isBiomeTagSpawnsBlacklist) {
-                for (BiomeDictionary.Type type : types) {
-                    if (schema.biomeTagSpawns.contains(type.getName())) return false;
-                }
-
-                return true;
-            } else {
-                for (BiomeDictionary.Type type : types) {
-                    if (schema.biomeTagSpawns.contains(type.getName())) return true;
-                }
-            }
-        } catch (NullPointerException e) {
-            // Biome not properly registered in BiomeDictionary
-        }
-
-        return false;
+        return schema.canSpawnInBiome(world.getBiome(pos));
     }
 }

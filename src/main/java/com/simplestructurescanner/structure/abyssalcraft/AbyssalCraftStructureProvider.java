@@ -14,7 +14,6 @@ import javax.annotation.Nullable;
 
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.text.translation.I18n;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.BiomeProvider;
@@ -23,6 +22,7 @@ import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.DimensionInfo;
+import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
@@ -41,7 +41,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
 
     private static final String PROVIDER_ID = "abyssalcraft";
     private static final String MOD_ID = "abyssalcraft";
-    private static final String MOD_NAME = I18n.translateToLocal("gui.structurescanner.provider.abyssalcraft");
+    private static final String MOD_NAME = "gui.structurescanner.provider.abyssalcraft";
 
     private List<ResourceLocation> knownStructures;
     private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
@@ -128,8 +128,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         ResourceLocation id = new ResourceLocation(MOD_ID, path);
         knownStructures.add(id);
 
-        String name = I18n.translateToLocal(displayName);
-        StructureInfo info = new StructureInfo(id, name, PROVIDER_ID, sizeX, sizeY, sizeZ);
+        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayName), PROVIDER_ID, sizeX, sizeY, sizeZ);
         structureInfos.put(id, info);
     }
 
@@ -199,7 +198,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
 
         info.setValidBiomes(biomes);
         info.setValidDimensions(dimensions);
-        info.setRarity(rarity);
+        info.setRarityKey(rarity);
     }
 
     private void populateStructureContents() {
@@ -208,9 +207,9 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (abyStronghold != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/stronghold_corridor"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/stronghold_crossing"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             abyStronghold.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -223,7 +222,7 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (dreadMine != null) {
             List<LootEntry> loot = Collections.singletonList(
                 new LootEntry(new ResourceLocation("abyssalcraft", "chests/mineshaft"),
-                    Collections.emptyList(), "gui.structurescanner.loot.minecart_chest")
+                    Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.minecart_chest"))
             );
             dreadMine.setLootTables(loot);
         }
@@ -242,13 +241,13 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (omotholCity != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/blacksmith"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/house"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/library"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/farmhouse"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             omotholCity.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -261,9 +260,9 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         if (omotholStorage != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/storage_junk"),
-                Collections.emptyList(), "gui.structurescanner.loot.crate"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.crate")));
             loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/storage_treasure"),
-                Collections.emptyList(), "gui.structurescanner.loot.crate"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.crate")));
             omotholStorage.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();

@@ -1,6 +1,10 @@
 package com.simplestructurescanner.structure.pillar;
 
 import java.util.List;
+import java.util.Set;
+
+import net.minecraft.world.biome.Biome;
+import net.minecraftforge.common.BiomeDictionary;
 
 /**
  * Proxy for Pillar's StructureSchema class.
@@ -59,20 +63,47 @@ public final class PillarSchemaProxy {
     }
 
     /**
-     * Returns the configured biome rules for display metadata.
-     * Pillar's real spawn logic still evaluates name and tag rules separately,
-     * including blacklist flags, so this is presentation data only.
+     * Evaluate Pillar's dimension rules for one candidate dimension.
      */
-    public List<String> getDisplayBiomeSpawns() {
-        return biomeNameSpawns.isEmpty() ? biomeTagSpawns : biomeNameSpawns;
+    public boolean canSpawnInDimension(int dimensionId) {
+        if (generateEverywhere || dimensionSpawns.isEmpty()) return true;
+
+        if (isDimensionSpawnsBlacklist) return !dimensionSpawns.contains(dimensionId);
+
+        return dimensionSpawns.contains(dimensionId);
     }
 
     /**
-     * Returns the configured dimension rules for display metadata.
-     * The raw allow/deny semantics still live on the blacklist flags.
+     * Evaluate Pillar's biome-name and biome-tag rules for one candidate biome.
+     * The name rules short-circuit exactly like Pillar's WorldGenerator does.
      */
-    public List<Integer> getDisplayDimensionSpawns() {
-        return dimensionSpawns;
+    public boolean canSpawnInBiome(Biome biome) {
+        if (generateEverywhere || biome == null || biome.getRegistryName() == null) return generateEverywhere;
+
+        String name = biome.getRegistryName().toString();
+
+        if (isBiomeNameSpawnsBlacklist && !biomeNameSpawns.contains(name)) return true;
+        if (biomeNameSpawns.contains(name)) return !isBiomeNameSpawnsBlacklist;
+
+        try {
+            Set<BiomeDictionary.Type> types = BiomeDictionary.getTypes(biome);
+
+            if (isBiomeTagSpawnsBlacklist) {
+                for (BiomeDictionary.Type type : types) {
+                    if (biomeTagSpawns.contains(type.getName())) return false;
+                }
+
+                return true;
+            }
+
+            for (BiomeDictionary.Type type : types) {
+                if (biomeTagSpawns.contains(type.getName())) return true;
+            }
+        } catch (NullPointerException e) {
+            // Biome not properly registered in BiomeDictionary.
+        }
+
+        return false;
     }
 
     @Override

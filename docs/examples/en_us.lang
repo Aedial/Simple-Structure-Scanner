@@ -1,0 +1,10 @@
+# Example external provider localization entries
+
+# Dimension name example for dimension 7 referenced by the example provider JSON
+gui.structurescanner.dimension.id.4=The Aether
+gui.structurescanner.dimension.id.7=Twilight Forest
+
+# Provider "Example Pack"
+gui.structurescanner.provider.examplepack=Example Pack
+gui.structurescanner.structures.examplepack.ruined_tower=Ruined Tower
+gui.structurescanner.structures.examplepack.sunken_library=Sunken Library

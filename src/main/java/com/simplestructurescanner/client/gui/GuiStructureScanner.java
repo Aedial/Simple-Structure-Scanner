@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import javax.annotation.Nullable;
+
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
@@ -31,6 +33,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.client.ClientSettings;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.config.ModConfig;
@@ -50,6 +53,10 @@ import com.simplestructurescanner.searching.StructureSearchManager;
  * Split design with structure list on the left and details on the right.
  */
 public class GuiStructureScanner extends GuiScreen {
+    private static final int BUTTON_I18N = 1;
+    private static final int BUTTON_SHOW_NON_SEARCHABLE = 2;
+    private static final int BUTTON_SHOW_CURRENT_DIMENSION = 3;
+
     private GuiTextField filterField;
     private StructureListWidget listWidget;
     private ResourceLocation selected;
@@ -101,26 +108,45 @@ public class GuiStructureScanner extends GuiScreen {
     private StructurePreviewRenderer previewRenderer = null;
     private ResourceLocation lastRenderedStructure = null;
 
-    static final private List<String> rarities = Arrays.asList(
-        "common",
-        "uncommon",
-        "rare",
-        "unique"
-    );
-
     private String getI18nButtonString() {
         return ClientSettings.i18nNames ? I18n.format("gui.structurescanner.i18nIDs.on") : I18n.format("gui.structurescanner.i18nIDs.off");
+    }
+
+    private String getNonSearchableButtonString() {
+        return ClientSettings.showNonSearchable
+            ? I18n.format("gui.structurescanner.nonSearchable.on")
+            : I18n.format("gui.structurescanner.nonSearchable.off");
+    }
+
+    private String getCurrentDimensionButtonString() {
+        return ClientSettings.showCurrentDimensionOnly
+            ? I18n.format("gui.structurescanner.currentDimension.on")
+            : I18n.format("gui.structurescanner.currentDimension.off");
     }
 
     @Override
     public void initGui() {
         int leftWidth = Math.min(width / 2, 250);
+        int listWidth = leftWidth - 20;
+        int splitSpacing = 2;
+        int toggleButtonWidth = (listWidth - splitSpacing) / 2;
+        int searchableButtonY = height - 30;
+        int topToggleButtonY = searchableButtonY - 22;
         filterField = new GuiTextField(0, fontRenderer, 10, 10, leftWidth - 20, 14);
         filterField.setText(ModConfig.getClientFilterText());
-        listWidget = new StructureListWidget(10, 30, leftWidth - 20, height - 70, fontRenderer, this);
+        listWidget = new StructureListWidget(10, 30, listWidth, height - 92, fontRenderer, this);
         this.buttonList.clear();
 
-        this.buttonList.add(new GuiButton(1, 10, height - 30, leftWidth - 20, 20, getI18nButtonString()));
+        this.buttonList.add(new GuiButton(BUTTON_I18N, 10, topToggleButtonY, toggleButtonWidth, 20,
+            getI18nButtonString()));
+        this.buttonList.add(new GuiButton(BUTTON_SHOW_CURRENT_DIMENSION,
+            10 + toggleButtonWidth + splitSpacing,
+            topToggleButtonY,
+            listWidth - toggleButtonWidth - splitSpacing,
+            20,
+            getCurrentDimensionButtonString()));
+        this.buttonList.add(new GuiButton(BUTTON_SHOW_NON_SEARCHABLE, 10, searchableButtonY, listWidth, 20,
+            getNonSearchableButtonString()));
 
         // Restore last selected structure
         String lastStructure = ModConfig.getClientLastSelectedStructure();
@@ -148,9 +174,25 @@ public class GuiStructureScanner extends GuiScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) throws IOException {
-        if (button.id == 1) {
+        if (button.id == BUTTON_I18N) {
             ClientSettings.setI18nNames(!ClientSettings.i18nNames);
             button.displayString = getI18nButtonString();
+            listWidget.applyFilter();
+
+            return;
+        }
+
+        if (button.id == BUTTON_SHOW_NON_SEARCHABLE) {
+            ClientSettings.setShowNonSearchable(!ClientSettings.showNonSearchable);
+            button.displayString = getNonSearchableButtonString();
+            listWidget.applyFilter();
+
+            return;
+        }
+
+        if (button.id == BUTTON_SHOW_CURRENT_DIMENSION) {
+            ClientSettings.setShowCurrentDimensionOnly(!ClientSettings.showCurrentDimensionOnly);
+            button.displayString = getCurrentDimensionButtonString();
             listWidget.applyFilter();
         }
     }
@@ -160,7 +202,27 @@ public class GuiStructureScanner extends GuiScreen {
         filterField.updateCursorCounter();
         String newFilter = filterField.getText();
         listWidget.setFilter(newFilter);
+        listWidget.refreshVisibilityFilters();
         ModConfig.setClientFilterText(newFilter);
+    }
+
+    private boolean shouldShowInList(ResourceLocation id, @Nullable Integer currentDimensionId) {
+        if (currentDimensionId != null
+                && StructureProviderRegistry.isStructureHiddenInDimension(id, currentDimensionId)) {
+            return false;
+        }
+
+        if (!ClientSettings.showNonSearchable
+                && !StructureProviderRegistry.canBeSearched(id, currentDimensionId)) {
+            return false;
+        }
+
+        if (!ClientSettings.showCurrentDimensionOnly || currentDimensionId == null) return true;
+
+        StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
+        if (info == null) return true;
+
+        return info.isValidForDimension(currentDimensionId);
     }
 
     @Override
@@ -419,7 +481,7 @@ public class GuiStructureScanner extends GuiScreen {
         textY += previewSize + 10;
 
         // Structure name (localized)
-        String displayName = selectedInfo != null ? selectedInfo.getDisplayName() : selected.getPath();
+        String displayName = selectedInfo != null ? ClientTextResolver.resolve(selectedInfo.getDisplayName()) : selected.getPath();
         String nameStr = I18n.format("gui.structurescanner.structureName", displayName);
         textY = drawElidedString(fontRenderer, nameStr, textX, textY, 14, textW, color);
 
@@ -429,7 +491,7 @@ public class GuiStructureScanner extends GuiScreen {
 
         // Mod origin (localized)
         String modNameKey = StructureProviderRegistry.getModNameForStructure(selected);
-        String modName = I18n.format(modNameKey);
+        String modName = ClientTextResolver.resolveKeyOrLiteral(modNameKey);
         String modStr = I18n.format("gui.structurescanner.modOrigin", modName);
         textY = drawElidedString(fontRenderer, modStr, textX, textY, 14, textW, 0xAADDFF);
 
@@ -489,7 +551,7 @@ public class GuiStructureScanner extends GuiScreen {
         }
 
         // Searchable status
-        boolean canSearch = StructureProviderRegistry.canBeSearched(selected);
+        boolean canSearch = StructureProviderRegistry.canBeSearched(selected, getCurrentDimensionId());
         String searchableKey = canSearch ? "gui.structurescanner.searchableYes" : "gui.structurescanner.searchableNo";
         String searchableStr = I18n.format(searchableKey);
         int searchableColor = canSearch ? 0x55FF55 : 0xFF5555;
@@ -499,15 +561,17 @@ public class GuiStructureScanner extends GuiScreen {
         if (selectedInfo != null) {
             Set<DimensionInfo> dimensions = selectedInfo.getValidDimensions();
             int dimensionsCount = dimensions != null ? dimensions.size() : 0;
-            boolean hasDimensions = dimensionsCount > 0;
+            boolean dimensionsUnknown = dimensions != null && dimensions.isEmpty();
 
             // Build dimension display
             String dimensionsLabel;
             int dimensionsLabelY = textY;
-            if (!hasDimensions) {
+            if (dimensions == null) {
                 dimensionsLabel = I18n.format("gui.structurescanner.dimension", I18n.format("gui.structurescanner.dimension.any"));
+            } else if (dimensionsUnknown) {
+                dimensionsLabel = I18n.format("gui.structurescanner.dimension", I18n.format("gui.structurescanner.unknown"));
             } else if (dimensionsCount == 1) {
-                String dimName = dimensions.iterator().next().getDisplayName();
+                String dimName = ClientTextResolver.resolve(dimensions.iterator().next().getDisplayName());
                 dimensionsLabel = I18n.format("gui.structurescanner.dimension", dimName);
             } else {
                 // Multiple dimensions - show count with hover for full list
@@ -519,7 +583,7 @@ public class GuiStructureScanner extends GuiScreen {
             if (dimensionsCount > 1) {
                 // Sort dimensions alphabetically by display name
                 List<String> sortedDimensions = new ArrayList<>();
-                for (DimensionInfo dim : dimensions) sortedDimensions.add(dim.getDisplayName());
+                for (DimensionInfo dim : dimensions) sortedDimensions.add(ClientTextResolver.resolve(dim.getDisplayName()));
                 sortedDimensions.sort((a, b) -> a.compareToIgnoreCase(b));
 
                 // Deduplicate dimension names
@@ -563,12 +627,8 @@ public class GuiStructureScanner extends GuiScreen {
             }
 
             // Rarity
-            String rarity = selectedInfo.getRarity();
-            if (rarity != null) {
-                if (rarities.contains(rarity) || rarity.contains("gui.structurescanner")) {
-                    String rarityName = I18n.format(rarity);
-                    rarity = I18n.format("gui.structurescanner.rarity", rarityName);
-                }
+            String rarity = ClientTextResolver.resolve(selectedInfo.getRarity());
+            if (!rarity.isEmpty()) {
                 int rarityColor = getRarityColor(rarity);
                 textY = drawElidedString(fontRenderer, rarity, textX, textY, 14, textW, rarityColor);
             }
@@ -760,6 +820,7 @@ public class GuiStructureScanner extends GuiScreen {
     }
 
     private int getRarityColor(String rarity) {
+        // TODO: refactor to use an enum
         if (rarity.toLowerCase().contains("common")) return 0xAAAAAA;
         if (rarity.toLowerCase().contains("uncommon")) return 0x55FF55;
         if (rarity.toLowerCase().contains("rare")) return 0x55AAFF;
@@ -888,7 +949,7 @@ public class GuiStructureScanner extends GuiScreen {
         StructureLocation location = StructureSearchManager.getLastKnownLocation(selected);
         if (location == null) return;
 
-        String name = selectedInfo != null ? selectedInfo.getDisplayName() : selected.getPath();
+        String name = selectedInfo != null ? ClientTextResolver.resolve(selectedInfo.getDisplayName()) : selected.getPath();
         String title = I18n.format("gui.structurescanner.blacklist.title", name);
         String message = I18n.format("gui.structurescanner.blacklist.message");
 
@@ -957,12 +1018,22 @@ public class GuiStructureScanner extends GuiScreen {
     }
 
     private void drawSmallPreviewTooltip(int mouseX, int mouseY) {
+        // Skip tooltip if preview modal is open
+        if (previewWindow != null && previewWindow.isVisible()) return;
+
         if (selectedInfo == null || !selectedInfo.hasLayerData()) return;
         if (mouseX < previewX || mouseX > previewX + previewSize) return;
         if (mouseY < previewY || mouseY > previewY + previewSize) return;
 
         List<String> lines = Arrays.asList(I18n.format("gui.structurescanner.previewTooltip"));
         drawMultiColumnTooltip(mouseX, mouseY, lines);
+    }
+
+    @Nullable
+    private Integer getCurrentDimensionId() {
+        if (mc == null || mc.world == null) return null;
+
+        return mc.world.provider.getDimension();
     }
 
     private void drawMultiColumnTooltip(int mouseX, int mouseY, List<String> items) {
@@ -1041,6 +1112,11 @@ public class GuiStructureScanner extends GuiScreen {
         private boolean isDragging = false;
         private int dragStartY;
         private float dragStartScroll;
+        @Nullable
+        private Integer lastDimensionId;
+        private boolean lastShowNonSearchable;
+        private boolean lastShowCurrentDimensionOnly;
+        private boolean filterContextInitialized = false;
 
         public StructureListWidget(int x, int y, int width, int height, FontRenderer font, GuiStructureScanner parent) {
             this.x = x;
@@ -1064,10 +1140,28 @@ public class GuiStructureScanner extends GuiScreen {
             }
         }
 
+        public void refreshVisibilityFilters() {
+            Integer currentDimensionId = parent.getCurrentDimensionId();
+
+            if (filterContextInitialized
+                    && lastShowNonSearchable == ClientSettings.showNonSearchable
+                    && lastShowCurrentDimensionOnly == ClientSettings.showCurrentDimensionOnly
+                    && (lastDimensionId == null
+                        ? currentDimensionId == null
+                        : lastDimensionId.equals(currentDimensionId))) {
+                return;
+            }
+
+            applyFilter();
+        }
+
         private void applyFilter() {
             filteredStructures = new ArrayList<>();
+            Integer currentDimensionId = parent.getCurrentDimensionId();
 
             for (ResourceLocation id : allStructures) {
+                if (!parent.shouldShowInList(id, currentDimensionId)) continue;
+
                 // Match against ID
                 if (filter.isEmpty() ||
                     id.toString().toLowerCase().contains(filter) ||
@@ -1080,7 +1174,7 @@ public class GuiStructureScanner extends GuiScreen {
                 // Also match against localized name
                 StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
                 if (info != null) {
-                    String localizedName = I18n.format(info.getDisplayName()).toLowerCase();
+                    String localizedName = ClientTextResolver.resolve(info.getDisplayName()).toLowerCase();
                     if (localizedName.contains(filter)) filteredStructures.add(id);
                 }
             }
@@ -1104,13 +1198,18 @@ public class GuiStructureScanner extends GuiScreen {
             float maxScroll = getMaxScroll();
             if (scrollOffset > maxScroll) scrollOffset = maxScroll;
             if (scrollOffset < 0) scrollOffset = 0;
+
+            lastDimensionId = currentDimensionId;
+            lastShowNonSearchable = ClientSettings.showNonSearchable;
+            lastShowCurrentDimensionOnly = ClientSettings.showCurrentDimensionOnly;
+            filterContextInitialized = true;
         }
 
         private String getDisplayName(ResourceLocation id) {
             if (ClientSettings.i18nNames) {
                 StructureInfo info = StructureProviderRegistry.getStructureInfo(id);
 
-                return info != null ? I18n.format(info.getDisplayName()) : id.getPath();
+                return info != null ? ClientTextResolver.resolve(info.getDisplayName()) : id.getPath();
             }
 
             return id.toString();
@@ -1143,7 +1242,8 @@ public class GuiStructureScanner extends GuiScreen {
                 if (clickedId.equals(parent.lastClickId) &&
                     (currentTime - parent.lastClickTime) < DOUBLE_CLICK_TIME) {
                     // Double-click: toggle searching
-                    if (StructureProviderRegistry.canBeSearched(clickedId) && ModConfig.isStructureAllowed(clickedId.toString())) {
+                    if (StructureProviderRegistry.canBeSearched(clickedId, parent.getCurrentDimensionId())
+                            && ModConfig.isStructureAllowed(clickedId.toString())) {
                         StructureSearchManager.toggleTracking(clickedId);
                         applyFilter(); // Re-sort to move tracked items to top
                     }
@@ -1246,7 +1346,7 @@ public class GuiStructureScanner extends GuiScreen {
                 String elidedName = font.trimStringToWidth(displayName, availableWidth);
                 if (!elidedName.equals(displayName)) elidedName += "...";
 
-                boolean canSearch = StructureProviderRegistry.canBeSearched(id);
+                boolean canSearch = StructureProviderRegistry.canBeSearched(id, parent.getCurrentDimensionId());
                 int textColor = isSelected ? 0xFFFFFF : (isHovered ? 0xFFFFAA : 0xCCCCCC);
                 if (!canSearch) {
                     // Dim the color by reducing brightness

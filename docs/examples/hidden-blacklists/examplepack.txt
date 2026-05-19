@@ -1,0 +1,8 @@
+# Hide a structure everywhere for this provider
+structure examplepack:ruined_tower
+
+# Hide all structures from this provider in dimension 7
+dimension 7
+
+# Hide one structure only in one dimension
+dimension examplepack:sunken_library -1

@@ -14,13 +14,13 @@ import javax.annotation.Nullable;
 import net.minecraft.init.Biomes;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.text.translation.I18n;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.common.BiomeDictionary;
 import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.structure.DimensionInfo;
+import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
@@ -40,7 +40,7 @@ public class IceAndFireStructureProvider implements StructureProvider {
 
     private static final String PROVIDER_ID = "iceandfire";
     private static final String MOD_ID = "iceandfire";
-    private static final String MOD_NAME = I18n.translateToLocal("gui.structurescanner.provider.iceandfire");
+    private static final String MOD_NAME = "gui.structurescanner.provider.iceandfire";
 
     private List<ResourceLocation> knownStructures = new ArrayList<>();
     private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
@@ -86,8 +86,7 @@ public class IceAndFireStructureProvider implements StructureProvider {
         ResourceLocation id = new ResourceLocation(MOD_ID, path);
         knownStructures.add(id);
 
-        String name = I18n.translateToLocal(displayNameKey);
-        StructureInfo info = new StructureInfo(id, name, PROVIDER_ID, sizeX, sizeY, sizeZ);
+        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayNameKey), PROVIDER_ID, sizeX, sizeY, sizeZ);
         structureInfos.put(id, info);
     }
 
@@ -177,7 +176,7 @@ public class IceAndFireStructureProvider implements StructureProvider {
 
         info.setValidBiomes(biomes);
         info.setValidDimensions(dimensions);
-        info.setRarity(rarity);
+        info.setRarityKey(rarity);
     }
 
     private void populateStructureContents() {
@@ -186,7 +185,7 @@ public class IceAndFireStructureProvider implements StructureProvider {
         if (fireRoost != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "fire_dragon_female_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             fireRoost.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -199,9 +198,9 @@ public class IceAndFireStructureProvider implements StructureProvider {
         if (fireCave != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "fire_dragon_female_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "fire_dragon_male_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             fireCave.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -214,7 +213,7 @@ public class IceAndFireStructureProvider implements StructureProvider {
         if (iceRoost != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "ice_dragon_female_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             iceRoost.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -227,9 +226,9 @@ public class IceAndFireStructureProvider implements StructureProvider {
         if (iceCave != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "ice_dragon_female_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "ice_dragon_male_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             iceCave.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -242,7 +241,7 @@ public class IceAndFireStructureProvider implements StructureProvider {
         if (lightningRoost != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "lightning_dragon_female_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             lightningRoost.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -255,9 +254,9 @@ public class IceAndFireStructureProvider implements StructureProvider {
         if (lightningCave != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "lightning_dragon_female_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "lightning_dragon_male_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             lightningCave.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -270,7 +269,7 @@ public class IceAndFireStructureProvider implements StructureProvider {
         if (cyclopsCave != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "cyclops_cave"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             cyclopsCave.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -291,11 +290,11 @@ public class IceAndFireStructureProvider implements StructureProvider {
         if (myrmexDesert != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "myrmex_loot_chest"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "myrmex_desert_food_chest"),
-                Collections.emptyList(), "gui.structurescanner.loot.iceandfire.cocoon"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.iceandfire.cocoon")));
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "myrmex_trash_chest"),
-                Collections.emptyList(), "gui.structurescanner.loot.iceandfire.cocoon"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.iceandfire.cocoon")));
             myrmexDesert.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();
@@ -312,11 +311,11 @@ public class IceAndFireStructureProvider implements StructureProvider {
         if (myrmexJungle != null) {
             List<LootEntry> loot = new ArrayList<>();
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "myrmex_loot_chest"),
-                Collections.emptyList(), "gui.structurescanner.loot.chest"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "myrmex_jungle_food_chest"),
-                Collections.emptyList(), "gui.structurescanner.loot.iceandfire.cocoon"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.iceandfire.cocoon")));
             loot.add(new LootEntry(new ResourceLocation(MOD_ID, "myrmex_trash_chest"),
-                Collections.emptyList(), "gui.structurescanner.loot.iceandfire.cocoon"));
+                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.iceandfire.cocoon")));
             myrmexJungle.setLootTables(loot);
 
             List<EntityEntry> entities = new ArrayList<>();

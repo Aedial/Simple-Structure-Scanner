@@ -15,11 +15,11 @@ import javax.annotation.Nullable;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
-import net.minecraft.util.text.translation.I18n;
 import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.DimensionInfo;
+import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
@@ -72,7 +72,7 @@ public class AetherStructureProvider implements StructureProvider {
 
     @Override
     public String getModName() {
-        return I18n.translateToLocal("gui.structurescanner.provider.aether");
+        return "gui.structurescanner.provider.aether";
     }
 
     @Override
@@ -134,8 +134,7 @@ public class AetherStructureProvider implements StructureProvider {
         ResourceLocation id = new ResourceLocation(MOD_ID, path);
         knownStructures.add(id);
 
-        String name = I18n.translateToLocal(displayNameKey);
-        StructureInfo info = new StructureInfo(id, name, PROVIDER_ID, sizeX, sizeY, sizeZ);
+        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayNameKey), PROVIDER_ID, sizeX, sizeY, sizeZ);
         structureInfos.put(id, info);
     }
 
@@ -145,22 +144,22 @@ public class AetherStructureProvider implements StructureProvider {
         // Calculate rarity strings based on spawn chance
         // Silver: 6x6 grid, with chance checks
         // Probability = (1/primary + (1 - 1/primary) * 1/secondary) per grid cell
-        String silverRarity = calculateRarityString(SILVER_GRID_SIZE, silverPrimaryChance, silverSecondaryChance);
+        LocalizedText silverRarity = calculateRarityText(SILVER_GRID_SIZE, silverPrimaryChance, silverSecondaryChance);
         setMetadata("silver_dungeon", null, aetherDim, silverRarity);
 
         // Gold: 10x10 grid, with chance checks
-        String goldRarity = calculateRarityString(GOLD_GRID_SIZE, goldPrimaryChance, goldSecondaryChance);
+        LocalizedText goldRarity = calculateRarityText(GOLD_GRID_SIZE, goldPrimaryChance, goldSecondaryChance);
         setMetadata("gold_dungeon", null, aetherDim, goldRarity);
 
         // Bronze: common but not searchable
-        setMetadata("bronze_dungeon", null, aetherDim, "gui.structurescanner.rarity.common");
+        setMetadata("bronze_dungeon", null, aetherDim, wrapRarity("gui.structurescanner.rarity.common"));
     }
 
     /**
      * Calculate a human-readable rarity string like "1 in 1000 chunks".
      * The dungeon spawns on a grid (every N chunks aligned), with two-stage random check.
      */
-    private String calculateRarityString(int gridSize, int primaryChance, int secondaryChance) {
+    private LocalizedText calculateRarityText(int gridSize, int primaryChance, int secondaryChance) {
         // Probability of passing random check:
         // P(spawn) = P(primary=0) + P(primary!=0) * P(secondary=0)
         // P(spawn) = 1/primary + (1 - 1/primary) * 1/secondary
@@ -176,12 +175,15 @@ public class AetherStructureProvider implements StructureProvider {
 
         // Format nicely
         long rounded = Math.round(chunksPerDungeon);
-        String rarity = I18n.translateToLocalFormatted("gui.structurescanner.rarity.one_in_chunks", rounded);
-    
-        return I18n.translateToLocalFormatted("gui.structurescanner.rarity", rarity);
+        return LocalizedText.translatable("gui.structurescanner.rarity",
+            LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", rounded));
     }
 
-    private void setMetadata(String path, Set<?> biomes, Set<DimensionInfo> dimensions, String rarity) {
+    private LocalizedText wrapRarity(String rarityKey) {
+        return LocalizedText.translatable("gui.structurescanner.rarity", LocalizedText.translatable(rarityKey));
+    }
+
+    private void setMetadata(String path, Set<?> biomes, Set<DimensionInfo> dimensions, LocalizedText rarity) {
         StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, path));
         if (info == null) return;
 
@@ -240,7 +242,7 @@ public class AetherStructureProvider implements StructureProvider {
     }
 
     private LootEntry createLootEntry(String lootTable, String displayNameKey) {
-        return new LootEntry(new ResourceLocation(lootTable), Collections.emptyList(), I18n.translateToLocal(displayNameKey));
+        return new LootEntry(new ResourceLocation(lootTable), Collections.emptyList(), LocalizedText.translatable(displayNameKey));
     }
 
     @Override

@@ -1,59 +1,44 @@
 package com.simplestructurescanner.structure.pillar;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.annotation.Nullable;
 
-import com.google.common.base.Optional;
-
 import net.minecraft.block.Block;
-import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.init.Blocks;
-import net.minecraft.init.Items;
 import net.minecraft.inventory.IInventory;
-import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.nbt.NBTTagList;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
-import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.items.CapabilityItemHandler;
 import net.minecraftforge.items.IItemHandler;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
-import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
+import com.simplestructurescanner.structure.LocalizedText;
+import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
-import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 
 
 /**
- * Parses Pillar structure NBT files to extract block, entity, and loot data.
+ * Parses Pillar structure NBT files by extending the shared structure NBT parser.
  * <p>
  * Pillar structures are stored as external NBT files in the pillar/structures directory.
- * This parser reads those files and extracts:
- * - Block counts and layer data for visualization
- * - Entities from the NBT
- * - Data blocks that reference loot tables and spawners
+ * The shared parser handles the base structure walk, while this class adds:
+ * - Pillar data block metadata expansion
+ * - Summoned entities declared by metadata commands
+ * - Direct container item extraction
  */
 public class PillarNBTParser {
 
@@ -74,32 +59,54 @@ public class PillarNBTParser {
 
     private static File pillarStructureDir = null;
 
-    private PillarNBTParser() {
+    private static final class PillarParseExtension implements StructureNBTParser.StructureParseExtension {
+        private final List<ItemStack> directContainerItems = new ArrayList<>();
+
+        @Override
+        public boolean shouldCountBlock(@Nullable IBlockState state, @Nullable Block block) {
+            return !StructureNBTParser.isInvisibleBlock(block)
+                && !StructureNBTParser.isFlowingFluid(state, block)
+                && block != Blocks.STRUCTURE_BLOCK;
+        }
+
+        @Nullable
+        @Override
+        public Object getBlockCountKey(@Nullable IBlockState state, @Nullable Block block) {
+            return block;
+        }
+
+        @Override
+        public boolean shouldStoreLayerBlock(@Nullable IBlockState state, @Nullable Block block) {
+            // Keep Pillar's flowing fluid states in the preview while still hiding structure markers.
+            return !StructureNBTParser.isInvisibleBlock(block) && block != Blocks.STRUCTURE_BLOCK;
+        }
+
+        @Override
+        public void handleBlockEntity(StructureNBTParser.ParsedStructureBuilder builder, NBTTagCompound blockEntry,
+                @Nullable IBlockState state, @Nullable Block block, NBTTagCompound nbtData) {
+            StructureNBTParser.handleDefaultBlockEntity(builder, block, nbtData);
+
+            if (nbtData.hasKey("metadata")) {
+                parseDataBlockMetadata(nbtData.getString("metadata"), builder);
+            }
+
+            extractContainerItems(state, nbtData, directContainerItems);
+        }
+
+        @Override
+        public void finish(StructureNBTParser.ParsedStructureBuilder builder, NBTTagCompound structureNbt) {
+            if (directContainerItems.isEmpty()) return;
+
+            List<ItemStack> mergedItems = mergeItemStacks(directContainerItems);
+            builder.addLootEntry(new LootEntry(
+                new ResourceLocation("structurescanner", "direct_items"),
+                mergedItems,
+                LocalizedText.translatable("gui.structurescanner.loot.container")
+            ));
+        }
     }
 
-    /**
-     * Result of parsing a Pillar structure NBT file.
-     */
-    public static class ParsedPillarStructure {
-        public final int sizeX, sizeY, sizeZ;
-        public final List<BlockEntry> blocks;
-        public final List<StructureLayer> layers;
-        public final List<EntityEntry> entities;
-        public final List<LootEntry> lootTables;
-
-        public ParsedPillarStructure(int sizeX, int sizeY, int sizeZ,
-                                      List<BlockEntry> blocks,
-                                      List<StructureLayer> layers,
-                                      List<EntityEntry> entities,
-                                      List<LootEntry> lootTables) {
-            this.sizeX = sizeX;
-            this.sizeY = sizeY;
-            this.sizeZ = sizeZ;
-            this.blocks = blocks;
-            this.layers = layers;
-            this.entities = entities;
-            this.lootTables = lootTables;
-        }
+    private PillarNBTParser() {
     }
 
     /**
@@ -109,7 +116,7 @@ public class PillarNBTParser {
      * @return Parsed structure data or null if parsing fails
      */
     @Nullable
-    public static ParsedPillarStructure parseStructure(String structureName) {
+    public static StructureNBTParser.ParsedStructure parseStructure(String structureName) {
         File pillarDir = getPillarStructureDir();
         if (pillarDir == null) {
             SimpleStructureScanner.LOGGER.debug("Pillar structure directory not found");
@@ -125,13 +132,7 @@ public class PillarNBTParser {
             return null;
         }
 
-        try (InputStream stream = new FileInputStream(nbtFile)) {
-            NBTTagCompound nbt = CompressedStreamTools.readCompressed(stream);
-            return parseNBT(nbt);
-        } catch (IOException e) {
-            SimpleStructureScanner.LOGGER.warn("Failed to parse Pillar structure {}: {}", structureName, e.getMessage());
-            return null;
-        }
+        return StructureNBTParser.parseStructureFile(nbtFile, new PillarParseExtension());
     }
 
     /**
@@ -152,178 +153,6 @@ public class PillarNBTParser {
         }
     }
 
-    /**
-     * Parse structure data from an NBT compound.
-     */
-    @Nullable
-    private static ParsedPillarStructure parseNBT(NBTTagCompound nbt) {
-        if (!nbt.hasKey("size") || !nbt.hasKey("palette") || !nbt.hasKey("blocks")) return null;
-
-        // Read size
-        NBTTagList sizeTag = nbt.getTagList("size", Constants.NBT.TAG_INT);
-        int sizeX = sizeTag.getIntAt(0);
-        int sizeY = sizeTag.getIntAt(1);
-        int sizeZ = sizeTag.getIntAt(2);
-
-        // Read palette (block state definitions)
-        NBTTagList paletteTag = nbt.getTagList("palette", Constants.NBT.TAG_COMPOUND);
-        IBlockState[] palette = new IBlockState[paletteTag.tagCount()];
-
-        for (int i = 0; i < paletteTag.tagCount(); i++) {
-            NBTTagCompound blockTag = paletteTag.getCompoundTagAt(i);
-            palette[i] = parseBlockState(blockTag);
-        }
-
-        // Read blocks and count occurrences
-        // Key by Block identity (registry name + damageDropped) to merge different orientations
-        NBTTagList blocksTag = nbt.getTagList("blocks", Constants.NBT.TAG_COMPOUND);
-        Map<Block, Integer> blockCounts = new HashMap<>();
-        Map<Block, IBlockState> blockRepresentatives = new HashMap<>();
-
-        // Create layer data structure
-        Map<Integer, IBlockState[][]> layerBlocks = new HashMap<>();
-        for (int y = 0; y < sizeY; y++) layerBlocks.put(y, new IBlockState[sizeX][sizeZ]);
-
-        // Track data blocks for loot tables and spawners
-        Set<ResourceLocation> lootTableIds = new HashSet<>();
-        Map<ResourceLocation, Integer> spawnerEntities = new HashMap<>();
-        Map<ResourceLocation, Integer> summonEntities = new HashMap<>();
-
-        // Track direct container items (chests with items baked in, not loot tables)
-        List<ItemStack> directContainerItems = new ArrayList<>();
-
-        for (int i = 0; i < blocksTag.tagCount(); i++) {
-            NBTTagCompound blockEntry = blocksTag.getCompoundTagAt(i);
-            int paletteIndex = blockEntry.getInteger("state");
-
-            if (paletteIndex >= 0 && paletteIndex < palette.length) {
-                IBlockState state = palette[paletteIndex];
-                Block block = state != null ? state.getBlock() : null;
-
-                boolean isInvisible = block == null || block == Blocks.AIR || block == Blocks.STRUCTURE_VOID;
-                boolean isStructureBlock = block == Blocks.STRUCTURE_BLOCK;
-
-                // Count visible, non-structural blocks
-                if (!isInvisible && !isStructureBlock) {
-                    blockCounts.merge(block, 1, Integer::sum);
-
-                    // Keep the first state seen as the representative for display purposes
-                    if (!blockRepresentatives.containsKey(block)) blockRepresentatives.put(block, state);
-                }
-
-                // Store in layer data (exclude structure blocks — they are metadata carriers, not real blocks)
-                NBTTagList posTag = blockEntry.getTagList("pos", Constants.NBT.TAG_INT);
-                int x = posTag.getIntAt(0);
-                int y = posTag.getIntAt(1);
-                int z = posTag.getIntAt(2);
-
-                if (y >= 0 && y < sizeY && x >= 0 && x < sizeX && z >= 0 && z < sizeZ) {
-                    if (!isStructureBlock) {
-                        layerBlocks.get(y)[x][z] = state;
-                    }
-                }
-
-                // Check for data blocks (structure blocks in DATA mode carry metadata commands)
-                if (blockEntry.hasKey("nbt")) {
-                    NBTTagCompound nbtData = blockEntry.getCompoundTag("nbt");
-
-                    if (nbtData.hasKey("metadata")) {
-                        String metadata = nbtData.getString("metadata");
-                        parseDataBlockMetadata(metadata, lootTableIds, spawnerEntities, summonEntities);
-                    }
-
-                    // Detect spawner mobs from tile entity NBT (mob_spawner blocks with SpawnData)
-                    if (block == Blocks.MOB_SPAWNER) parseSpawnerTileEntityNBT(nbtData, spawnerEntities);
-
-                    // Detect loot tables from container tile entity NBT (chests, etc. with LootTable tag)
-                    if (nbtData.hasKey("LootTable")) {
-                        String lootTable = nbtData.getString("LootTable");
-                        if (!lootTable.isEmpty()) lootTableIds.add(new ResourceLocation(lootTable));
-                    }
-
-                    // Detect direct items in container inventories (chests with baked-in items, not loot tables)
-                    // Instantiate the tile entity and let it deserialize its own NBT format
-                    extractContainerItems(state, nbtData, directContainerItems);
-                }
-            }
-        }
-
-        // Convert block counts to BlockEntry list
-        List<BlockEntry> blocks = new ArrayList<>();
-        for (Map.Entry<Block, Integer> entry : blockCounts.entrySet()) {
-            Block block = entry.getKey();
-            int count = entry.getValue();
-            IBlockState representative = blockRepresentatives.get(block);
-            ItemStack displayStack = createDisplayStack(representative);
-            blocks.add(new BlockEntry(representative, displayStack, count));
-        }
-
-        // Sort by count descending
-        blocks.sort((a, b) -> Integer.compare(b.count, a.count));
-
-        // Convert layer blocks to StructureLayer list
-        List<StructureLayer> layers = new ArrayList<>();
-        for (int y = 0; y < sizeY; y++) {
-            StructureLayer layer = new StructureLayer(y, sizeX, sizeZ);
-            IBlockState[][] yLayer = layerBlocks.get(y);
-
-            for (int x = 0; x < sizeX; x++) {
-                for (int z = 0; z < sizeZ; z++) {
-                    if (yLayer[x][z] != null) layer.setBlockState(x, z, yLayer[x][z]);
-                }
-            }
-
-            layers.add(layer);
-        }
-
-        // Parse entities from NBT
-        List<EntityEntry> entities = new ArrayList<>();
-        if (nbt.hasKey("entities")) {
-            NBTTagList entitiesTag = nbt.getTagList("entities", Constants.NBT.TAG_COMPOUND);
-            Map<String, Integer> entityCounts = new HashMap<>();
-
-            for (int i = 0; i < entitiesTag.tagCount(); i++) {
-                NBTTagCompound entityTag = entitiesTag.getCompoundTagAt(i);
-                if (entityTag.hasKey("nbt")) {
-                    NBTTagCompound entityNbt = entityTag.getCompoundTag("nbt");
-                    String entityId = entityNbt.getString("id");
-                    if (!entityId.isEmpty()) entityCounts.merge(entityId, 1, Integer::sum);
-                }
-            }
-
-            for (Map.Entry<String, Integer> entry : entityCounts.entrySet()) {
-                entities.add(new EntityEntry(new ResourceLocation(entry.getKey()), entry.getValue(), false));
-            }
-        }
-
-        for (Map.Entry<ResourceLocation, Integer> entry : summonEntities.entrySet()) {
-            entities.add(new EntityEntry(entry.getKey(), entry.getValue(), false));
-        }
-
-        // Add spawner entities (marked as spawner=true)
-        for (Map.Entry<ResourceLocation, Integer> entry : spawnerEntities.entrySet()) {
-            entities.add(new EntityEntry(entry.getKey(), entry.getValue(), true));
-        }
-
-        // Convert loot table IDs to LootEntry list
-        List<LootEntry> lootTables = new ArrayList<>();
-        for (ResourceLocation lootTableId : lootTableIds) {
-            // Use empty drops list - actual drops will be resolved by the LootTableResolver
-            lootTables.add(new LootEntry(lootTableId, new ArrayList<>(), "gui.structurescanner.loot.chest"));
-        }
-
-        // Add direct container items as a special "loot" entry if any were found
-        if (!directContainerItems.isEmpty()) {
-            // Deduplicate and merge item stacks by item type
-            List<ItemStack> mergedItems = mergeItemStacks(directContainerItems);
-            lootTables.add(new LootEntry(
-                    new ResourceLocation("structurescanner", "direct_items"),
-                    mergedItems,
-                    "gui.structurescanner.loot.container"));
-        }
-
-        return new ParsedPillarStructure(sizeX, sizeY, sizeZ, blocks, layers, entities, lootTables);
-    }
 
     /**
      * Parse data block metadata to extract loot tables and spawner entities.
@@ -335,12 +164,8 @@ public class PillarNBTParser {
      * discovered.
      *
      * @param metadata       The data block metadata string
-     * @param lootTableIds   Set to add discovered loot table IDs to
-     * @param spawnerEntities Map to add spawner entity counts to
      */
-    private static void parseDataBlockMetadata(String metadata, Set<ResourceLocation> lootTableIds,
-                                               Map<ResourceLocation, Integer> spawnerEntities,
-                                               Map<ResourceLocation, Integer> summonEntities) {
+    private static void parseDataBlockMetadata(String metadata, StructureNBTParser.ParsedStructureBuilder builder) {
         if (metadata == null || metadata.isEmpty()) return;
 
         // Collect all possible expanded variants of the metadata string.
@@ -356,7 +181,7 @@ public class PillarNBTParser {
             Matcher chestMatcher = CHEST_PATTERN.matcher(variant);
             if (chestMatcher.find()) {
                 String lootTable = chestMatcher.group(2).trim();
-                if (!lootTable.isEmpty()) lootTableIds.add(new ResourceLocation(lootTable));
+                if (!lootTable.isEmpty()) builder.addLootTable(new ResourceLocation(lootTable));
 
                 continue;
             }
@@ -365,7 +190,7 @@ public class PillarNBTParser {
             Matcher spawnerMatcher = SPAWNER_PATTERN.matcher(variant);
             if (spawnerMatcher.find()) {
                 String entityId = spawnerMatcher.group(1).trim();
-                if (!entityId.isEmpty()) spawnerEntities.merge(new ResourceLocation(entityId), 1, Integer::sum);
+                if (!entityId.isEmpty()) builder.addEntity(new ResourceLocation(entityId), true);
 
                 continue;
             }
@@ -374,7 +199,7 @@ public class PillarNBTParser {
             Matcher runSummonMatcher = RUN_SUMMON_PATTERN.matcher(variant);
             if (runSummonMatcher.find()) {
                 String entityId = runSummonMatcher.group(1).trim();
-                if (!entityId.isEmpty()) summonEntities.merge(new ResourceLocation(entityId), 1, Integer::sum);
+                if (!entityId.isEmpty()) builder.addEntity(new ResourceLocation(entityId), false);
 
                 continue;
             }
@@ -383,7 +208,7 @@ public class PillarNBTParser {
             Matcher loadLootMatcher = LOAD_LOOT_TABLE_PATTERN.matcher(variant);
             if (loadLootMatcher.find()) {
                 String lootTable = loadLootMatcher.group(1).trim();
-                if (!lootTable.isEmpty()) lootTableIds.add(new ResourceLocation("pillar", lootTable));
+                if (!lootTable.isEmpty()) builder.addLootTable(new ResourceLocation("pillar", lootTable));
             }
         }
     }
@@ -460,41 +285,12 @@ public class PillarNBTParser {
     }
 
     /**
-     * Parse spawner tile entity NBT to extract mob types.
-     * Handles both {@code SpawnData} (single entity) and
-     * {@code SpawnPotentials} (weighted list of entities).
-     */
-    private static void parseSpawnerTileEntityNBT(NBTTagCompound nbt, Map<ResourceLocation, Integer> spawnerEntities) {
-        Set<String> foundIds = new HashSet<>();
-
-        // SpawnPotentials is a weighted list of possible spawns; preferred over SpawnData
-        if (nbt.hasKey("SpawnPotentials", Constants.NBT.TAG_LIST)) {
-            NBTTagList potentials = nbt.getTagList("SpawnPotentials", Constants.NBT.TAG_COMPOUND);
-
-            for (int i = 0; i < potentials.tagCount(); i++) {
-                NBTTagCompound potential = potentials.getCompoundTagAt(i);
-
-                if (potential.hasKey("Entity", Constants.NBT.TAG_COMPOUND)) {
-                    String id = potential.getCompoundTag("Entity").getString("id");
-                    if (!id.isEmpty()) foundIds.add(id);
-                }
-            }
-        }
-
-        // Fallback: SpawnData holds the currently selected entity
-        if (foundIds.isEmpty() && nbt.hasKey("SpawnData", Constants.NBT.TAG_COMPOUND)) {
-            String id = nbt.getCompoundTag("SpawnData").getString("id");
-            if (!id.isEmpty()) foundIds.add(id);
-        }
-
-        for (String id : foundIds) spawnerEntities.merge(new ResourceLocation(id), 1, Integer::sum);
-    }
-
-    /**
      * Extract items from a container by instantiating its tile entity and reading via IInventory/IItemHandler.
      * This allows any mod's container to work regardless of its internal NBT format.
      */
-    private static void extractContainerItems(IBlockState state, NBTTagCompound nbtData, List<ItemStack> outItems) {
+    private static void extractContainerItems(@Nullable IBlockState state, NBTTagCompound nbtData, List<ItemStack> outItems) {
+        if (state == null) return;
+
         Block block = state.getBlock();
         if (block == null || !block.hasTileEntity(state)) return;
 
@@ -582,89 +378,5 @@ public class PillarNBTParser {
         }
 
         return key.toString();
-    }
-
-    /**
-     * Parse an IBlockState from NBT palette entry.
-     */
-    private static IBlockState parseBlockState(NBTTagCompound nbt) {
-        String blockName = nbt.getString("Name");
-        Block block = Block.REGISTRY.getObject(new ResourceLocation(blockName));
-
-        if (block == null || block == Blocks.AIR) return Blocks.AIR.getDefaultState();
-
-        IBlockState state = block.getDefaultState();
-
-        // Parse properties if present
-        if (nbt.hasKey("Properties")) {
-            NBTTagCompound props = nbt.getCompoundTag("Properties");
-            for (String key : props.getKeySet()) {
-                String value = props.getString(key);
-                state = applyProperty(state, key, value);
-            }
-        }
-
-        return state;
-    }
-
-    /**
-     * Apply a block state property from string key/value.
-     */
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static IBlockState applyProperty(IBlockState state, String propertyName, String value) {
-        for (IProperty property : state.getPropertyKeys()) {
-            if (property.getName().equals(propertyName)) {
-                Optional<?> parsedValue = property.parseValue(value);
-                if (parsedValue.isPresent()) {
-                    return state.withProperty(property, (Comparable) parsedValue.get());
-                }
-            }
-        }
-
-        return state;
-    }
-
-    private static final Random RANDOM = new Random();
-
-    /**
-     * Create a display ItemStack for a block state.
-     */
-    private static ItemStack createDisplayStack(IBlockState state) {
-        Block block = state.getBlock();
-
-        if (block == null || block == Blocks.AIR || block == Blocks.STRUCTURE_VOID) {
-            return ItemStack.EMPTY;
-        }
-
-        try {
-            // Strategy 1: Use Item.getItemFromBlock with damageDropped
-            Item blockItem = Item.getItemFromBlock(block);
-            if (blockItem != null && blockItem != Items.AIR) {
-                int damage = block.damageDropped(state);
-                ItemStack stack = new ItemStack(blockItem, 1, damage);
-                if (!stack.isEmpty()) return stack;
-            }
-
-            // Strategy 2: Use getItemDropped
-            Item droppedItem = block.getItemDropped(state, RANDOM, 0);
-            if (droppedItem != null && droppedItem != Items.AIR) {
-                int damage = block.damageDropped(state);
-                ItemStack stack = new ItemStack(droppedItem, 1, damage);
-                if (!stack.isEmpty()) return stack;
-            }
-
-            // Strategy 3: Fallback to direct ItemStack creation
-            int meta = block.getMetaFromState(state);
-            ItemStack fallback = new ItemStack(block, 1, meta);
-            if (!fallback.isEmpty() && fallback.getItem() != Items.AIR) return fallback;
-
-            // Last resort: try meta 0
-            fallback = new ItemStack(block, 1, 0);
-            if (!fallback.isEmpty() && fallback.getItem() != Items.AIR) return fallback;
-
-            return ItemStack.EMPTY;
-        } catch (Exception e) {
-            return ItemStack.EMPTY;
-        }
     }
 }

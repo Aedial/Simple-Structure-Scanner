@@ -25,6 +25,10 @@ gui.structurescanner.m=m
 # I18n toggle button
 gui.structurescanner.i18nIDs.on=IDs: Localized
 gui.structurescanner.i18nIDs.off=IDs: Raw
+gui.structurescanner.nonSearchable.on=Non-searchable: Visible
+gui.structurescanner.nonSearchable.off=Non-searchable: Hidden
+gui.structurescanner.currentDimension.on=Dimensions: Current
+gui.structurescanner.currentDimension.off=Dimensions: All
 
 # Providers
 gui.structurescanner.provider.minecraft=Minecraft
@@ -129,6 +133,7 @@ gui.structurescanner.blocks.loading=Loading blocks...
 gui.structurescanner.blocks.noBlocks=No blocks found
 gui.structurescanner.blocks.count=%,d blocks
 gui.structurescanner.blocks.countTooltip=Total of %,d blocks in this structure
+gui.structurescanner.blocks.fluidAmount=%,d mB total
 
 # Loot Window
 gui.structurescanner.loot.title=Loot in %s
@@ -163,11 +168,23 @@ gui.structurescanner.locate.searching=Searching...
 gui.structurescanner.locate.xz=X: %s, Z: %s
 gui.structurescanner.locate.xyz=X: %s, Y: %s, Z: %s
 
+# Commands
+commands.structurescanner.blacklist.removedStructure=Removed the %3$s blacklist entry for %2$s from provider %1$s.
+commands.structurescanner.blacklist.notFoundStructure=No %3$s blacklist entry for %2$s was found in provider %1$s.
+commands.structurescanner.blacklist.removedDimension=Removed the %3$s dimension blacklist entry for %2$s from provider %1$s.
+commands.structurescanner.blacklist.notFoundDimension=No %3$s dimension blacklist entry for %2$s was found in provider %1$s.
+commands.structurescanner.blacklist.removedStructureDimension=Removed the %4$s blacklist entry for %2$s in dimension %3$s from provider %1$s.
+commands.structurescanner.blacklist.notFoundStructureDimension=No %4$s blacklist entry for %2$s in dimension %3$s was found in provider %1$s.
+commands.structurescanner.blacklist.type.hidden=hidden
+commands.structurescanner.blacklist.type.search=search
+
 # Config descriptions
 config.structurescanner.client.enableSearch.desc=Enable or disable structure searching globally
 config.structurescanner.client.i18nNames.desc=Use localized names instead of raw IDs in the UI
 config.structurescanner.client.lastSelectedStructure.desc=Last selected structure ID (persisted between sessions)
 config.structurescanner.client.filterText.desc=Last filter text (persisted between sessions)
+config.structurescanner.client.showNonSearchable.desc=Remember whether non-searchable structures are shown in the structure list
+config.structurescanner.client.showCurrentDimensionOnly.desc=Remember whether the structure list is limited to the current dimension only
 config.structurescanner.client.searchedStructureIds.desc=List of structure IDs currently being searched
 config.structurescanner.client.structureWhitelist.desc=Whitelist of structure IDs or partial matches allowed for searching. Takes priority over blacklist. Add ";radius" to make it local (e.g., "village;1000" only allows structures within 1000 blocks).
 config.structurescanner.client.structureBlacklist.desc=Blacklist of structure IDs or partial matches to block from searching. Add ";radius" to make it local (e.g., "minecraft:;500" blocks vanilla structures beyond 500 blocks).
