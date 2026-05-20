@@ -1,0 +1,10 @@
+# 示例：外部结构源本地化条目
+
+# 维度名称示例：结构源JSON示例中引用的ID为7的维度
+gui.structurescanner.dimension.id.4=天境（The Aether）
+gui.structurescanner.dimension.id.7=暮色森林（Twilight Forest）
+
+# 结构源“示例包”
+gui.structurescanner.provider.examplepack=示例包
+gui.structurescanner.structures.examplepack.ruined_tower=荒弃高塔
+gui.structurescanner.structures.examplepack.sunken_library=沉没图书馆
