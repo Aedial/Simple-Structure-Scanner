@@ -12,6 +12,9 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Added
 - Add proper rarity numbers to Vanilla, Ice and Fire, and AbyssalCraft providers
 
+### Fixed
+- Align vanilla structure searches more closely with Minecraft 1.12 for strongholds, fortresses, mineshafts, monuments, mansions, and end cities
+
 
 ## [1.0.0] - 2026-05-19
 ### Added
