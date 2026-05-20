@@ -41,6 +41,7 @@ gui.structurescanner.rarity.common=Common
 gui.structurescanner.rarity.uncommon=Uncommon
 gui.structurescanner.rarity.rare=Rare
 gui.structurescanner.rarity.unique=Unique
+gui.structurescanner.rarity.fixed_position=Fixed Position
 gui.structurescanner.rarity.one_in_chunks=1 in %d chunks
 
 # Structures - Minecraft

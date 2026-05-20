@@ -41,6 +41,7 @@ import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.StructureProvider;
 import com.simplestructurescanner.structure.TerrainHeightCalculator;
 import com.simplestructurescanner.structure.util.PositionHelper;
+import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.SeedHelper;
 
 
@@ -50,8 +51,11 @@ import com.simplestructurescanner.structure.util.SeedHelper;
  */
 public class VanillaStructureProvider implements StructureProvider {
     private static final String PROVIDER_ID = "minecraft";
-    private static final Random RANDOM = new Random();
     private static final String MOD_NAME = "gui.structurescanner.provider.minecraft";
+    private static final double MINESHAFT_CHUNKS = 250.0D;
+    private static final double STRONGHOLD_OUTER_RING_RADIUS_CHUNKS = 1472.0D;
+    private static final int STRONGHOLD_COUNT = 128;
+    private static final double END_SHIP_END_CITY_PROBABILITY = 0.57122D;
 
     private List<ResourceLocation> knownStructures;
     private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
@@ -117,56 +121,73 @@ public class VanillaStructureProvider implements StructureProvider {
         Set<DimensionInfo> nether = Collections.singleton(DimensionInfo.NETHER);
         Set<DimensionInfo> end = Collections.singleton(DimensionInfo.END);
 
-        // Village - Plains, Savanna, Desert, Taiga, Snowy Tundra
-        setMetadata("village", biomes(Biomes.PLAINS, Biomes.SAVANNA, Biomes.DESERT, Biomes.TAIGA,
-                Biomes.ICE_PLAINS, Biomes.MUTATED_PLAINS, Biomes.SAVANNA_PLATEAU), overworld, "gui.structurescanner.rarity.common");
+        // Village - Plains, Desert, Savanna, Taiga
+        setMetadata("village", biomes(Biomes.PLAINS, Biomes.DESERT, Biomes.SAVANNA, Biomes.TAIGA), overworld,
+            RarityTextHelper.oneInChunks(1024));
 
         // Mineshaft - any biome underground
-        setMetadata("mineshaft", null, overworld, "gui.structurescanner.rarity.common");
+        setMetadata("mineshaft", null, overworld, RarityTextHelper.oneInChunks(MINESHAFT_CHUNKS));
 
-        // Stronghold - most overworld biomes
-        setMetadata("stronghold", null, overworld, "gui.structurescanner.rarity.rare");
+        // Stronghold - fixed ring placement with 128 total structures
+        setMetadata("stronghold", null, overworld,
+            RarityTextHelper.oneInChunks(
+                RarityTextHelper.averageChunksForFixedCountInRadius(STRONGHOLD_COUNT, STRONGHOLD_OUTER_RING_RADIUS_CHUNKS)
+            ));
 
         // Desert Temple - Desert, Desert Hills
-        setMetadata("desert_temple", biomes(Biomes.DESERT, Biomes.DESERT_HILLS, Biomes.MUTATED_DESERT), overworld, "gui.structurescanner.rarity.uncommon");
+        setMetadata("desert_temple", biomes(Biomes.DESERT, Biomes.DESERT_HILLS), overworld,
+            RarityTextHelper.oneInChunks(1024));
 
         // Jungle Temple - Jungle, Jungle Hills
-        setMetadata("jungle_temple", biomes(Biomes.JUNGLE, Biomes.JUNGLE_HILLS, Biomes.MUTATED_JUNGLE), overworld, "gui.structurescanner.rarity.uncommon");
+        setMetadata("jungle_temple", biomes(Biomes.JUNGLE, Biomes.JUNGLE_HILLS), overworld,
+            RarityTextHelper.oneInChunks(1024));
 
         // Witch Hut - Swamp
-        setMetadata("witch_hut", biomes(Biomes.SWAMPLAND, Biomes.MUTATED_SWAMPLAND), overworld, "gui.structurescanner.rarity.uncommon");
+        setMetadata("witch_hut", biomes(Biomes.SWAMPLAND), overworld, RarityTextHelper.oneInChunks(1024));
 
         // Igloo - Snowy biomes
-        setMetadata("igloo", biomes(Biomes.ICE_PLAINS, Biomes.COLD_TAIGA), overworld, "gui.structurescanner.rarity.uncommon");
+        setMetadata("igloo", biomes(Biomes.ICE_PLAINS, Biomes.COLD_TAIGA), overworld,
+            RarityTextHelper.oneInChunks(1024));
 
         // Ocean Monument - Deep Ocean
-        setMetadata("monument", biomes(Biomes.DEEP_OCEAN), overworld, "gui.structurescanner.rarity.uncommon");
+        setMetadata("monument", biomes(Biomes.DEEP_OCEAN), overworld, RarityTextHelper.oneInChunks(1024));
 
         // Woodland Mansion - Roofed Forest
-        setMetadata("mansion", biomes(Biomes.ROOFED_FOREST, Biomes.MUTATED_ROOFED_FOREST), overworld, "gui.structurescanner.rarity.rare");
+        setMetadata("mansion", biomes(Biomes.ROOFED_FOREST, Biomes.MUTATED_ROOFED_FOREST), overworld,
+            RarityTextHelper.oneInChunks(6400));
 
         // Dungeon - any biome underground
         setMetadata("dungeon", null, overworld, "gui.structurescanner.rarity.common");
 
         // Nether Fortress
-        setMetadata("fortress", null, nether, "gui.structurescanner.rarity.common");
+        setMetadata("fortress", null, nether, RarityTextHelper.oneInChunks(768));
 
         // End City & End Ship
-        setMetadata("endcity", null, end, "gui.structurescanner.rarity.uncommon");
-        setMetadata("end_ship", null, end, "gui.structurescanner.rarity.uncommon");
+        setMetadata("endcity", null, end, RarityTextHelper.oneInChunks(400));
+        setMetadata("end_ship", null, end,
+            RarityTextHelper.oneInChunks(400.0D / END_SHIP_END_CITY_PROBABILITY));
     }
 
     private Set<Biome> biomes(Biome... biomes) {
         return Stream.of(biomes).collect(Collectors.toSet());
     }
 
-    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, String rarity) {
+    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, LocalizedText rarity) {
         StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", path));
         if (info == null) return;
 
         info.setValidBiomes(biomes);
         info.setValidDimensions(dimensions);
-        info.setRarityKey(rarity);
+        info.setRarity(rarity);
+    }
+
+    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, String rarityKey) {
+        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", path));
+        if (info == null) return;
+
+        info.setValidBiomes(biomes);
+        info.setValidDimensions(dimensions);
+        info.setRarityKey(rarityKey);
     }
 
     /**
@@ -926,9 +947,6 @@ public class VanillaStructureProvider implements StructureProvider {
         validBiomes.add(Biomes.DESERT);
         validBiomes.add(Biomes.SAVANNA);
         validBiomes.add(Biomes.TAIGA);
-        validBiomes.add(Biomes.ICE_PLAINS);
-        validBiomes.add(Biomes.MUTATED_PLAINS);
-        validBiomes.add(Biomes.SAVANNA_PLATEAU);
 
         return findScatteredFeature(world, pos, seed, 32, 8, 10387312, maxResults, validBiomes);
     }
@@ -1012,24 +1030,17 @@ public class VanillaStructureProvider implements StructureProvider {
             case "desert_temple":
                 validBiomes.add(Biomes.DESERT);
                 validBiomes.add(Biomes.DESERT_HILLS);
-                validBiomes.add(Biomes.MUTATED_DESERT);
                 break;
             case "jungle_temple":
                 validBiomes.add(Biomes.JUNGLE);
                 validBiomes.add(Biomes.JUNGLE_HILLS);
-                validBiomes.add(Biomes.MUTATED_JUNGLE);
-                validBiomes.add(Biomes.JUNGLE_EDGE);
-                validBiomes.add(Biomes.MUTATED_JUNGLE_EDGE);
                 break;
             case "witch_hut":
                 validBiomes.add(Biomes.SWAMPLAND);
-                validBiomes.add(Biomes.MUTATED_SWAMPLAND);
                 break;
             case "igloo":
                 validBiomes.add(Biomes.ICE_PLAINS);
                 validBiomes.add(Biomes.COLD_TAIGA);
-                validBiomes.add(Biomes.ICE_MOUNTAINS);
-                validBiomes.add(Biomes.COLD_TAIGA_HILLS);
                 break;
         }
 

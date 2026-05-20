@@ -19,6 +19,7 @@ import net.minecraft.world.biome.Biome;
 import net.minecraftforge.common.BiomeDictionary;
 import net.minecraftforge.fml.common.Loader;
 
+import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo;
@@ -26,6 +27,7 @@ import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.util.RarityTextHelper;
 
 
 /**
@@ -41,9 +43,22 @@ public class IceAndFireStructureProvider implements StructureProvider {
     private static final String PROVIDER_ID = "iceandfire";
     private static final String MOD_ID = "iceandfire";
     private static final String MOD_NAME = "gui.structurescanner.provider.iceandfire";
+    private static final int DEFAULT_WORLD_GEN_DISTANCE = 150;
+    private static final int DEFAULT_DRAGON_DEN_CHANCE = 180;
+    private static final int DEFAULT_DRAGON_ROOST_CHANCE = 360;
+    private static final int DEFAULT_GORGON_CHANCE = 75;
+    private static final int DEFAULT_CYCLOPS_CAVE_CHANCE = 170;
+    private static final int DEFAULT_MYRMEX_CHANCE = 150;
+    private static final int MYRMEX_MIN_DISTANCE_BLOCKS = 500;
 
     private List<ResourceLocation> knownStructures = new ArrayList<>();
     private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
+    private int worldGenDistance = DEFAULT_WORLD_GEN_DISTANCE;
+    private int dragonDenChance = DEFAULT_DRAGON_DEN_CHANCE;
+    private int dragonRoostChance = DEFAULT_DRAGON_ROOST_CHANCE;
+    private int gorgonChance = DEFAULT_GORGON_CHANCE;
+    private int cyclopsCaveChance = DEFAULT_CYCLOPS_CAVE_CHANCE;
+    private int myrmexChance = DEFAULT_MYRMEX_CHANCE;
 
     @Override
     public String getProviderId() {
@@ -62,6 +77,8 @@ public class IceAndFireStructureProvider implements StructureProvider {
 
     @Override
     public void postInit() {
+        loadConfig();
+
         // Dragon structures
         addStructure("fire_dragon_roost", "gui.structurescanner.structures.iceandfire.fire_dragon_roost", 0, 0, 0);
         addStructure("ice_dragon_roost", "gui.structurescanner.structures.iceandfire.ice_dragon_roost", 0, 0, 0);
@@ -90,51 +107,84 @@ public class IceAndFireStructureProvider implements StructureProvider {
         structureInfos.put(id, info);
     }
 
+    private void loadConfig() {
+        try {
+            Class<?> iceAndFireClass = Class.forName("com.github.alexthe666.iceandfire.IceAndFire");
+            Object config = iceAndFireClass.getField("CONFIG").get(null);
+            Class<?> configClass = config.getClass();
+
+            worldGenDistance = configClass.getField("worldGenDistance").getInt(config);
+            dragonDenChance = configClass.getField("generateDragonDenChance").getInt(config);
+            dragonRoostChance = configClass.getField("generateDragonRoostChance").getInt(config);
+            gorgonChance = configClass.getField("spawnGorgonsChance").getInt(config);
+            cyclopsCaveChance = configClass.getField("spawnCyclopsCaveChance").getInt(config);
+            myrmexChance = configClass.getField("myrmexColonyGenChance").getInt(config);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn("Could not load Ice and Fire config, using defaults: {}", e.getMessage());
+        }
+    }
+
     private void populateStructureMetadata() {
         Set<DimensionInfo> overworld = Collections.singleton(DimensionInfo.OVERWORLD);
 
-        // Fire Dragon Roost - warm, non-snowy hills/mountains
-        Set<Biome> fireDragonBiomes = new HashSet<>();
+        // Fire Dragon Roost - warm, non-snowy land biomes
+        Set<Biome> fireDragonRoostBiomes = new HashSet<>();
+        Set<Biome> fireDragonCaveBiomes = new HashSet<>();
         for (Biome biome : Biome.REGISTRY) {
             if (!biome.getEnableSnow()
-                    && biome.getDefaultTemperature() > 0.0
+                    && biome.getDefaultTemperature() > 0.0F
                     && biome != Biomes.ICE_PLAINS
                     && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.COLD)
                     && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.SNOWY)
                     && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.WET)
                     && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.OCEAN)
                     && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.RIVER)) {
-                fireDragonBiomes.add(biome);
+                fireDragonRoostBiomes.add(biome);
+
+                if (!BiomeDictionary.hasType(biome, BiomeDictionary.Type.BEACH)) {
+                    fireDragonCaveBiomes.add(biome);
+                }
             }
         }
 
-        setMetadata("fire_dragon_roost", fireDragonBiomes, overworld, "gui.structurescanner.rarity.rare");
-        setMetadata("fire_dragon_cave", fireDragonBiomes, overworld, "gui.structurescanner.rarity.rare");
+        setMetadata("fire_dragon_roost", fireDragonRoostBiomes, overworld,
+            calculateDragonRarity(fireDragonRoostBiomes, true, dragonRoostChance));
+        setMetadata("fire_dragon_cave", fireDragonCaveBiomes, overworld,
+            calculateDragonRarity(fireDragonCaveBiomes, false, dragonDenChance));
 
         // Ice Dragon Roost - cold, snowy biomes
-        Set<Biome> iceDragonBiomes = new HashSet<>();
+        Set<Biome> iceDragonRoostBiomes = new HashSet<>();
+        Set<Biome> iceDragonCaveBiomes = new HashSet<>();
         for (Biome biome : Biome.REGISTRY) {
             if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.COLD)
                     && BiomeDictionary.hasType(biome, BiomeDictionary.Type.SNOWY)) {
-                iceDragonBiomes.add(biome);
+                iceDragonRoostBiomes.add(biome);
+
+                if (!BiomeDictionary.hasType(biome, BiomeDictionary.Type.BEACH)) {
+                    iceDragonCaveBiomes.add(biome);
+                }
             }
         }
 
-        setMetadata("ice_dragon_roost", iceDragonBiomes, overworld, "gui.structurescanner.rarity.rare");
-        setMetadata("ice_dragon_cave", iceDragonBiomes, overworld, "gui.structurescanner.rarity.rare");
+        setMetadata("ice_dragon_roost", iceDragonRoostBiomes, overworld,
+            calculateDragonRarity(iceDragonRoostBiomes, true, dragonRoostChance));
+        setMetadata("ice_dragon_cave", iceDragonCaveBiomes, overworld,
+            calculateDragonRarity(iceDragonCaveBiomes, false, dragonDenChance));
 
-        // Lightning Dragon Roost - jungle, savanna, badlands biomes
+        // Lightning Dragon Roost/Cave - jungle, mesa, savanna biomes
         Set<Biome> lightningDragonBiomes = new HashSet<>();
         for (Biome biome : Biome.REGISTRY) {
             if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.JUNGLE)
-                    || BiomeDictionary.hasType(biome, BiomeDictionary.Type.SAVANNA)
-                    || BiomeDictionary.hasType(biome, BiomeDictionary.Type.MESA)) {
+                    || BiomeDictionary.hasType(biome, BiomeDictionary.Type.MESA)
+                    || BiomeDictionary.hasType(biome, BiomeDictionary.Type.SAVANNA)) {
                 lightningDragonBiomes.add(biome);
             }
         }
 
-        setMetadata("lightning_dragon_roost", lightningDragonBiomes, overworld, "gui.structurescanner.rarity.rare");
-        setMetadata("lightning_dragon_cave", lightningDragonBiomes, overworld, "gui.structurescanner.rarity.rare");
+        setMetadata("lightning_dragon_roost", lightningDragonBiomes, overworld,
+            calculateDragonRarity(lightningDragonBiomes, true, dragonRoostChance));
+        setMetadata("lightning_dragon_cave", lightningDragonBiomes, overworld,
+            calculateDragonRarity(lightningDragonBiomes, false, dragonDenChance));
 
         // Cyclops Cave - beach biomes
         Set<Biome> beachBiomes = new HashSet<>();
@@ -142,10 +192,12 @@ public class IceAndFireStructureProvider implements StructureProvider {
             if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.BEACH)) beachBiomes.add(biome);
         }
 
-        setMetadata("cyclops_cave", beachBiomes, overworld, "gui.structurescanner.rarity.rare");
+        setMetadata("cyclops_cave", beachBiomes, overworld,
+            calculateApproximateRarity(cyclopsCaveChance + 1.0D, worldGenDistance));
 
         // Gorgon Temple - beach biomes
-        setMetadata("gorgon_temple", beachBiomes, overworld, "gui.structurescanner.rarity.rare");
+        setMetadata("gorgon_temple", beachBiomes, overworld,
+            calculateApproximateRarity(gorgonChance + 1.0D, worldGenDistance));
 
         // Myrmex Hive Desert - hot, dry, sandy biomes
         Set<Biome> desertBiomes = new HashSet<>();
@@ -157,7 +209,8 @@ public class IceAndFireStructureProvider implements StructureProvider {
             }
         }
 
-        setMetadata("myrmex_hive_desert", desertBiomes, overworld, "gui.structurescanner.rarity.rare");
+        setMetadata("myrmex_hive_desert", desertBiomes, overworld,
+            calculateApproximateRarity(myrmexChance, MYRMEX_MIN_DISTANCE_BLOCKS));
 
         // Myrmex Hive Jungle - jungle biomes
         Set<Biome> jungleBiomes = new HashSet<>();
@@ -167,16 +220,47 @@ public class IceAndFireStructureProvider implements StructureProvider {
             }
         }
 
-        setMetadata("myrmex_hive_jungle", jungleBiomes, overworld, "gui.structurescanner.rarity.rare");
+        setMetadata("myrmex_hive_jungle", jungleBiomes, overworld,
+            calculateApproximateRarity(myrmexChance, MYRMEX_MIN_DISTANCE_BLOCKS));
     }
 
-    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, String rarity) {
+    private LocalizedText calculateDragonRarity(Set<Biome> biomes, boolean roost, int baseChance) {
+        if (biomes.isEmpty()) return calculateApproximateRarity(baseChance + 1.0D, worldGenDistance);
+
+        int hillBiomes = 0;
+
+        for (Biome biome : biomes) {
+            if (isDragonHillBiome(biome, roost)) hillBiomes++;
+        }
+
+        int flatBiomes = biomes.size() - hillBiomes;
+        double hillProbability = 1.0D / (baseChance + 1.0D);
+        double flatProbability = 1.0D / (baseChance * 2.0D + 1.0D);
+        double averageProbability = (hillBiomes * hillProbability + flatBiomes * flatProbability) / biomes.size();
+
+        return calculateApproximateRarity(RarityTextHelper.chunksFromProbability(averageProbability), worldGenDistance);
+    }
+
+    private boolean isDragonHillBiome(Biome biome, boolean roost) {
+        if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.HILLS)) return true;
+        if (!BiomeDictionary.hasType(biome, BiomeDictionary.Type.MOUNTAIN)) return false;
+        if (!roost) return true;
+
+        return !BiomeDictionary.hasType(biome, BiomeDictionary.Type.SNOWY);
+    }
+
+    private LocalizedText calculateApproximateRarity(double rawChunks, double minDistanceBlocks) {
+        double spacingChunks = RarityTextHelper.minimumSpacingChunks(minDistanceBlocks);
+        return RarityTextHelper.oneInChunks(Math.max(rawChunks, spacingChunks));
+    }
+
+    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, LocalizedText rarity) {
         StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, path));
         if (info == null) return;
 
         info.setValidBiomes(biomes);
         info.setValidDimensions(dimensions);
-        info.setRarityKey(rarity);
+        info.setRarity(rarity);
     }
 
     private void populateStructureContents() {

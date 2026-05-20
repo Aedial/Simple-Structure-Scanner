@@ -29,6 +29,7 @@ import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProvider;
 import com.simplestructurescanner.structure.util.PositionHelper;
+import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.util.SeedHelper;
 
@@ -42,6 +43,18 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
     private static final String PROVIDER_ID = "abyssalcraft";
     private static final String MOD_ID = "abyssalcraft";
     private static final String MOD_NAME = "gui.structurescanner.provider.abyssalcraft";
+    private static final int DEFAULT_SHOGGOTH_SWAMP_CHANCE = 35;
+    private static final int DEFAULT_SHOGGOTH_RIVER_CHANCE = 30;
+    private static final int DEFAULT_SHOGGOTH_MIN_DISTANCE = 100;
+    private static final int DEFAULT_GRAVEYARD_CHANCE = 50;
+    private static final int DEFAULT_GRAVEYARD_MIN_DISTANCE = 150;
+    private static final double DREADLANDS_MINESHAFT_CHUNKS = 250.0D;
+    private static final double OMOTHOL_CITY_CHUNKS = 1.0D;
+    private static final double OMOTHOL_STORAGE_CHUNKS = 2.0D;
+    private static final double OMOTHOL_INTERNAL_SHOGGOTH_CHUNKS = 200.0D;
+    private static final double OMOTHOL_INTERNAL_GRAVEYARD_CHUNKS = 50.0D;
+    private static final double STRONGHOLD_OUTER_RING_RADIUS_CHUNKS = 1472.0D;
+    private static final int STRONGHOLD_COUNT = 128;
 
     private List<ResourceLocation> knownStructures;
     private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
@@ -53,12 +66,15 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
     private int abyssalWastelandId = -1;
     private int dreadlandsId = -1;
     private int omotholId = -1;
-    private int darkRealmId = -1;
 
     // AbyssalCraft biomes (fetched at runtime)
     private Biome abyssalWastelandsBiome;
-    private Biome dreadlandsBiome;
     private Biome omotholBiome;
+    private int shoggothLairSpawnRate = DEFAULT_SHOGGOTH_SWAMP_CHANCE;
+    private int shoggothLairSpawnRateRivers = DEFAULT_SHOGGOTH_RIVER_CHANCE;
+    private int shoggothLairGenerationDistance = DEFAULT_SHOGGOTH_MIN_DISTANCE;
+    private int graveyardGenerationChance = DEFAULT_GRAVEYARD_CHANCE;
+    private int graveyardGenerationDistance = DEFAULT_GRAVEYARD_MIN_DISTANCE;
 
     public AbyssalCraftStructureProvider() {
     }
@@ -86,7 +102,6 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
             abyssalWastelandId = ReflectionHelper.getStaticIntField(acLibClass, "abyssal_wasteland_id");
             dreadlandsId = ReflectionHelper.getStaticIntField(acLibClass, "dreadlands_id");
             omotholId = ReflectionHelper.getStaticIntField(acLibClass, "omothol_id");
-            darkRealmId = ReflectionHelper.getStaticIntField(acLibClass, "dark_realm_id");
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.error("Failed to get AbyssalCraft dimension IDs", e);
         }
@@ -95,11 +110,12 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         try {
             Class<?> acBiomesClass = ReflectionHelper.loadClassRequired("com.shinoow.abyssalcraft.api.biome.ACBiomes");
             abyssalWastelandsBiome = (Biome) ReflectionHelper.getStaticField(acBiomesClass, "abyssal_wastelands");
-            dreadlandsBiome = (Biome) ReflectionHelper.getStaticField(acBiomesClass, "dreadlands");
             omotholBiome = (Biome) ReflectionHelper.getStaticField(acBiomesClass, "omothol");
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.error("Failed to get AbyssalCraft biomes", e);
         }
+
+        loadConfig();
 
         knownStructures = new ArrayList<>();
 
@@ -132,73 +148,136 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         structureInfos.put(id, info);
     }
 
+    private void loadConfig() {
+        try {
+            Class<?> acConfigClass = ReflectionHelper.loadClassRequired("com.shinoow.abyssalcraft.lib.ACConfig");
+            shoggothLairSpawnRate = ReflectionHelper.getStaticIntField(acConfigClass, "shoggothLairSpawnRate");
+            shoggothLairSpawnRateRivers = ReflectionHelper.getStaticIntField(acConfigClass, "shoggothLairSpawnRateRivers");
+            shoggothLairGenerationDistance = ReflectionHelper.getStaticIntField(acConfigClass, "shoggothLairGenerationDistance");
+            graveyardGenerationChance = ReflectionHelper.getStaticIntField(acConfigClass, "graveyardGenerationChance");
+            graveyardGenerationDistance = ReflectionHelper.getStaticIntField(acConfigClass, "graveyardGenerationDistance");
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn("Could not load AbyssalCraft config, using defaults: {}", e.getMessage());
+        }
+    }
+
     private void populateStructureMetadata() {
         // Create DimensionInfo with localization keys for AC dimensions
         DimensionInfo abyssalWastelandDim = new DimensionInfo(abyssalWastelandId, "gui.structurescanner.dimension.abyssal_wasteland");
         DimensionInfo dreadlandsDim = new DimensionInfo(dreadlandsId, "gui.structurescanner.dimension.dreadlands");
         DimensionInfo omotholDim = new DimensionInfo(omotholId, "gui.structurescanner.dimension.omothol");
-        DimensionInfo darkRealmDim = new DimensionInfo(darkRealmId, "gui.structurescanner.dimension.dark_realm");
 
         Set<DimensionInfo> abyssalWasteland = Collections.singleton(abyssalWastelandDim);
         Set<DimensionInfo> dreadlands = Collections.singleton(dreadlandsDim);
         Set<DimensionInfo> omothol = Collections.singleton(omotholDim);
-        Set<DimensionInfo> allDims = new HashSet<>();
-        allDims.add(DimensionInfo.OVERWORLD);
-        allDims.add(abyssalWastelandDim);
-        allDims.add(dreadlandsDim);
-        allDims.add(omotholDim);
-        allDims.add(darkRealmDim);
+        Set<DimensionInfo> overworldAndOmothol = new HashSet<>();
+        overworldAndOmothol.add(DimensionInfo.OVERWORLD);
+        overworldAndOmothol.add(omotholDim);
+
+        Set<Biome> omotholBiomes = omotholBiome == null ? null : Collections.singleton(omotholBiome);
 
         // AbyStronghold - Abyssal Wasteland only
         setMetadata("aby_stronghold",
             abyssalWastelandsBiome != null ? Collections.singleton(abyssalWastelandsBiome) : null,
             abyssalWasteland,
-            "gui.structurescanner.rarity.rare");
+            RarityTextHelper.oneInChunks(
+                RarityTextHelper.averageChunksForFixedCountInRadius(STRONGHOLD_COUNT, STRONGHOLD_OUTER_RING_RADIUS_CHUNKS)
+            ));
 
         // Dreadlands Mineshaft
-        setMetadata("dreadlands_mineshaft", null, dreadlands, "gui.structurescanner.rarity.uncommon");
+        setMetadata("dreadlands_mineshaft", null, dreadlands, RarityTextHelper.oneInChunks(DREADLANDS_MINESHAFT_CHUNKS));
 
         // J'zahar Temple - fixed position at origin
-        setMetadata("jzahar_temple",
-            omotholBiome != null ? Collections.singleton(omotholBiome) : null,
-            omothol,
-            "gui.structurescanner.rarity.unique");
+        setMetadata("jzahar_temple", omotholBiomes, omothol, RarityTextHelper.fixedPosition());
 
         // Omothol City - randomly generated buildings with various loot
-        setMetadata("omothol_city",
-            omotholBiome != null ? Collections.singleton(omotholBiome) : null,
-            omothol,
-            "gui.structurescanner.rarity.common");
+        setMetadata("omothol_city", omotholBiomes, omothol,
+            calculateApproximateRarity(OMOTHOL_CITY_CHUNKS, 18.0D));
 
         // Omothol Storage - storage buildings with crates
-        setMetadata("omothol_storage",
-            omotholBiome != null ? Collections.singleton(omotholBiome) : null,
-            omothol,
-            "gui.structurescanner.rarity.uncommon");
+        setMetadata("omothol_storage", omotholBiomes, omothol,
+            calculateApproximateRarity(OMOTHOL_STORAGE_CHUNKS, 300.0D));
 
-        // Shoggoth Lairs spawn in SWAMP and RIVER biomes in Overworld, all biomes in AC dimensions
+        // Shoggoth Lairs spawn in SWAMP and RIVER biomes in the Overworld.
+        // We do not calculate the Omothol rarity, because people usually need to find the first one in the Overworld
         Set<Biome> shoggothBiomes = new HashSet<>();
+        int swampBiomeCount = 0;
+        int riverBiomeCount = 0;
+
         for (Biome biome : Biome.REGISTRY) {
-            if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.SWAMP)
-                    || (BiomeDictionary.hasType(biome, BiomeDictionary.Type.RIVER)
-                        && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.OCEAN))) {
-                shoggothBiomes.add(biome);
+            boolean isSwamp = BiomeDictionary.hasType(biome, BiomeDictionary.Type.SWAMP);
+            boolean isRiver = BiomeDictionary.hasType(biome, BiomeDictionary.Type.RIVER)
+                && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.OCEAN);
+            if (!isSwamp && !isRiver) continue;
+
+            shoggothBiomes.add(biome);
+            if (isSwamp) {
+                swampBiomeCount++;
+                continue;
             }
+
+            riverBiomeCount++;
         }
 
-        setMetadata("shoggoth_lair", shoggothBiomes, allDims, "gui.structurescanner.rarity.uncommon");
+        if (omotholBiome != null) shoggothBiomes.add(omotholBiome);
 
-        // Graveyards spawn in multiple dimensions
-        setMetadata("graveyard", null, allDims, "gui.structurescanner.rarity.uncommon");
+
+        setMetadata("shoggoth_lair", shoggothBiomes, overworldAndOmothol,
+            calculateShoggothRarity(swampBiomeCount, riverBiomeCount));
+
+        // Graveyards spawn in the Overworld and Omothol.
+        setMetadata("graveyard", null, overworldAndOmothol, calculateGraveyardRarity());
     }
 
-    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, String rarity) {
+    private LocalizedText calculateShoggothRarity(int swampBiomeCount, int riverBiomeCount) {
+        double weightedProbability = 0.0D;
+        int totalWeight = 0;
+
+        if (swampBiomeCount > 0 && shoggothLairSpawnRate > 0) {
+            weightedProbability += swampBiomeCount / calculateApproximateChunks(shoggothLairSpawnRate, shoggothLairGenerationDistance);
+            totalWeight += swampBiomeCount;
+        }
+
+        if (riverBiomeCount > 0 && shoggothLairSpawnRateRivers > 0) {
+            weightedProbability += riverBiomeCount / calculateApproximateChunks(shoggothLairSpawnRateRivers, shoggothLairGenerationDistance);
+            totalWeight += riverBiomeCount;
+        }
+
+        if (totalWeight <= 0) return RarityTextHelper.oneInChunks(OMOTHOL_INTERNAL_SHOGGOTH_CHUNKS);
+
+        return RarityTextHelper.oneInChunks(RarityTextHelper.chunksFromProbability(weightedProbability / totalWeight));
+    }
+
+    private LocalizedText calculateGraveyardRarity() {
+        double weightedProbability = 0.0D;
+        int totalWeight = 0;
+
+        if (graveyardGenerationChance > 0) {
+            weightedProbability += 1.0D / calculateApproximateChunks(graveyardGenerationChance, graveyardGenerationDistance);
+            totalWeight++;
+        }
+
+        weightedProbability += 1.0D / calculateApproximateChunks(OMOTHOL_INTERNAL_GRAVEYARD_CHUNKS, graveyardGenerationDistance);
+        totalWeight++;
+
+        return RarityTextHelper.oneInChunks(RarityTextHelper.chunksFromProbability(weightedProbability / totalWeight));
+    }
+
+    private LocalizedText calculateApproximateRarity(double rawChunks, double minDistanceBlocks) {
+        return RarityTextHelper.oneInChunks(calculateApproximateChunks(rawChunks, minDistanceBlocks));
+    }
+
+    private double calculateApproximateChunks(double rawChunks, double minDistanceBlocks) {
+        return Math.max(rawChunks, RarityTextHelper.minimumSpacingChunks(minDistanceBlocks));
+    }
+
+    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, LocalizedText rarity) {
         StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, path));
         if (info == null) return;
 
         info.setValidBiomes(biomes);
         info.setValidDimensions(dimensions);
-        info.setRarityKey(rarity);
+        info.setRarity(rarity);
     }
 
     private void populateStructureContents() {
