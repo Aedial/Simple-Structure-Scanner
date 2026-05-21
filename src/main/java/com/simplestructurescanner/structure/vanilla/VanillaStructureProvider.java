@@ -36,16 +36,14 @@ import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraftforge.common.BiomeManager;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.AbstractStructureProvider;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
+import com.simplestructurescanner.structure.ParsedStructureApplier;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
-import com.simplestructurescanner.structure.StructureInfo.LootEntry;
-import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
-import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureNBTParser;
-import com.simplestructurescanner.structure.StructureProvider;
 import com.simplestructurescanner.structure.TerrainHeightCalculator;
 import com.simplestructurescanner.structure.pillar.ValidationContextManager;
 import com.simplestructurescanner.structure.util.PositionHelper;
@@ -57,7 +55,7 @@ import com.simplestructurescanner.structure.util.SeedHelper;
  * Structure provider for vanilla Minecraft structures.
  * Uses seed-based algorithms to locate structures.
  */
-public class VanillaStructureProvider implements StructureProvider {
+public class VanillaStructureProvider extends AbstractStructureProvider {
     private static final String PROVIDER_ID = "minecraft";
     private static final String MOD_NAME = "gui.structurescanner.provider.minecraft";
     private static final double MINESHAFT_CHUNKS = 250.0D;
@@ -72,53 +70,36 @@ public class VanillaStructureProvider implements StructureProvider {
         Biomes.ROOFED_FOREST, Biomes.MUTATED_ROOFED_FOREST
     );
 
-    private List<ResourceLocation> knownStructures;
-    private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
-
     // Cache: generation world -> (structureType -> list of positions)
     // Using the resolved generation world keeps dimensions isolated and avoids client/server seed mismatches.
     private static final Map<World, Map<String, List<BlockPos>>> positionCache = new WeakHashMap<>();
     private static final int MAX_CACHED_POSITIONS = 200;
 
     public VanillaStructureProvider() {
-    }
-
-    @Override
-    public String getProviderId() {
-        return PROVIDER_ID;
-    }
-
-    @Override
-    public String getModName() {
-        return MOD_NAME;
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return true;
+        super(PROVIDER_ID, "minecraft", MOD_NAME);
     }
 
     @Override
     public void postInit() {
-        knownStructures = new ArrayList<>();
+        resetStructures();
 
         // Overworld
-        addStructure("village", "gui.structurescanner.structures.minecraft.village", 0, 0, 0);
-        addStructure("mineshaft", "gui.structurescanner.structures.minecraft.mineshaft", 0, 0, 0);
-        addStructure("stronghold", "gui.structurescanner.structures.minecraft.stronghold", 0, 0, 0);
-        addStructure("desert_temple", "gui.structurescanner.structures.minecraft.desert_temple", 21, 21, 21);
-        addStructure("jungle_temple", "gui.structurescanner.structures.minecraft.jungle_temple", 12, 14, 15);
-        addStructure("witch_hut", "gui.structurescanner.structures.minecraft.witch_hut", 7, 5, 9);
-        addStructure("igloo", "gui.structurescanner.structures.minecraft.igloo", 7, 5, 8);
-        addStructure("monument", "gui.structurescanner.structures.minecraft.ocean_monument", 58, 23, 58);
-        addStructure("mansion", "gui.structurescanner.structures.minecraft.woodland_mansion", 0, 0, 0);
-        addStructure("dungeon", "gui.structurescanner.structures.minecraft.dungeon", 9, 7, 9);
+        registerStructure("village", "gui.structurescanner.structures.minecraft.village", 0, 0, 0);
+        registerStructure("mineshaft", "gui.structurescanner.structures.minecraft.mineshaft", 0, 0, 0);
+        registerStructure("stronghold", "gui.structurescanner.structures.minecraft.stronghold", 0, 0, 0);
+        registerStructure("desert_temple", "gui.structurescanner.structures.minecraft.desert_temple", 21, 21, 21);
+        registerStructure("jungle_temple", "gui.structurescanner.structures.minecraft.jungle_temple", 12, 14, 15);
+        registerStructure("witch_hut", "gui.structurescanner.structures.minecraft.witch_hut", 7, 5, 9);
+        registerStructure("igloo", "gui.structurescanner.structures.minecraft.igloo", 7, 5, 8);
+        registerStructure("monument", "gui.structurescanner.structures.minecraft.ocean_monument", 58, 23, 58);
+        registerStructure("mansion", "gui.structurescanner.structures.minecraft.woodland_mansion", 0, 0, 0);
+        registerStructure("dungeon", "gui.structurescanner.structures.minecraft.dungeon", 9, 7, 9);
         // Nether
-        addStructure("fortress", "gui.structurescanner.structures.minecraft.nether_fortress", 0, 0, 0);
+        registerStructure("fortress", "gui.structurescanner.structures.minecraft.nether_fortress", 0, 0, 0);
 
         // End
-        addStructure("endcity", "gui.structurescanner.structures.minecraft.end_city", 0, 0, 0);
-        addStructure("end_ship", "gui.structurescanner.structures.minecraft.end_ship", 0, 0, 0);
+        registerStructure("endcity", "gui.structurescanner.structures.minecraft.end_city", 0, 0, 0);
+        registerStructure("end_ship", "gui.structurescanner.structures.minecraft.end_ship", 0, 0, 0);
 
         // Add blocks and loot tables to structures
         populateStructureContents();
@@ -187,24 +168,6 @@ public class VanillaStructureProvider implements StructureProvider {
         return Stream.of(biomes).collect(Collectors.toSet());
     }
 
-    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, LocalizedText rarity) {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", path));
-        if (info == null) return;
-
-        info.setValidBiomes(biomes);
-        info.setValidDimensions(dimensions);
-        info.setRarity(rarity);
-    }
-
-    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, String rarityKey) {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", path));
-        if (info == null) return;
-
-        info.setValidBiomes(biomes);
-        info.setValidDimensions(dimensions);
-        info.setRarityKey(rarityKey);
-    }
-
     /**
      * Populates blocks and loot tables for vanilla structures. Uses NBT parsing when possible.
      */
@@ -248,7 +211,7 @@ public class VanillaStructureProvider implements StructureProvider {
      * Parse an NBT structure file and apply its data to a structure with offsets.
      */
     private void parseAndApplyNBT(String structurePath, String nbtPath, int xOffset, int zOffset) {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", structurePath));
+        StructureInfo info = getMutableStructureInfo(structurePath);
         if (info == null) {
             SimpleStructureScanner.LOGGER.error("StructureInfo not found for {}, this should not happen.", structurePath);
             return;
@@ -260,47 +223,7 @@ public class VanillaStructureProvider implements StructureProvider {
             return;
         }
 
-        // Only apply if we don't already have block data (first NBT wins, or merge)
-        if (info.getBlocks().isEmpty()) {
-            info.setBlocks(parsed.blocks);
-        } else {
-            // Merge block counts from additional structure parts
-            mergeBlocks(info, parsed.blocks);
-        }
-
-        // Merge layer data (combine layers from multiple structure parts)
-        if (!parsed.layers.isEmpty()) {
-            if (!info.hasLayerData()) {
-                info.setLayers(parsed.layers);
-            } else {
-                mergeLayers(info, parsed.layers, xOffset, zOffset);
-            }
-        }
-
-        // Merge entities
-        if (!parsed.entities.isEmpty()) {
-            if (info.getEntities().isEmpty()) {
-                info.setEntities(parsed.entities);
-            } else {
-                // Merge entity counts
-                List<EntityEntry> merged = new ArrayList<>(info.getEntities());
-                for (EntityEntry newEntity : parsed.entities) {
-                    boolean found = false;
-                    for (int i = 0; i < merged.size(); i++) {
-                        if (merged.get(i).entityId.equals(newEntity.entityId)) {
-                            merged.set(i, new EntityEntry(newEntity.entityId,
-                                merged.get(i).count + newEntity.count, merged.get(i).spawner));
-                            found = true;
-
-                            break;
-                        }
-                    }
-
-                    if (!found) merged.add(newEntity);
-                }
-                info.setEntities(merged);
-            }
-        }
+        ParsedStructureApplier.merge(info, parsed, xOffset, zOffset, false);
 
         SimpleStructureScanner.LOGGER.debug("Parsed NBT structure {} for {}: {} blocks, {} layers",
             nbtPath, structurePath, parsed.blocks.size(), parsed.layers.size());
@@ -310,447 +233,207 @@ public class VanillaStructureProvider implements StructureProvider {
         parseAndApplyNBT(structurePath, nbtPath, 0, 0);
     }
 
-    /**
-     * Merge additional blocks into existing block list.
-     */
-    private void mergeBlocks(StructureInfo info, List<BlockEntry> newBlocks) {
-        Map<String, BlockEntry> blockMap = new HashMap<>();
-
-        // Add existing blocks
-        for (BlockEntry entry : info.getBlocks()) {
-            String key = getBlockKey(entry.blockState);
-            blockMap.put(key, entry);
-        }
-
-        // Merge new blocks
-        for (BlockEntry newEntry : newBlocks) {
-            String key = getBlockKey(newEntry.blockState);
-            BlockEntry existing = blockMap.get(key);
-
-            if (existing != null) {
-                // Add counts
-                blockMap.put(key, existing.withCount(existing.count + newEntry.count));
-            } else {
-                blockMap.put(key, newEntry);
-            }
-        }
-
-        // Convert back to list and sort
-        List<BlockEntry> merged = new ArrayList<>(blockMap.values());
-        merged.sort((a, b) -> Integer.compare(b.count, a.count));
-        info.setBlocks(merged);
-    }
-
-    private String getBlockKey(IBlockState state) {
-        return state.getBlock().getRegistryName() + "@" + state.getBlock().getMetaFromState(state);
-    }
-
-    /**
-     * Merge additional layers into existing layer list.
-     * New layers are stacked on top of existing layers (offset by max Y + 1).
-     */
-    private void mergeLayers(StructureInfo info, List<StructureLayer> newLayers) {
-        mergeLayers(info, newLayers, 0, 0);
-    }
-
-    /**
-     * Merge additional layers into existing layer list with X/Z offsets.
-     * New layers are stacked on top of existing layers (offset by max Y + 1).
-     */
-    private void mergeLayers(StructureInfo info, List<StructureLayer> newLayers, int xOffset, int zOffset) {
-        List<StructureLayer> existing = new ArrayList<>(info.getLayers());
-
-        // Find the maximum Y in existing layers to stack new parts on top
-        int maxExistingY = Integer.MIN_VALUE;
-        for (StructureLayer layer : existing) {
-            if (layer.y > maxExistingY) maxExistingY = layer.y;
-        }
-
-        // Find the minimum Y in new layers to calculate offset
-        int minNewY = Integer.MAX_VALUE;
-        for (StructureLayer layer : newLayers) {
-            if (layer.y < minNewY) minNewY = layer.y;
-        }
-
-        // Offset to place new layers on top of existing ones
-        int yOffset = (maxExistingY == Integer.MIN_VALUE) ? 0 : (maxExistingY - minNewY + 1);
-
-        // Add new layers with Y offset
-        for (StructureLayer newLayer : newLayers) {
-            StructureLayer offsetLayer = new StructureLayer(newLayer.y + yOffset, newLayer.width, newLayer.depth, xOffset, zOffset);
-
-            for (int x = 0; x < newLayer.width; x++) {
-                for (int z = 0; z < newLayer.depth; z++) {
-                    IBlockState state = newLayer.getBlockState(x, z);
-                    if (state != null) offsetLayer.setBlockState(x, z, state);
-                }
-            }
-
-            existing.add(offsetLayer);
-        }
-
-        // Sort by Y
-        existing.sort((a, b) -> Integer.compare(a.y, b.y));
-        info.setLayers(existing);
-    }
-
     // Procedural structures use hardcoded estimates since they're generated algorithmically
 
     private void populateDesertTemple() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "desert_temple"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.SANDSTONE, 0, 500),
-                createBlockEntry(Blocks.SANDSTONE, 1, 100),  // Chiseled
-                createBlockEntry(Blocks.SANDSTONE, 2, 50),   // Smooth
-                createBlockEntry(Blocks.STAINED_HARDENED_CLAY, 1, 80),  // Orange
-                createBlockEntry(Blocks.STAINED_HARDENED_CLAY, 11, 20), // Blue
-                createBlockEntry(Blocks.SANDSTONE_STAIRS, 0, 30),
-                createBlockEntry(Blocks.STONE_PRESSURE_PLATE, 0, 1),
-                createBlockEntry(Blocks.TNT, 0, 9)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
-            createLootEntry("minecraft:chests/desert_pyramid", "gui.structurescanner.loot.chest")
-        );
-        info.setLootTables(loot);
+        setBlocksIfMissing("desert_temple", filterNulls(
+            createBlockEntry(Blocks.SANDSTONE, 0, 500),
+            createBlockEntry(Blocks.SANDSTONE, 1, 100),  // Chiseled
+            createBlockEntry(Blocks.SANDSTONE, 2, 50),   // Smooth
+            createBlockEntry(Blocks.STAINED_HARDENED_CLAY, 1, 80),  // Orange
+            createBlockEntry(Blocks.STAINED_HARDENED_CLAY, 11, 20), // Blue
+            createBlockEntry(Blocks.SANDSTONE_STAIRS, 0, 30),
+            createBlockEntry(Blocks.STONE_PRESSURE_PLATE, 0, 1),
+            createBlockEntry(Blocks.TNT, 0, 9)
+        ));
+        setLootTables("desert_temple",
+            createLootEntry("minecraft:chests/desert_pyramid", "gui.structurescanner.loot.chest"));
     }
 
     private void populateJungleTemple() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "jungle_temple"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.COBBLESTONE, 0, 400),
-                createBlockEntry(Blocks.MOSSY_COBBLESTONE, 0, 200),
-                createBlockEntry(Blocks.STONE_STAIRS, 0, 80),
-                createBlockEntry(Blocks.LEVER, 0, 3),
-                createBlockEntry(Blocks.TRIPWIRE_HOOK, 0, 4),
-                createBlockEntry(Blocks.TRIPWIRE, 0, 5),
-                createBlockEntry(Blocks.REDSTONE_WIRE, 0, 15),
-                createBlockEntry(Blocks.DISPENSER, 0, 2),
-                createBlockEntry(Blocks.STICKY_PISTON, 0, 3)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
+        setBlocksIfMissing("jungle_temple", filterNulls(
+            createBlockEntry(Blocks.COBBLESTONE, 0, 400),
+            createBlockEntry(Blocks.MOSSY_COBBLESTONE, 0, 200),
+            createBlockEntry(Blocks.STONE_STAIRS, 0, 80),
+            createBlockEntry(Blocks.LEVER, 0, 3),
+            createBlockEntry(Blocks.TRIPWIRE_HOOK, 0, 4),
+            createBlockEntry(Blocks.TRIPWIRE, 0, 5),
+            createBlockEntry(Blocks.REDSTONE_WIRE, 0, 15),
+            createBlockEntry(Blocks.DISPENSER, 0, 2),
+            createBlockEntry(Blocks.STICKY_PISTON, 0, 3)
+        ));
+        setLootTables("jungle_temple",
             createLootEntry("minecraft:chests/jungle_temple", "gui.structurescanner.loot.chest"),
-            createLootEntry("minecraft:chests/jungle_temple_dispenser", "gui.structurescanner.loot.dispenser")
-        );
-        info.setLootTables(loot);
+            createLootEntry("minecraft:chests/jungle_temple_dispenser", "gui.structurescanner.loot.dispenser"));
     }
 
     private void populateWitchHut() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "witch_hut"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.LOG, 1, 16),  // Spruce log
-                createBlockEntry(Blocks.PLANKS, 1, 30),  // Spruce planks
-                createBlockEntry(Blocks.WOODEN_SLAB, 1, 20),  // Spruce slab
-                createBlockEntry(Blocks.OAK_FENCE, 0, 4),
-                createBlockEntry(Blocks.CAULDRON, 0, 1),
-                createBlockEntry(Blocks.CRAFTING_TABLE, 0, 1),
-                createBlockEntry(Blocks.FLOWER_POT, 0, 1)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "witch"), 1)
-        );
-        info.setEntities(entities);
+        setBlocksIfMissing("witch_hut", filterNulls(
+            createBlockEntry(Blocks.LOG, 1, 16),  // Spruce log
+            createBlockEntry(Blocks.PLANKS, 1, 30),  // Spruce planks
+            createBlockEntry(Blocks.WOODEN_SLAB, 1, 20),  // Spruce slab
+            createBlockEntry(Blocks.OAK_FENCE, 0, 4),
+            createBlockEntry(Blocks.CAULDRON, 0, 1),
+            createBlockEntry(Blocks.CRAFTING_TABLE, 0, 1),
+            createBlockEntry(Blocks.FLOWER_POT, 0, 1)
+        ));
+        setEntities("witch_hut", createEntityEntry("minecraft:witch", 1));
     }
 
     private void populateIgloo() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "igloo"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.SNOW, 0, 100),
-                createBlockEntry(Blocks.ICE, 0, 20),
-                createBlockEntry(Blocks.WHITE_GLAZED_TERRACOTTA, 0, 1),
-                createBlockEntry(Blocks.CARPET, 0, 10),
-                createBlockEntry(Blocks.FURNACE, 0, 1),
-                createBlockEntry(Blocks.CRAFTING_TABLE, 0, 1),
-                createBlockEntry(Blocks.REDSTONE_TORCH, 0, 1),
-                createBlockEntry(Blocks.BREWING_STAND, 0, 1),
-                createBlockEntry(Blocks.CAULDRON, 0, 1)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
-            createLootEntry("minecraft:chests/igloo_chest", "gui.structurescanner.loot.chest")
-        );
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "villager"), 1),
-            new EntityEntry(new ResourceLocation("minecraft", "zombie_villager"), 1)
-        );
-        info.setEntities(entities);
+        setBlocksIfMissing("igloo", filterNulls(
+            createBlockEntry(Blocks.SNOW, 0, 100),
+            createBlockEntry(Blocks.ICE, 0, 20),
+            createBlockEntry(Blocks.WHITE_GLAZED_TERRACOTTA, 0, 1),
+            createBlockEntry(Blocks.CARPET, 0, 10),
+            createBlockEntry(Blocks.FURNACE, 0, 1),
+            createBlockEntry(Blocks.CRAFTING_TABLE, 0, 1),
+            createBlockEntry(Blocks.REDSTONE_TORCH, 0, 1),
+            createBlockEntry(Blocks.BREWING_STAND, 0, 1),
+            createBlockEntry(Blocks.CAULDRON, 0, 1)
+        ));
+        setLootTables("igloo", createLootEntry("minecraft:chests/igloo_chest", "gui.structurescanner.loot.chest"));
+        setEntities("igloo",
+            createEntityEntry("minecraft:villager", 1),
+            createEntityEntry("minecraft:zombie_villager", 1));
     }
 
     private void populateOceanMonument() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "monument"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.PRISMARINE, 0, 5000),
-                createBlockEntry(Blocks.PRISMARINE, 1, 1000),  // Bricks
-                createBlockEntry(Blocks.PRISMARINE, 2, 500),   // Dark
-                createBlockEntry(Blocks.SEA_LANTERN, 0, 50),
-                createBlockEntry(Blocks.SPONGE, 1, 30),  // Wet sponge
-                createBlockEntry(Blocks.GOLD_BLOCK, 0, 8)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "guardian"), 20),
-            new EntityEntry(new ResourceLocation("minecraft", "elder_guardian"), 3)
-        );
-        info.setEntities(entities);
+        setBlocksIfMissing("monument", filterNulls(
+            createBlockEntry(Blocks.PRISMARINE, 0, 5000),
+            createBlockEntry(Blocks.PRISMARINE, 1, 1000),  // Bricks
+            createBlockEntry(Blocks.PRISMARINE, 2, 500),   // Dark
+            createBlockEntry(Blocks.SEA_LANTERN, 0, 50),
+            createBlockEntry(Blocks.SPONGE, 1, 30),  // Wet sponge
+            createBlockEntry(Blocks.GOLD_BLOCK, 0, 8)
+        ));
+        setEntities("monument",
+            createEntityEntry("minecraft:guardian", 20),
+            createEntityEntry("minecraft:elder_guardian", 3));
     }
 
     private void populateDungeon() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "dungeon"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.COBBLESTONE, 0, 50),
-                createBlockEntry(Blocks.MOSSY_COBBLESTONE, 0, 50),
-                createBlockEntry(Blocks.MOB_SPAWNER, 0, 1),
-                createBlockEntry(Blocks.CHEST, 0, 2)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
-            createLootEntry("minecraft:chests/simple_dungeon", "gui.structurescanner.loot.chest")
-        );
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "zombie"), 1, true),
-            new EntityEntry(new ResourceLocation("minecraft", "skeleton"), 1, true),
-            new EntityEntry(new ResourceLocation("minecraft", "spider"), 1, true)
-        );
-        info.setEntities(entities);
+        setBlocksIfMissing("dungeon", filterNulls(
+            createBlockEntry(Blocks.COBBLESTONE, 0, 50),
+            createBlockEntry(Blocks.MOSSY_COBBLESTONE, 0, 50),
+            createBlockEntry(Blocks.MOB_SPAWNER, 0, 1),
+            createBlockEntry(Blocks.CHEST, 0, 2)
+        ));
+        setLootTables("dungeon", createLootEntry("minecraft:chests/simple_dungeon", "gui.structurescanner.loot.chest"));
+        setEntities("dungeon",
+            createEntityEntry("minecraft:zombie", 1, true),
+            createEntityEntry("minecraft:skeleton", 1, true),
+            createEntityEntry("minecraft:spider", 1, true));
     }
 
     private void populateStronghold() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "stronghold"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.STONEBRICK, 0, 3000),
-                createBlockEntry(Blocks.STONEBRICK, 1, 500),  // Mossy
-                createBlockEntry(Blocks.STONEBRICK, 2, 500),  // Cracked
-                createBlockEntry(Blocks.STONE_BRICK_STAIRS, 0, 200),
-                createBlockEntry(Blocks.IRON_BARS, 0, 100),
-                createBlockEntry(Blocks.IRON_DOOR, 0, 10),
-                createBlockEntry(Blocks.BOOKSHELF, 0, 100),
-                createBlockEntry(Blocks.END_PORTAL_FRAME, 0, 12),
-                createBlockEntry(Blocks.MOB_SPAWNER, 0, 1)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
+        setBlocksIfMissing("stronghold", filterNulls(
+            createBlockEntry(Blocks.STONEBRICK, 0, 3000),
+            createBlockEntry(Blocks.STONEBRICK, 1, 500),  // Mossy
+            createBlockEntry(Blocks.STONEBRICK, 2, 500),  // Cracked
+            createBlockEntry(Blocks.STONE_BRICK_STAIRS, 0, 200),
+            createBlockEntry(Blocks.IRON_BARS, 0, 100),
+            createBlockEntry(Blocks.IRON_DOOR, 0, 10),
+            createBlockEntry(Blocks.BOOKSHELF, 0, 100),
+            createBlockEntry(Blocks.END_PORTAL_FRAME, 0, 12),
+            createBlockEntry(Blocks.MOB_SPAWNER, 0, 1)
+        ));
+        setLootTables("stronghold",
             createLootEntry("minecraft:chests/stronghold_corridor", "gui.structurescanner.loot.chest"),
             createLootEntry("minecraft:chests/stronghold_crossing", "gui.structurescanner.loot.chest"),
-            createLootEntry("minecraft:chests/stronghold_library", "gui.structurescanner.loot.chest")
-        );
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "silverfish"), 1, true)
-        );
-        info.setEntities(entities);
+            createLootEntry("minecraft:chests/stronghold_library", "gui.structurescanner.loot.chest"));
+        setEntities("stronghold", createEntityEntry("minecraft:silverfish", 1, true));
     }
 
     private void populateMineshaft() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "mineshaft"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.PLANKS, 0, 500),
-                createBlockEntry(Blocks.OAK_FENCE, 0, 200),
-                createBlockEntry(Blocks.RAIL, 0, 300),
-                createBlockEntry(Blocks.TORCH, 0, 100),
-                createBlockEntry(Blocks.WEB, 0, 50),
-                createBlockEntry(Blocks.MOB_SPAWNER, 0, 1)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
-            createLootEntry("minecraft:chests/abandoned_mineshaft", "gui.structurescanner.loot.minecart_chest")
-        );
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "cave_spider"), 1, true)
-        );
-        info.setEntities(entities);
+        setBlocksIfMissing("mineshaft", filterNulls(
+            createBlockEntry(Blocks.PLANKS, 0, 500),
+            createBlockEntry(Blocks.OAK_FENCE, 0, 200),
+            createBlockEntry(Blocks.RAIL, 0, 300),
+            createBlockEntry(Blocks.TORCH, 0, 100),
+            createBlockEntry(Blocks.WEB, 0, 50),
+            createBlockEntry(Blocks.MOB_SPAWNER, 0, 1)
+        ));
+        setLootTables("mineshaft",
+            createLootEntry("minecraft:chests/abandoned_mineshaft", "gui.structurescanner.loot.minecart_chest"));
+        setEntities("mineshaft", createEntityEntry("minecraft:cave_spider", 1, true));
     }
 
     private void populateNetherFortress() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "fortress"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.NETHER_BRICK, 0, 5000),
-                createBlockEntry(Blocks.NETHER_BRICK_FENCE, 0, 500),
-                createBlockEntry(Blocks.NETHER_BRICK_STAIRS, 0, 300),
-                createBlockEntry(Blocks.NETHER_WART, 0, 50),
-                createBlockEntry(Blocks.SOUL_SAND, 0, 20),
-                createBlockEntry(Blocks.MOB_SPAWNER, 0, 2)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
-            createLootEntry("minecraft:chests/nether_bridge", "gui.structurescanner.loot.chest")
-        );
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "blaze"), 1, true),
-            new EntityEntry(new ResourceLocation("minecraft", "wither_skeleton"), 1)
-        );
-        info.setEntities(entities);
+        setBlocksIfMissing("fortress", filterNulls(
+            createBlockEntry(Blocks.NETHER_BRICK, 0, 5000),
+            createBlockEntry(Blocks.NETHER_BRICK_FENCE, 0, 500),
+            createBlockEntry(Blocks.NETHER_BRICK_STAIRS, 0, 300),
+            createBlockEntry(Blocks.NETHER_WART, 0, 50),
+            createBlockEntry(Blocks.SOUL_SAND, 0, 20),
+            createBlockEntry(Blocks.MOB_SPAWNER, 0, 2)
+        ));
+        setLootTables("fortress", createLootEntry("minecraft:chests/nether_bridge", "gui.structurescanner.loot.chest"));
+        setEntities("fortress",
+            createEntityEntry("minecraft:blaze", 1, true),
+            createEntityEntry("minecraft:wither_skeleton", 1));
     }
 
     private void populateEndCity() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "endcity"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.PURPUR_BLOCK, 0, 2000),
-                createBlockEntry(Blocks.PURPUR_PILLAR, 0, 500),
-                createBlockEntry(Blocks.PURPUR_STAIRS, 0, 300),
-                createBlockEntry(Blocks.PURPUR_SLAB, 0, 200),
-                createBlockEntry(Blocks.END_BRICKS, 0, 500),
-                createBlockEntry(Blocks.END_ROD, 0, 100),
-                createBlockEntry(Blocks.STAINED_GLASS, 2, 50)  // Magenta stained glass (meta 2)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
-            createLootEntry("minecraft:chests/end_city_treasure", "gui.structurescanner.loot.chest")
-        );
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "shulker"), 10)
-        );
-        info.setEntities(entities);
+        setBlocksIfMissing("endcity", filterNulls(
+            createBlockEntry(Blocks.PURPUR_BLOCK, 0, 2000),
+            createBlockEntry(Blocks.PURPUR_PILLAR, 0, 500),
+            createBlockEntry(Blocks.PURPUR_STAIRS, 0, 300),
+            createBlockEntry(Blocks.PURPUR_SLAB, 0, 200),
+            createBlockEntry(Blocks.END_BRICKS, 0, 500),
+            createBlockEntry(Blocks.END_ROD, 0, 100),
+            createBlockEntry(Blocks.STAINED_GLASS, 2, 50)  // Magenta stained glass (meta 2)
+        ));
+        setLootTables("endcity", createLootEntry("minecraft:chests/end_city_treasure", "gui.structurescanner.loot.chest"));
+        setEntities("endcity", createEntityEntry("minecraft:shulker", 10));
 
         // End ship info
-        StructureInfo shipInfo = structureInfos.get(new ResourceLocation("minecraft", "end_ship"));
-        if (shipInfo != null) {
-            if (shipInfo.getBlocks().isEmpty()) {
-                List<BlockEntry> shipBlocks = filterNulls(
-                    createBlockEntry(Blocks.PURPUR_BLOCK, 0, 300),
-                    createBlockEntry(Blocks.PURPUR_STAIRS, 0, 50),
-                    createBlockEntry(Blocks.OBSIDIAN, 0, 16),
-                    createBlockEntry(Blocks.END_ROD, 0, 10)
-                );
-                shipInfo.setBlocks(shipBlocks);
-            }
-
-            List<LootEntry> shipLoot = Arrays.asList(
-                createLootEntry("minecraft:chests/end_city_treasure", "gui.structurescanner.loot.chest")
-            );
-            shipInfo.setLootTables(shipLoot);
-
-            List<EntityEntry> shipEntities = Arrays.asList(
-                new EntityEntry(new ResourceLocation("minecraft", "shulker"), 3)
-            );
-            shipInfo.setEntities(shipEntities);
-        }
+        setBlocksIfMissing("end_ship", filterNulls(
+            createBlockEntry(Blocks.PURPUR_BLOCK, 0, 300),
+            createBlockEntry(Blocks.PURPUR_STAIRS, 0, 50),
+            createBlockEntry(Blocks.OBSIDIAN, 0, 16),
+            createBlockEntry(Blocks.END_ROD, 0, 10)
+        ));
+        setLootTables("end_ship", createLootEntry("minecraft:chests/end_city_treasure", "gui.structurescanner.loot.chest"));
+        setEntities("end_ship", createEntityEntry("minecraft:shulker", 3));
     }
 
     private void populateWoodlandMansion() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "mansion"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.DARK_OAK_STAIRS, 0, 1000),
-                createBlockEntry(Blocks.PLANKS, 5, 2000),  // Dark oak
-                createBlockEntry(Blocks.LOG2, 1, 500),  // Dark oak log
-                createBlockEntry(Blocks.COBBLESTONE, 0, 800),
-                createBlockEntry(Blocks.GLASS_PANE, 0, 200),
-                createBlockEntry(Blocks.CARPET, 0, 300),
-                createBlockEntry(Blocks.BOOKSHELF, 0, 100),
-                createBlockEntry(Blocks.CHEST, 0, 20)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
-            createLootEntry("minecraft:chests/woodland_mansion", "gui.structurescanner.loot.chest")
-        );
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "vindication_illager"), 10),
-            new EntityEntry(new ResourceLocation("minecraft", "evocation_illager"), 3)
-        );
-        info.setEntities(entities);
+        setBlocksIfMissing("mansion", filterNulls(
+            createBlockEntry(Blocks.DARK_OAK_STAIRS, 0, 1000),
+            createBlockEntry(Blocks.PLANKS, 5, 2000),  // Dark oak
+            createBlockEntry(Blocks.LOG2, 1, 500),  // Dark oak log
+            createBlockEntry(Blocks.COBBLESTONE, 0, 800),
+            createBlockEntry(Blocks.GLASS_PANE, 0, 200),
+            createBlockEntry(Blocks.CARPET, 0, 300),
+            createBlockEntry(Blocks.BOOKSHELF, 0, 100),
+            createBlockEntry(Blocks.CHEST, 0, 20)
+        ));
+        setLootTables("mansion", createLootEntry("minecraft:chests/woodland_mansion", "gui.structurescanner.loot.chest"));
+        setEntities("mansion",
+            createEntityEntry("minecraft:vindication_illager", 10),
+            createEntityEntry("minecraft:evocation_illager", 3));
     }
 
     private void populateVillage() {
-        StructureInfo info = structureInfos.get(new ResourceLocation("minecraft", "village"));
-        if (info == null) return;
-
-        if (info.getBlocks().isEmpty()) {
-            List<BlockEntry> blocks = filterNulls(
-                createBlockEntry(Blocks.COBBLESTONE, 0, 500),
-                createBlockEntry(Blocks.PLANKS, 0, 400),
-                createBlockEntry(Blocks.LOG, 0, 200),
-                createBlockEntry(Blocks.OAK_STAIRS, 0, 150),
-                createBlockEntry(Blocks.OAK_FENCE, 0, 100),
-                createBlockEntry(Blocks.GLASS_PANE, 0, 80),
-                createBlockEntry(Blocks.TORCH, 0, 50),
-                createBlockEntry(Blocks.CRAFTING_TABLE, 0, 5),
-                createBlockEntry(Blocks.FURNACE, 0, 5),
-                createBlockEntry(Blocks.CHEST, 0, 10),
-                createBlockEntry(Blocks.FARMLAND, 0, 100),
-                createBlockEntry(Blocks.WHEAT, 0, 100)
-            );
-            info.setBlocks(blocks);
-        }
-
-        List<LootEntry> loot = Arrays.asList(
-            createLootEntry("minecraft:chests/village_blacksmith", "gui.structurescanner.loot.chest")
-        );
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = Arrays.asList(
-            new EntityEntry(new ResourceLocation("minecraft", "villager"), 10),
-            new EntityEntry(new ResourceLocation("minecraft", "villager_golem"), 1)
-        );
-        info.setEntities(entities);
+        setBlocksIfMissing("village", filterNulls(
+            createBlockEntry(Blocks.COBBLESTONE, 0, 500),
+            createBlockEntry(Blocks.PLANKS, 0, 400),
+            createBlockEntry(Blocks.LOG, 0, 200),
+            createBlockEntry(Blocks.OAK_STAIRS, 0, 150),
+            createBlockEntry(Blocks.OAK_FENCE, 0, 100),
+            createBlockEntry(Blocks.GLASS_PANE, 0, 80),
+            createBlockEntry(Blocks.TORCH, 0, 50),
+            createBlockEntry(Blocks.CRAFTING_TABLE, 0, 5),
+            createBlockEntry(Blocks.FURNACE, 0, 5),
+            createBlockEntry(Blocks.CHEST, 0, 10),
+            createBlockEntry(Blocks.FARMLAND, 0, 100),
+            createBlockEntry(Blocks.WHEAT, 0, 100)
+        ));
+        setLootTables("village", createLootEntry("minecraft:chests/village_blacksmith", "gui.structurescanner.loot.chest"));
+        setEntities("village",
+            createEntityEntry("minecraft:villager", 10),
+            createEntityEntry("minecraft:villager_golem", 1));
     }
 
     private BlockEntry createBlockEntry(Block block, int meta, int count) {
@@ -764,33 +447,9 @@ public class VanillaStructureProvider implements StructureProvider {
         return Stream.of(elements).filter(e -> e != null).collect(Collectors.toList());
     }
 
-    private LootEntry createLootEntry(String lootTableId, String containerType) {
-        return new LootEntry(new ResourceLocation(lootTableId), Collections.emptyList(),
-            LocalizedText.translatable(containerType));
-    }
-
-    private void addStructure(String path, String displayName, int sizeX, int sizeY, int sizeZ) {
-        ResourceLocation id = new ResourceLocation("minecraft", path);
-        knownStructures.add(id);
-
-        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayName), PROVIDER_ID, sizeX, sizeY, sizeZ);
-        structureInfos.put(id, info);
-    }
-
-    @Override
-    public List<ResourceLocation> getStructureIds() {
-        return new ArrayList<>(knownStructures);
-    }
-
     @Override
     public boolean canBeSearched(ResourceLocation structureId) {
         return knownStructures.contains(structureId) && !structureId.getPath().equals("dungeon");
-    }
-
-    @Override
-    @Nullable
-    public StructureInfo getStructureInfo(ResourceLocation structureId) {
-        return structureInfos.get(structureId);
     }
 
     @Override
@@ -815,21 +474,10 @@ public class VanillaStructureProvider implements StructureProvider {
         // Sort by distance (Y-agnostic - only use X and Z)
         PositionHelper.sortByHorizontalDistance(candidates, pos);
 
-        // Apply filter and skip to find the target
-        int validIndex = 0;
-        int totalValid = 0;
-        BlockPos targetPos = null;
+        PositionHelper.FilteredPositionResult selection = PositionHelper.selectFilteredPosition(candidates, skipCount, locationFilter);
+        if (selection == null) return null;
 
-        for (BlockPos candidate : candidates) {
-            if (locationFilter != null && !locationFilter.test(candidate)) continue;
-
-            if (validIndex == skipCount && targetPos == null) targetPos = candidate;
-
-            validIndex++;
-            totalValid++;
-        }
-
-        if (targetPos == null) return null;
+        BlockPos targetPos = selection.getPosition();
 
         // Calculate terrain height for surface structures with Y=0
         if (targetPos.getY() == 0 && isSurfaceStructure(path)) {
@@ -840,7 +488,7 @@ public class VanillaStructureProvider implements StructureProvider {
 
         boolean yAgnostic = targetPos.getY() == 0;
 
-        return new StructureLocation(targetPos, skipCount, totalValid, yAgnostic);
+        return new StructureLocation(targetPos, skipCount, selection.getTotalMatches(), yAgnostic);
     }
 
     /**

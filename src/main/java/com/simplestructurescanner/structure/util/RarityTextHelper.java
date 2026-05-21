@@ -19,6 +19,14 @@ public final class RarityTextHelper {
         return oneInChunks(Math.max(1L, Math.round(chunks)));
     }
 
+    /**
+     * Combine a random chance with a minimum separation rule. The displayed rarity
+     * should respect whichever constraint makes the structure rarer in practice.
+     */
+    public static LocalizedText withMinimumSpacing(double rawChunks, double minDistanceBlocks) {
+        return oneInChunks(Math.max(rawChunks, minimumSpacingChunks(minDistanceBlocks)));
+    }
+
     public static double chunksFromProbability(double probability) {
         if (probability <= 0.0D) return Double.POSITIVE_INFINITY;
 

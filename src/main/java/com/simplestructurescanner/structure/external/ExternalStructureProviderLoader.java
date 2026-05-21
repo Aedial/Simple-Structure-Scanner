@@ -29,9 +29,11 @@ import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.config.ModConfig;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
+import com.simplestructurescanner.structure.ParsedStructureApplier;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.util.RarityTextHelper;
 
 
 /**
@@ -118,7 +120,7 @@ public final class ExternalStructureProviderLoader {
     }
 
     @Nullable
-        private static StructureInfo parseStructure(String providerId, JsonObject structureObject, File file,
+    private static StructureInfo parseStructure(String providerId, JsonObject structureObject, File file,
             String nbtRoot) {
         String idText = readRequiredString(structureObject, "id", file);
         ResourceLocation id = new ResourceLocation(idText);
@@ -141,7 +143,7 @@ public final class ExternalStructureProviderLoader {
         Set<Biome> biomes = readBiomes(structureObject.get("biomes"), file);
         if (!biomes.isEmpty()) info.setValidBiomes(biomes);
 
-    Set<DimensionInfo> dimensions = readDimensions(structureObject.get("dimensions"), file);
+        Set<DimensionInfo> dimensions = readDimensions(structureObject.get("dimensions"), file);
         if (!dimensions.isEmpty()) info.setValidDimensions(dimensions);
 
         applyRarity(info, structureObject);
@@ -170,10 +172,7 @@ public final class ExternalStructureProviderLoader {
     }
 
     private static void applyParsedNbt(StructureInfo info, StructureNBTParser.ParsedStructure parsedNbt) {
-        if (!parsedNbt.blocks.isEmpty()) info.setBlocks(parsedNbt.blocks);
-        if (!parsedNbt.layers.isEmpty()) info.setLayers(parsedNbt.layers);
-        if (!parsedNbt.entities.isEmpty()) info.setEntities(parsedNbt.entities);
-        if (!parsedNbt.lootTables.isEmpty()) info.setLootTables(parsedNbt.lootTables);
+        ParsedStructureApplier.apply(info, parsedNbt);
     }
 
     @Nullable
@@ -204,8 +203,7 @@ public final class ExternalStructureProviderLoader {
 
         int rarityChunks = readOptionalInt(structureObject, "rarityChunks", -1);
         if (rarityChunks > 0) {
-            info.setRarity(LocalizedText.translatable("gui.structurescanner.rarity",
-                LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", rarityChunks)));
+            info.setRarity(RarityTextHelper.oneInChunks(rarityChunks));
             return;
         }
 

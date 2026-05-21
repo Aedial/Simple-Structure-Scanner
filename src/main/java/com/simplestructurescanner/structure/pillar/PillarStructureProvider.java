@@ -2,7 +2,6 @@ package com.simplestructurescanner.structure.pillar;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,17 +18,18 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.common.DimensionManager;
-import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.AbstractStructureProvider;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
+import com.simplestructurescanner.structure.ParsedStructureApplier;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
-import com.simplestructurescanner.structure.StructureProvider;
 import com.simplestructurescanner.structure.StructureSearchOverrides;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.util.PositionHelper;
+import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionException;
 
@@ -46,10 +46,11 @@ import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionExce
  * reflection and replicates the generation decisions without touching
  * the real world.
  */
-public class PillarStructureProvider implements StructureProvider {
+public class PillarStructureProvider extends AbstractStructureProvider {
 
     private static final String PROVIDER_ID = "pillar";
     private static final String MOD_ID = "pillar";
+    private static final String MOD_NAME = "gui.structurescanner.providers.pillar";
     private static final int CHUNK_COORDINATE_SHIFT = 4;
     private static final int CHUNK_CACHE_MAINTENANCE_INTERVAL = 500;
     private static final int MAX_CACHED_VALIDATION_CHUNKS = 500;
@@ -59,9 +60,7 @@ public class PillarStructureProvider implements StructureProvider {
     // Max time to spend searching in milliseconds before giving up
     private static final long MAX_SCAN_TIME_MS = 10000;
 
-    private List<ResourceLocation> structureIds = null;
     private Map<ResourceLocation, PillarSchemaProxy> schemaMap = null;
-    private final Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
 
     /**
      * Schemas in Pillar's natural {@code Object2ObjectOpenHashMap} iteration order.
@@ -73,6 +72,10 @@ public class PillarStructureProvider implements StructureProvider {
     private float rarityMultiplier = 1.0f;
     private int maxStructuresInOneChunk = 1;
 
+    public PillarStructureProvider() {
+        super(PROVIDER_ID, MOD_ID, MOD_NAME, MOD_ID);
+    }
+
     private static final class ScanOutcome {
         private final List<BlockPos> positions;
         private final int chunksSearched;
@@ -83,21 +86,6 @@ public class PillarStructureProvider implements StructureProvider {
             this.chunksSearched = chunksSearched;
             this.timedOut = timedOut;
         }
-    }
-
-    @Override
-    public String getProviderId() {
-        return PROVIDER_ID;
-    }
-
-    @Override
-    public String getModName() {
-        return "gui.structurescanner.providers.pillar";
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return Loader.isModLoaded(MOD_ID);
     }
 
     @Override
@@ -164,9 +152,7 @@ public class PillarStructureProvider implements StructureProvider {
             if (info == null) continue;
 
             // Set rarity based on schema rarity value
-            long rounded = Math.round(schema.rarity);
-            info.setRarity(LocalizedText.translatable("gui.structurescanner.rarity",
-                LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", rounded)));
+            info.setRarity(RarityTextHelper.oneInChunks(schema.rarity));
 
             Set<Biome> biomes = resolveBiomes(schema);
             if (biomes != null && !biomes.isEmpty()) info.setValidBiomes(biomes);
@@ -202,23 +188,19 @@ public class PillarStructureProvider implements StructureProvider {
                 continue;
             }
 
-            // Set blocks, layers, entities, and loot tables
-            if (!parsed.blocks.isEmpty()) info.setBlocks(parsed.blocks);
-            if (!parsed.layers.isEmpty()) info.setLayers(parsed.layers);
-            if (!parsed.entities.isEmpty()) info.setEntities(parsed.entities);
-            if (!parsed.lootTables.isEmpty()) info.setLootTables(parsed.lootTables);
+            ParsedStructureApplier.apply(info, parsed);
         }
     }
 
     @Override
     public List<ResourceLocation> getStructureIds() {
-        if (structureIds == null) {
+        if (schemaMap == null) {
             SimpleStructureScanner.LOGGER.warn("Pillar structure IDs requested before postInit was called");
 
             return new ArrayList<>();
         }
 
-        return structureIds;
+        return super.getStructureIds();
     }
 
     @Override
@@ -227,12 +209,6 @@ public class PillarStructureProvider implements StructureProvider {
         if (schema == null) return false;
 
         return schema.generatorType != PillarGeneratorType.NONE;
-    }
-
-    @Override
-    @Nullable
-    public StructureInfo getStructureInfo(ResourceLocation structureId) {
-        return structureInfos.get(structureId);
     }
 
     @Override
@@ -261,24 +237,13 @@ public class PillarStructureProvider implements StructureProvider {
 
         PositionHelper.sortByHorizontalDistance(allCandidates, pos);
 
-        int validIndex = 0;
-        int totalValid = 0;
-        BlockPos targetPos = null;
+        PositionHelper.FilteredPositionResult selection = PositionHelper.selectFilteredPosition(allCandidates, skipCount, locationFilter);
+        if (selection == null) return null;
 
-        for (BlockPos candidate : allCandidates) {
-            if (locationFilter != null && !locationFilter.test(candidate)) continue;
-
-            if (validIndex == skipCount && targetPos == null) targetPos = candidate;
-
-            validIndex++;
-            totalValid++;
-        }
-
-        if (targetPos == null) return null;
-
+        BlockPos targetPos = selection.getPosition();
         boolean yAgnostic = targetPos.getY() == 0;
 
-        return new StructureLocation(targetPos, skipCount, totalValid, yAgnostic);
+        return new StructureLocation(targetPos, skipCount, selection.getTotalMatches(), yAgnostic);
     }
 
     @Override
@@ -396,9 +361,8 @@ public class PillarStructureProvider implements StructureProvider {
     @SuppressWarnings("unchecked")
     private void loadSchemas() {
         schemasInOrder = new ArrayList<>();
-        structureIds = new ArrayList<>();
+        resetStructures();
         schemaMap = new LinkedHashMap<>();
-        structureInfos.clear();
 
         try {
             Class<?> structureLoaderClass = ReflectionHelper.loadClassRequired("vazkii.pillar.StructureLoader");
@@ -430,7 +394,7 @@ public class PillarStructureProvider implements StructureProvider {
         boolean hidden = StructureSearchOverrides.isStructureHidden(PROVIDER_ID, id);
 
         schemasInOrder.add(schema);
-        if (!hidden && !schemaMap.containsKey(id)) structureIds.add(id);
+        if (!hidden && !knownStructures.contains(id)) knownStructures.add(id);
 
         schemaMap.put(id, schema);
         if (hidden) return;

@@ -3,7 +3,6 @@ package com.simplestructurescanner.structure.aether;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -15,17 +14,14 @@ import javax.annotation.Nullable;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
-import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.AbstractStructureProvider;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
-import com.simplestructurescanner.structure.StructureInfo;
-import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
-import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
-import com.simplestructurescanner.structure.StructureProvider;
 import com.simplestructurescanner.structure.util.PositionHelper;
+import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.SeedHelper;
 
 
@@ -34,12 +30,10 @@ import com.simplestructurescanner.structure.util.SeedHelper;
  * Uses seed-based algorithms to locate Silver and Gold dungeons.
  * Bronze dungeons are not searchable as they depend on terrain.
  */
-public class AetherStructureProvider implements StructureProvider {
+public class AetherStructureProvider extends AbstractStructureProvider {
     private static final String PROVIDER_ID = "aether_legacy";
     private static final String MOD_ID = "aether_legacy";
-
-    private List<ResourceLocation> knownStructures;
-    private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
+    private static final String MOD_NAME = "gui.structurescanner.provider.aether";
 
     // Cache: seed -> list of dungeon positions
     private static final Map<Long, List<BlockPos>> silverDungeonCache = new HashMap<>();
@@ -63,38 +57,24 @@ public class AetherStructureProvider implements StructureProvider {
     private int goldSecondaryChance = DEFAULT_GOLD_SECONDARY_CHANCE;
 
     public AetherStructureProvider() {
-    }
-
-    @Override
-    public String getProviderId() {
-        return PROVIDER_ID;
-    }
-
-    @Override
-    public String getModName() {
-        return "gui.structurescanner.provider.aether";
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return Loader.isModLoaded(MOD_ID);
+        super(PROVIDER_ID, MOD_ID, MOD_NAME, MOD_ID);
     }
 
     @Override
     public void postInit() {
-        knownStructures = new ArrayList<>();
+        resetStructures();
 
         // Load config values via reflection to avoid hard dependency
         loadAetherConfig();
 
         // Silver Dungeon (Valkyrie Queen)
-        addStructure("silver_dungeon", "gui.structurescanner.structures.aether.silver_dungeon", 81, 40, 31);
+        registerStructure("silver_dungeon", "gui.structurescanner.structures.aether.silver_dungeon", 81, 40, 31);
 
         // Gold Dungeon (Sun Spirit)
-        addStructure("gold_dungeon", "gui.structurescanner.structures.aether.gold_dungeon", 0, 0, 0);
+        registerStructure("gold_dungeon", "gui.structurescanner.structures.aether.gold_dungeon", 0, 0, 0);
 
         // Bronze Dungeon (Slider) - not searchable due to terrain dependency
-        addStructure("bronze_dungeon", "gui.structurescanner.structures.aether.bronze_dungeon", 16, 12, 16);
+        registerStructure("bronze_dungeon", "gui.structurescanner.structures.aether.bronze_dungeon", 16, 12, 16);
 
         // Add metadata
         populateStructureMetadata();
@@ -130,14 +110,6 @@ public class AetherStructureProvider implements StructureProvider {
         }
     }
 
-    private void addStructure(String path, String displayNameKey, int sizeX, int sizeY, int sizeZ) {
-        ResourceLocation id = new ResourceLocation(MOD_ID, path);
-        knownStructures.add(id);
-
-        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayNameKey), PROVIDER_ID, sizeX, sizeY, sizeZ);
-        structureInfos.put(id, info);
-    }
-
     private void populateStructureMetadata() {
         Set<DimensionInfo> aetherDim = Collections.singleton(new DimensionInfo(aetherDimensionId, "gui.structurescanner.dimension.aether"));
 
@@ -152,7 +124,7 @@ public class AetherStructureProvider implements StructureProvider {
         setMetadata("gold_dungeon", null, aetherDim, goldRarity);
 
         // Bronze: common but not searchable
-        setMetadata("bronze_dungeon", null, aetherDim, wrapRarity("gui.structurescanner.rarity.common"));
+        setMetadata("bronze_dungeon", null, aetherDim, "gui.structurescanner.rarity.common");
     }
 
     /**
@@ -174,21 +146,7 @@ public class AetherStructureProvider implements StructureProvider {
         double chunksPerDungeon = chunksPerCell / pSpawn;
 
         // Format nicely
-        long rounded = Math.round(chunksPerDungeon);
-        return LocalizedText.translatable("gui.structurescanner.rarity",
-            LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", rounded));
-    }
-
-    private LocalizedText wrapRarity(String rarityKey) {
-        return LocalizedText.translatable("gui.structurescanner.rarity", LocalizedText.translatable(rarityKey));
-    }
-
-    private void setMetadata(String path, Set<?> biomes, Set<DimensionInfo> dimensions, LocalizedText rarity) {
-        StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, path));
-        if (info == null) return;
-
-        info.setValidDimensions(dimensions);
-        info.setRarity(rarity);
+        return RarityTextHelper.oneInChunks(chunksPerDungeon);
     }
 
     private void populateStructureContents() {
@@ -198,56 +156,28 @@ public class AetherStructureProvider implements StructureProvider {
     }
 
     private void populateSilverDungeon() {
-        StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, "silver_dungeon"));
-        if (info == null) return;
-
-        List<LootEntry> loot = new ArrayList<>();
-        loot.add(createLootEntry("aether_legacy:chests/silver_dungeon_chest", "gui.structurescanner.loot.chest"));
-        loot.add(createLootEntry("aether_legacy:chests/silver_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = new ArrayList<>();
-        entities.add(new EntityEntry(new ResourceLocation("aether_legacy", "valkyrie_queen"), 1, false));
-        entities.add(new EntityEntry(new ResourceLocation("aether_legacy", "valkyrie"), 3, false));
-        entities.add(new EntityEntry(new ResourceLocation("aether_legacy", "mimic"), 3, false));
-        info.setEntities(entities);
+        setLootTables("silver_dungeon",
+            createLootEntry("aether_legacy:chests/silver_dungeon_chest", "gui.structurescanner.loot.chest"),
+            createLootEntry("aether_legacy:chests/silver_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
+        setEntities("silver_dungeon",
+            createEntityEntry("aether_legacy:valkyrie_queen", 1),
+            createEntityEntry("aether_legacy:valkyrie", 3),
+            createEntityEntry("aether_legacy:mimic", 3));
     }
 
     private void populateGoldDungeon() {
-        StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, "gold_dungeon"));
-        if (info == null) return;
-
-        List<LootEntry> loot = new ArrayList<>();
-        loot.add(createLootEntry("aether_legacy:chests/gold_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = new ArrayList<>();
-        entities.add(new EntityEntry(new ResourceLocation("aether_legacy", "sun_spirit"), 1, false));
-        info.setEntities(entities);
+        setLootTables("gold_dungeon",
+            createLootEntry("aether_legacy:chests/gold_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
+        setEntities("gold_dungeon", createEntityEntry("aether_legacy:sun_spirit", 1));
     }
 
     private void populateBronzeDungeon() {
-        StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, "bronze_dungeon"));
-        if (info == null) return;
-
-        List<LootEntry> loot = new ArrayList<>();
-        loot.add(createLootEntry("aether_legacy:chests/bronze_dungeon_chest", "gui.structurescanner.loot.chest"));
-        loot.add(createLootEntry("aether_legacy:chests/bronze_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
-        info.setLootTables(loot);
-
-        List<EntityEntry> entities = new ArrayList<>();
-        entities.add(new EntityEntry(new ResourceLocation("aether_legacy", "slider"), 1, false));
-        entities.add(new EntityEntry(new ResourceLocation("aether_legacy", "mimic"), 3, false));
-        info.setEntities(entities);
-    }
-
-    private LootEntry createLootEntry(String lootTable, String displayNameKey) {
-        return new LootEntry(new ResourceLocation(lootTable), Collections.emptyList(), LocalizedText.translatable(displayNameKey));
-    }
-
-    @Override
-    public List<ResourceLocation> getStructureIds() {
-        return new ArrayList<>(knownStructures);
+        setLootTables("bronze_dungeon",
+            createLootEntry("aether_legacy:chests/bronze_dungeon_chest", "gui.structurescanner.loot.chest"),
+            createLootEntry("aether_legacy:chests/bronze_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
+        setEntities("bronze_dungeon",
+            createEntityEntry("aether_legacy:slider", 1),
+            createEntityEntry("aether_legacy:mimic", 3));
     }
 
     @Override
@@ -257,13 +187,6 @@ public class AetherStructureProvider implements StructureProvider {
         // Bronze dungeon can technically be searched, but it's terrain-dependent so very annoying
         return !structureId.getPath().equals("bronze_dungeon");
     }
-
-    @Override
-    @Nullable
-    public StructureInfo getStructureInfo(ResourceLocation structureId) {
-        return structureInfos.get(structureId);
-    }
-
     @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
@@ -278,38 +201,27 @@ public class AetherStructureProvider implements StructureProvider {
         }
 
         String path = structureId.getPath();
-        List<BlockPos> candidates = getCachedDungeons(path, pos, seed);
+        List<BlockPos> candidates = getCachedDungeons(path, seed);
         if (candidates.isEmpty()) return null;
 
         // Make a copy for sorting
         candidates = new ArrayList<>(candidates);
         PositionHelper.sortByHorizontalDistance(candidates, pos);
 
-        // Apply filter and skip to find the target
-        int validIndex = 0;
-        int totalValid = 0;
-        BlockPos targetPos = null;
+        PositionHelper.FilteredPositionResult selection = PositionHelper.selectFilteredPosition(candidates, skipCount, locationFilter);
+        if (selection == null) return null;
 
-        for (BlockPos candidate : candidates) {
-            if (locationFilter != null && !locationFilter.test(candidate)) continue;
-
-            if (validIndex == skipCount && targetPos == null) targetPos = candidate;
-
-            validIndex++;
-            totalValid++;
-        }
-
-        if (targetPos == null) return null;
+        BlockPos targetPos = selection.getPosition();
 
         // Calculate deterministic Y offset for the structure
         int yOffset = calculateStructureYOffset(path, seed, targetPos.getX() >> 4, targetPos.getZ() >> 4);
         if (yOffset >= 0) {
             targetPos = new BlockPos(targetPos.getX(), yOffset, targetPos.getZ());
-            return new StructureLocation(targetPos, skipCount, totalValid, false);
+            return new StructureLocation(targetPos, skipCount, selection.getTotalMatches(), false);
         }
 
         // Fallback: Y is unknown, mark as y-agnostic
-        return new StructureLocation(targetPos, skipCount, totalValid, true);
+        return new StructureLocation(targetPos, skipCount, selection.getTotalMatches(), true);
     }
 
     @Override
@@ -321,7 +233,7 @@ public class AetherStructureProvider implements StructureProvider {
         if (seed == null) return Collections.emptyList();
 
         String path = structureId.getPath();
-        List<BlockPos> results = new ArrayList<>(getCachedDungeons(path, pos, seed));
+        List<BlockPos> results = new ArrayList<>(getCachedDungeons(path, seed));
         PositionHelper.sortByHorizontalDistance(results, pos);
         results = results.subList(0, Math.min(maxResults, results.size()));
 
@@ -355,7 +267,7 @@ public class AetherStructureProvider implements StructureProvider {
     /**
      * Get cached dungeon positions or calculate and cache them.
      */
-    private List<BlockPos> getCachedDungeons(String structureType, BlockPos pos, long seed) {
+    private List<BlockPos> getCachedDungeons(String structureType, long seed) {
         switch (structureType) {
             case "silver_dungeon":
                 if (!silverDungeonCache.containsKey(seed)) {

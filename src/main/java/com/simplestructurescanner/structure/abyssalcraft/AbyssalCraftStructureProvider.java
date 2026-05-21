@@ -18,16 +18,12 @@ import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.BiomeProvider;
 import net.minecraftforge.common.BiomeDictionary;
-import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.AbstractStructureProvider;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
-import com.simplestructurescanner.structure.StructureInfo;
-import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
-import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
-import com.simplestructurescanner.structure.StructureProvider;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
@@ -38,7 +34,7 @@ import com.simplestructurescanner.structure.util.SeedHelper;
  * Structure provider for AbyssalCraft mod.
  * Provides location data for AC's major structures.
  */
-public class AbyssalCraftStructureProvider implements StructureProvider {
+public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
 
     private static final String PROVIDER_ID = "abyssalcraft";
     private static final String MOD_ID = "abyssalcraft";
@@ -55,9 +51,6 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
     private static final double OMOTHOL_INTERNAL_GRAVEYARD_CHUNKS = 50.0D;
     private static final double STRONGHOLD_OUTER_RING_RADIUS_CHUNKS = 1472.0D;
     private static final int STRONGHOLD_COUNT = 128;
-
-    private List<ResourceLocation> knownStructures;
-    private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
 
     // Cache: seed -> list of AbyStronghold positions
     private static final Map<Long, List<BlockPos>> abyStrongholdCache = new HashMap<>();
@@ -77,25 +70,13 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
     private int graveyardGenerationDistance = DEFAULT_GRAVEYARD_MIN_DISTANCE;
 
     public AbyssalCraftStructureProvider() {
-    }
-
-    @Override
-    public String getProviderId() {
-        return PROVIDER_ID;
-    }
-
-    @Override
-    public String getModName() {
-        return MOD_NAME;
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return Loader.isModLoaded(MOD_ID);
+        super(PROVIDER_ID, MOD_ID, MOD_NAME, MOD_ID);
     }
 
     @Override
     public void postInit() {
+        resetStructures();
+
         // Get dimension IDs from ACLib
         try {
             Class<?> acLibClass = ReflectionHelper.loadClassRequired("com.shinoow.abyssalcraft.lib.ACLib");
@@ -117,35 +98,25 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
 
         loadConfig();
 
-        knownStructures = new ArrayList<>();
-
         // Abyssal Wasteland structures
-        addStructure("aby_stronghold", "gui.structurescanner.structures.abyssalcraft.aby_stronghold", 0, 0, 0);
+        registerStructure("aby_stronghold", "gui.structurescanner.structures.abyssalcraft.aby_stronghold", 0, 0, 0);
 
         // Dreadlands structures
-        addStructure("dreadlands_mineshaft", "gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft", 0, 0, 0);
+        registerStructure("dreadlands_mineshaft", "gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft", 0, 0, 0);
 
         // TODO: Add Chagaroth's Lair?
 
         // Omothol structures
-        addStructure("jzahar_temple", "gui.structurescanner.structures.abyssalcraft.jzahar_temple", 64, 30, 96);
-        addStructure("omothol_city", "gui.structurescanner.structures.abyssalcraft.omothol_city", 0, 0, 0);
-        addStructure("omothol_storage", "gui.structurescanner.structures.abyssalcraft.omothol_storage", 17, 10, 18);
+        registerStructure("jzahar_temple", "gui.structurescanner.structures.abyssalcraft.jzahar_temple", 64, 30, 96);
+        registerStructure("omothol_city", "gui.structurescanner.structures.abyssalcraft.omothol_city", 0, 0, 0);
+        registerStructure("omothol_storage", "gui.structurescanner.structures.abyssalcraft.omothol_storage", 17, 10, 18);
 
         // Cross-dimension structures
-        addStructure("shoggoth_lair", "gui.structurescanner.structures.abyssalcraft.shoggoth_lair", 28, 15, 28);
-        addStructure("graveyard", "gui.structurescanner.structures.abyssalcraft.graveyard", 16, 8, 16);
+        registerStructure("shoggoth_lair", "gui.structurescanner.structures.abyssalcraft.shoggoth_lair", 28, 15, 28);
+        registerStructure("graveyard", "gui.structurescanner.structures.abyssalcraft.graveyard", 16, 8, 16);
 
         populateStructureMetadata();
         populateStructureContents();
-    }
-
-    private void addStructure(String path, String displayName, int sizeX, int sizeY, int sizeZ) {
-        ResourceLocation id = new ResourceLocation(MOD_ID, path);
-        knownStructures.add(id);
-
-        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayName), PROVIDER_ID, sizeX, sizeY, sizeZ);
-        structureInfos.put(id, info);
     }
 
     private void loadConfig() {
@@ -264,103 +235,45 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
     }
 
     private LocalizedText calculateApproximateRarity(double rawChunks, double minDistanceBlocks) {
-        return RarityTextHelper.oneInChunks(calculateApproximateChunks(rawChunks, minDistanceBlocks));
+        return RarityTextHelper.withMinimumSpacing(rawChunks, minDistanceBlocks);
     }
 
     private double calculateApproximateChunks(double rawChunks, double minDistanceBlocks) {
         return Math.max(rawChunks, RarityTextHelper.minimumSpacingChunks(minDistanceBlocks));
     }
 
-    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, LocalizedText rarity) {
-        StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, path));
-        if (info == null) return;
-
-        info.setValidBiomes(biomes);
-        info.setValidDimensions(dimensions);
-        info.setRarity(rarity);
-    }
-
     private void populateStructureContents() {
         // AbyStronghold - contains portal room like vanilla stronghold
-        StructureInfo abyStronghold = structureInfos.get(new ResourceLocation(MOD_ID, "aby_stronghold"));
-        if (abyStronghold != null) {
-            List<LootEntry> loot = new ArrayList<>();
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/stronghold_corridor"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/stronghold_crossing"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            abyStronghold.setLootTables(loot);
-
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "abyssalzombie"), 1, true));
-            abyStronghold.setEntities(entities);
-        }
+        setLootTables("aby_stronghold",
+            createLootEntry("abyssalcraft:chests/stronghold_corridor", "gui.structurescanner.loot.chest"),
+            createLootEntry("abyssalcraft:chests/stronghold_crossing", "gui.structurescanner.loot.chest"));
+        setEntities("aby_stronghold", createEntityEntry("abyssalcraft:abyssalzombie", 1, true));
 
         // Dreadlands Mineshaft
-        StructureInfo dreadMine = structureInfos.get(new ResourceLocation(MOD_ID, "dreadlands_mineshaft"));
-        if (dreadMine != null) {
-            List<LootEntry> loot = Collections.singletonList(
-                new LootEntry(new ResourceLocation("abyssalcraft", "chests/mineshaft"),
-                    Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.minecart_chest"))
-            );
-            dreadMine.setLootTables(loot);
-        }
+        setLootTables("dreadlands_mineshaft",
+            createLootEntry("abyssalcraft:chests/mineshaft", "gui.structurescanner.loot.minecart_chest"));
 
         // J'zahar Temple - boss arena
-        StructureInfo jzaharTemple = structureInfos.get(new ResourceLocation(MOD_ID, "jzahar_temple"));
-        if (jzaharTemple != null) {
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "jzahar"), 1, false));
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "jzaharminion"), 3, false));
-            jzaharTemple.setEntities(entities);
-        }
+        setEntities("jzahar_temple",
+            createEntityEntry("abyssalcraft:jzahar", 1),
+            createEntityEntry("abyssalcraft:jzaharminion", 3));
 
         // Omothol City - various building types with different loot
-        StructureInfo omotholCity = structureInfos.get(new ResourceLocation(MOD_ID, "omothol_city"));
-        if (omotholCity != null) {
-            List<LootEntry> loot = new ArrayList<>();
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/blacksmith"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/house"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/library"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/farmhouse"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            omotholCity.setLootTables(loot);
-
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "remnant"), 10, false));
-            omotholCity.setEntities(entities);
-        }
+        setLootTables("omothol_city",
+            createLootEntry("abyssalcraft:chests/omothol/blacksmith", "gui.structurescanner.loot.chest"),
+            createLootEntry("abyssalcraft:chests/omothol/house", "gui.structurescanner.loot.chest"),
+            createLootEntry("abyssalcraft:chests/omothol/library", "gui.structurescanner.loot.chest"),
+            createLootEntry("abyssalcraft:chests/omothol/farmhouse", "gui.structurescanner.loot.chest"));
+        setEntities("omothol_city", createEntityEntry("abyssalcraft:remnant", 10));
 
         // Omothol Storage - storage building with crates
-        StructureInfo omotholStorage = structureInfos.get(new ResourceLocation(MOD_ID, "omothol_storage"));
-        if (omotholStorage != null) {
-            List<LootEntry> loot = new ArrayList<>();
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/storage_junk"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.crate")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/storage_treasure"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.crate")));
-            omotholStorage.setLootTables(loot);
-
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "shoggoth"), 1, false));
-            omotholStorage.setEntities(entities);
-        }
+        setLootTables("omothol_storage",
+            createLootEntry("abyssalcraft:chests/omothol/storage_junk", "gui.structurescanner.loot.crate"),
+            createLootEntry("abyssalcraft:chests/omothol/storage_treasure", "gui.structurescanner.loot.crate"));
+        setEntities("omothol_storage", createEntityEntry("abyssalcraft:shoggoth", 1));
 
         // Shoggoth Lair
-        StructureInfo shoggothLair = structureInfos.get(new ResourceLocation(MOD_ID, "shoggoth_lair"));
-        if (shoggothLair != null) {
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "shoggoth"), 1, false));
-            shoggothLair.setEntities(entities);
-        }
-    }
-
-    @Override
-    public List<ResourceLocation> getStructureIds() {
-        return new ArrayList<>(knownStructures);
+        setEntities("shoggoth_lair", createEntityEntry("abyssalcraft:shoggoth", 1));
     }
 
     @Override
@@ -370,13 +283,6 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         // Only deterministic structures can be searched
         return path.equals("aby_stronghold") || path.equals("jzahar_temple");
     }
-
-    @Override
-    @Nullable
-    public StructureInfo getStructureInfo(ResourceLocation structureId) {
-        return structureInfos.get(structureId);
-    }
-
     @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
@@ -410,25 +316,13 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         candidates = new ArrayList<>(candidates);
         PositionHelper.sortByHorizontalDistance(candidates, pos);
 
-        // Apply filter and skip to find the target
-        int validIndex = 0;
-        int totalValid = 0;
-        BlockPos targetPos = null;
+        PositionHelper.FilteredPositionResult selection = PositionHelper.selectFilteredPosition(candidates, skipCount, locationFilter);
+        if (selection == null) return null;
 
-        for (BlockPos candidate : candidates) {
-            if (locationFilter != null && !locationFilter.test(candidate)) continue;
-
-            if (validIndex == skipCount && targetPos == null) targetPos = candidate;
-
-            validIndex++;
-            totalValid++;
-        }
-
-        if (targetPos == null) return null;
-
+        BlockPos targetPos = selection.getPosition();
         boolean yAgnostic = targetPos.getY() == 0;
 
-        return new StructureLocation(targetPos, skipCount, totalValid, yAgnostic);
+        return new StructureLocation(targetPos, skipCount, selection.getTotalMatches(), yAgnostic);
     }
 
     /**
