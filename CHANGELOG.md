@@ -8,6 +8,15 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
+## [1.1.0] - 2026-05-23
+### Added
+- Add the Structure Capture Ruler, a tool that allows you to select two corners in-world and save the structure as an NBT file, with options to review and exclude blocks/entities/loot entries before saving. Use it to easily save structure previews for providers (or other mods) without manually entering the full structure description in the provider.
+- Populate the structure preview with the captured structure data for all existing providers, allowing accurate preview and content display for these structures.
+
+### Fixed
+- Fix Pillar structure provider using client code, causing crashes on dedicated servers
+
+
 ## [1.0.1] - 2026-05-20
 ### Added
 - Add proper rarity numbers to Vanilla, Ice and Fire, and AbyssalCraft providers
