@@ -42,5 +42,26 @@ public class NetworkHandler {
             packetId++,
             Side.SERVER
         );
+
+        INSTANCE.registerMessage(
+            PacketRequestStructureCapturePreview.Handler.class,
+            PacketRequestStructureCapturePreview.class,
+            packetId++,
+            Side.SERVER
+        );
+
+        INSTANCE.registerMessage(
+            PacketStructureCapturePreview.Handler.class,
+            PacketStructureCapturePreview.class,
+            packetId++,
+            Side.CLIENT
+        );
+
+        INSTANCE.registerMessage(
+            PacketRequestStructureCaptureSave.Handler.class,
+            PacketRequestStructureCaptureSave.class,
+            packetId++,
+            Side.SERVER
+        );
     }
 }

@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.lwjgl.opengl.GL11;
 import org.lwjgl.input.Keyboard;
 
 import net.minecraft.client.Minecraft;
@@ -12,20 +11,11 @@ import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.RenderHelper;
-import net.minecraft.client.renderer.Tessellator;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.client.renderer.texture.TextureMap;
-import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.util.ITooltipFlag;
-import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.client.resources.I18n;
-import net.minecraftforge.fluids.Fluid;
-import net.minecraftforge.fluids.FluidStack;
-import net.minecraftforge.fluids.FluidUtil;
 
 import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.integration.JEIHelper;
@@ -83,15 +73,6 @@ public class GuiBlocksWindow {
     public void hide() {
         visible = false;
         hiddenForNavigation = false;
-        hoveredItemIndex = -1;
-        hoveringCount = false;
-        countHoverIndex = -1;
-        hoveringTotal = false;
-    }
-
-    private void hideForNavigation() {
-        visible = false;
-        hiddenForNavigation = true;
         hoveredItemIndex = -1;
         hoveringCount = false;
         countHoverIndex = -1;
@@ -307,7 +288,7 @@ public class GuiBlocksWindow {
                 Gui.drawRect(itemX - 1, itemY - 1, itemX + 17, itemY + 17, 0xFF555555);
             }
 
-            drawBlockEntry(mc, entry, itemX, itemY);
+            GuiBlockEntryRenderer.render(mc, entry, itemX, itemY);
 
             // Draw count below item
             String countStr = entry.formatCount();
@@ -332,76 +313,6 @@ public class GuiBlocksWindow {
         RenderHelper.disableStandardItemLighting();
         GlStateManager.disableDepth();
         GlStateManager.popMatrix();
-    }
-
-    /**
-     * Draw the block or fluid entry in the item slot.
-     *
-     * @param mc The Minecraft instance
-     * @param entry The block entry to draw
-     * @param itemX The X position of the item slot
-     * @param itemY The Y position of the item slot
-     */
-    private void drawBlockEntry(Minecraft mc, BlockEntry entry, int itemX, int itemY) {
-        if (entry.displayStack != null) {
-            mc.getRenderItem().renderItemIntoGUI(entry.displayStack, itemX, itemY);
-
-            return;
-        }
-
-        if (entry.displayFluid == null || renderFluidIntoGui(mc, entry.displayFluid, itemX, itemY)) return;
-
-        ItemStack filledBucket = FluidUtil.getFilledBucket(entry.displayFluid);
-        if (!filledBucket.isEmpty()) mc.getRenderItem().renderItemIntoGUI(filledBucket, itemX, itemY);
-    }
-
-    private boolean renderFluidIntoGui(Minecraft mc, FluidStack fluidStack, int itemX, int itemY) {
-        Fluid fluid = fluidStack.getFluid();
-        if (fluid == null) return false;
-
-        ResourceLocation stillTexture = fluid.getStill();
-        if (stillTexture == null) return false;
-
-        TextureAtlasSprite sprite = mc.getTextureMapBlocks().getAtlasSprite(stillTexture.toString());
-        if (sprite == null) return false;
-
-        int color = fluid.getColor(fluidStack);
-        float alpha = (float) (color >> 24 & 255) / 255.0F;
-        float red = (float) (color >> 16 & 255) / 255.0F;
-        float green = (float) (color >> 8 & 255) / 255.0F;
-        float blue = (float) (color & 255) / 255.0F;
-        if (alpha <= 0.0F) alpha = 1.0F;
-
-        RenderHelper.disableStandardItemLighting();
-        GlStateManager.disableLighting();
-        GlStateManager.enableBlend();
-        GlStateManager.color(red, green, blue, alpha);
-
-        mc.getTextureManager().bindTexture(TextureMap.LOCATION_BLOCKS_TEXTURE);
-        drawTexturedRect(itemX, itemY, sprite, 16, 16);
-
-        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
-        GlStateManager.disableBlend();
-        RenderHelper.enableGUIStandardItemLighting();
-
-        return true;
-    }
-
-    /**
-     * Draw a textured rectangle using a sprite.
-     * This handles proper UV mapping for animated textures.
-     */
-    public static void drawTexturedRect(int x, int y, TextureAtlasSprite sprite, int width, int height) {
-        Tessellator tessellator = Tessellator.getInstance();
-        BufferBuilder buffer = tessellator.getBuffer();
-
-        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_TEX);
-        buffer.pos(x, y + height, 0.0).tex(sprite.getMinU(), sprite.getMaxV()).endVertex();
-        buffer.pos(x + width, y + height, 0.0).tex(sprite.getMaxU(), sprite.getMaxV()).endVertex();
-        buffer.pos(x + width, y, 0.0).tex(sprite.getMaxU(), sprite.getMinV()).endVertex();
-        buffer.pos(x, y, 0.0).tex(sprite.getMinU(), sprite.getMinV()).endVertex();
-
-        tessellator.draw();
     }
 
     public void drawTooltips(int mouseX, int mouseY) {

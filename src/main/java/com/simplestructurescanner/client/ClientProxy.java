@@ -9,12 +9,14 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import com.simplestructurescanner.CommonProxy;
 import com.simplestructurescanner.client.command.CommandStructureSearchBlacklist;
 import com.simplestructurescanner.client.event.ClientRenderEvents;
+import com.simplestructurescanner.item.ModItems;
 
 
 public class ClientProxy extends CommonProxy {
     @Override
     public void preInit(FMLPreInitializationEvent event) {
         super.preInit(event);
+        ModItems.registerModels();
         MinecraftForge.EVENT_BUS.register(new KeybindHandler());
         MinecraftForge.EVENT_BUS.register(new ClientRenderEvents());
     }
