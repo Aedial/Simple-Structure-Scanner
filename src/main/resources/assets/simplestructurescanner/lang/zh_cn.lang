@@ -211,3 +211,70 @@ gui.structurescanner.hudPosition.center_right=中心右侧
 gui.structurescanner.hudPosition.bottom_left=底部左侧
 gui.structurescanner.hudPosition.bottom_center=底部中心
 gui.structurescanner.hudPosition.bottom_right=底部右侧
+
+# Capture Tool
+item.simplestructurescanner.structure_capture_tool.name=结构捕获量尺
+item.simplestructurescanner.structure_capture_tool.tooltip.1=§b首次右键点击§r以将第一个顶点设置在玩家脚下。
+item.simplestructurescanner.structure_capture_tool.tooltip.2=§b再次右键点击§r以设置第二个顶点。
+item.simplestructurescanner.structure_capture_tool.tooltip.3=§b第三次右键点击§r以查看排除项并保存NBT。
+item.simplestructurescanner.structure_capture_tool.tooltip.4=§bShift+右键点击§r以清除当前选区并重新开始。
+
+gui.structurescanner.capture.title=结构捕获
+gui.structurescanner.capture.size=最终尺寸：%s x %s x %s
+gui.structurescanner.capture.cornerA=顶点A: %s, %s, %s
+gui.structurescanner.capture.cornerB=顶点B: %s, %s, %s
+gui.structurescanner.capture.cornerA.short=顶点A
+gui.structurescanner.capture.cornerB.short=顶点B
+gui.structurescanner.capture.save=保存NBT
+gui.structurescanner.capture.cancel=取消
+gui.structurescanner.capture.hint=按Esc放弃保存并退出（仍会清除选区）。
+gui.structurescanner.capture.outputFolder=将保存至目录minecraft/structurescanner-structures/。
+gui.structurescanner.capture.blocksButton=方块（%d）
+gui.structurescanner.capture.entitiesButton=实体（%d）
+gui.structurescanner.capture.lootButton=战利品（%d）
+gui.structurescanner.capture.summary=总计%d，已排除%d
+gui.structurescanner.capture.summary.blocks=方块：已跟踪%d，已排除%d
+gui.structurescanner.capture.summary.entities=实体：已跟踪%d，已排除%d
+gui.structurescanner.capture.summary.loot=容器：已跟踪%d，已排除%d
+gui.structurescanner.capture.blocks.short=方块
+gui.structurescanner.capture.entities.short=实体
+gui.structurescanner.capture.loot.short=战利品
+gui.structurescanner.capture.groups=%d组
+gui.structurescanner.capture.totalBlocks=%s方块
+gui.structurescanner.capture.entityTypes=%d类型
+gui.structurescanner.capture.entityInstances=%d实例
+gui.structurescanner.capture.containerGroups=%d组
+gui.structurescanner.capture.containerInstances=%d容器
+gui.structurescanner.capture.position=位置：%s, %s, %s
+gui.structurescanner.capture.excludedTooltip=已从保存的捕获中排除
+gui.structurescanner.capture.exclude=排除
+gui.structurescanner.capture.include=包含
+gui.structurescanner.capture.excludeAll=全部排除
+gui.structurescanner.capture.includeAll=全部包含
+
+gui.structurescanner.capture.blocks.title=已捕获的方块
+gui.structurescanner.capture.blocks.footer=%d种方块类型，已排除%d
+gui.structurescanner.capture.blocks.empty=捕获中未找到方块。
+
+gui.structurescanner.capture.entities.title=已捕获的实体
+gui.structurescanner.capture.entities.empty=捕获中未找到实体。
+gui.structurescanner.capture.entities.row=%s @ %s, %s, %s
+gui.structurescanner.capture.entities.count=数量：%d
+gui.structurescanner.capture.entities.included=包含在捕获中
+gui.structurescanner.capture.entities.types=%d种实体类型
+
+gui.structurescanner.capture.loot.title=已捕获的容器
+gui.structurescanner.capture.loot.empty=捕获中未找到容器。
+gui.structurescanner.capture.loot.row=%s x%d - %s
+gui.structurescanner.capture.loot.fixedItems=固定库存：总计%d物品
+gui.structurescanner.capture.loot.containerCount=容器：%d
+gui.structurescanner.capture.loot.emptyContainer=无战利品元数据
+
+chat.structurescanner.capture.firstCorner=第一个捕获顶点已设置在%s, %s, %s。
+chat.structurescanner.capture.secondCorner=第二个捕获顶点已设置在%s, %s, %s。
+chat.structurescanner.capture.reset=捕获选区已清除。
+chat.structurescanner.capture.loading=正在构建捕获预览……
+chat.structurescanner.capture.empty=该捕获区域内未找到任何方块或实体。
+chat.structurescanner.capture.emptyAfterExclusions=在当前排除项下将不存在剩余内容。
+chat.structurescanner.capture.saved=捕获已保存至%s
+chat.structurescanner.capture.saveFailed=保存结构捕获失败。
