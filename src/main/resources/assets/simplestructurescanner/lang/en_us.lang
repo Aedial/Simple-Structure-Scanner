@@ -41,6 +41,7 @@ gui.structurescanner.rarity.common=Common
 gui.structurescanner.rarity.uncommon=Uncommon
 gui.structurescanner.rarity.rare=Rare
 gui.structurescanner.rarity.unique=Unique
+gui.structurescanner.rarity.fixed_position=Fixed Position
 gui.structurescanner.rarity.one_in_chunks=1 in %d chunks
 
 # Structures - Minecraft
@@ -211,3 +212,70 @@ gui.structurescanner.hudPosition.center_right=Center Right
 gui.structurescanner.hudPosition.bottom_left=Bottom Left
 gui.structurescanner.hudPosition.bottom_center=Bottom Center
 gui.structurescanner.hudPosition.bottom_right=Bottom Right
+
+# Capture Tool
+item.simplestructurescanner.structure_capture_tool.name=Structure Capture Ruler
+item.simplestructurescanner.structure_capture_tool.tooltip.1=§bRight-click§r once to set the first corner at your feet.
+item.simplestructurescanner.structure_capture_tool.tooltip.2=§bRight-click again§r to set the second corner.
+item.simplestructurescanner.structure_capture_tool.tooltip.3=§bRight-click a third time§r to review exclusions and save the NBT.
+item.simplestructurescanner.structure_capture_tool.tooltip.4=§bShift + right-click§r to clear the current selection and start over.
+
+gui.structurescanner.capture.title=Structure Capture
+gui.structurescanner.capture.size=Final Size: %s x %s x %s
+gui.structurescanner.capture.cornerA=Corner A: %s, %s, %s
+gui.structurescanner.capture.cornerB=Corner B: %s, %s, %s
+gui.structurescanner.capture.cornerA.short=Corner A
+gui.structurescanner.capture.cornerB.short=Corner B
+gui.structurescanner.capture.save=Save NBT
+gui.structurescanner.capture.cancel=Cancel
+gui.structurescanner.capture.hint=Esc to close without saving (still clears selection).
+gui.structurescanner.capture.outputFolder=Will save to minecraft/structurescanner-structures/.
+gui.structurescanner.capture.blocksButton=Blocks (%d)
+gui.structurescanner.capture.entitiesButton=Entities (%d)
+gui.structurescanner.capture.lootButton=Loot (%d)
+gui.structurescanner.capture.summary=%d total, %d excluded
+gui.structurescanner.capture.summary.blocks=Blocks: %d tracked, %d excluded
+gui.structurescanner.capture.summary.entities=Entities: %d tracked, %d excluded
+gui.structurescanner.capture.summary.loot=Containers: %d tracked, %d excluded
+gui.structurescanner.capture.blocks.short=Blocks
+gui.structurescanner.capture.entities.short=Entities
+gui.structurescanner.capture.loot.short=Loot
+gui.structurescanner.capture.groups=%d groups
+gui.structurescanner.capture.totalBlocks=%s blocks
+gui.structurescanner.capture.entityTypes=%d types
+gui.structurescanner.capture.entityInstances=%d instances
+gui.structurescanner.capture.containerGroups=%d groups
+gui.structurescanner.capture.containerInstances=%d containers
+gui.structurescanner.capture.position=Position: %s, %s, %s
+gui.structurescanner.capture.excludedTooltip=Excluded from the saved capture
+gui.structurescanner.capture.exclude=Exclude
+gui.structurescanner.capture.include=Include
+gui.structurescanner.capture.excludeAll=Exclude All
+gui.structurescanner.capture.includeAll=Include All
+
+gui.structurescanner.capture.blocks.title=Captured Blocks
+gui.structurescanner.capture.blocks.footer=%d block types, %d excluded
+gui.structurescanner.capture.blocks.empty=No blocks found in the capture.
+
+gui.structurescanner.capture.entities.title=Captured Entities
+gui.structurescanner.capture.entities.empty=No entities found in the capture.
+gui.structurescanner.capture.entities.row=%s @ %s, %s, %s
+gui.structurescanner.capture.entities.count=Count: %d
+gui.structurescanner.capture.entities.included=Included in capture
+gui.structurescanner.capture.entities.types=%d entity types
+
+gui.structurescanner.capture.loot.title=Captured Containers
+gui.structurescanner.capture.loot.empty=No containers found in the capture.
+gui.structurescanner.capture.loot.row=%s x%d - %s
+gui.structurescanner.capture.loot.fixedItems=Fixed inventory: %d items total
+gui.structurescanner.capture.loot.containerCount=Containers: %d
+gui.structurescanner.capture.loot.emptyContainer=No loot metadata
+
+chat.structurescanner.capture.firstCorner=First capture corner set at %s, %s, %s.
+chat.structurescanner.capture.secondCorner=Second capture corner set at %s, %s, %s.
+chat.structurescanner.capture.reset=Capture selection cleared.
+chat.structurescanner.capture.loading=Building capture preview...
+chat.structurescanner.capture.empty=No blocks or entities were found inside that capture.
+chat.structurescanner.capture.emptyAfterExclusions=Nothing would remain after the current exclusions.
+chat.structurescanner.capture.saved=Saved capture to %s
+chat.structurescanner.capture.saveFailed=Failed to save the structure capture.

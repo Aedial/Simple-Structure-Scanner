@@ -142,6 +142,21 @@ public class ValidationContextManager {
     }
 
     /**
+     * Gets the chunk generator used by the resolved generation world.
+     * Returns null when the generator is not accessible from the current side.
+     *
+     * @param realWorld The world passed to the search code
+     * @return The resolved generation chunk generator, or null if unavailable
+     */
+    @Nullable
+    public static IChunkGenerator getGenerationChunkGenerator(World realWorld) {
+        World world = getGenerationWorld(realWorld);
+        if (!(world.getChunkProvider() instanceof ChunkProviderServer)) return null;
+
+        return getChunkGenerator(world);
+    }
+
+    /**
      * Gets or creates a validation world for the given real world.
      *
      * This method:

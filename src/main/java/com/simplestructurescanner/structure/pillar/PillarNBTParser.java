@@ -12,7 +12,6 @@ import javax.annotation.Nullable;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
-import net.minecraft.client.Minecraft;
 import net.minecraft.init.Blocks;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
@@ -20,7 +19,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ResourceLocation;
-import net.minecraft.world.World;
+import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.items.CapabilityItemHandler;
 import net.minecraftforge.items.IItemHandler;
 
@@ -294,18 +293,8 @@ public class PillarNBTParser {
         Block block = state.getBlock();
         if (block == null || !block.hasTileEntity(state)) return;
 
-        World world = Minecraft.getMinecraft().world;
-        TileEntity tileEntity;
-
-        try {
-            tileEntity = block.createTileEntity(world, state);
-            if (tileEntity == null) return;
-
-            tileEntity.readFromNBT(nbtData);
-        } catch (Exception e) {
-            // Some tile entities may fail without a proper world context; fall back silently
-            return;
-        }
+        TileEntity tileEntity = createContainerTileEntity(state, nbtData);
+        if (tileEntity == null) return;
 
         try {
             // Try IItemHandler capability first (Forge's preferred inventory API)
@@ -334,6 +323,30 @@ public class PillarNBTParser {
                 ItemStack stack = inventory.getStackInSlot(i);
                 if (!stack.isEmpty()) outItems.add(stack.copy());
             }
+        }
+    }
+
+    @Nullable
+    private static TileEntity createContainerTileEntity(IBlockState state, NBTTagCompound nbtData) {
+        try {
+            // Prefer the registry-backed factory so dedicated servers never need a client world.
+            if (nbtData.hasKey("id", Constants.NBT.TAG_STRING)) {
+                TileEntity tileEntity = TileEntity.create(null, nbtData);
+                if (tileEntity != null) return tileEntity;
+            }
+        } catch (Exception e) {
+            // Some tile entities may fail to load directly from NBT; fall back to the block factory.
+        }
+
+        try {
+            TileEntity tileEntity = state.getBlock().createTileEntity(null, state);
+            if (tileEntity == null) return null;
+
+            tileEntity.readFromNBT(nbtData);
+            return tileEntity;
+        } catch (Exception e) {
+            // Some tile entities still require a real world; skip direct item extraction in that case.
+            return null;
         }
     }
 

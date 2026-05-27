@@ -18,17 +18,14 @@ import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.BiomeProvider;
 import net.minecraftforge.common.BiomeDictionary;
-import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.AbstractStructureProvider;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
-import com.simplestructurescanner.structure.StructureInfo;
-import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
-import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
-import com.simplestructurescanner.structure.StructureProvider;
 import com.simplestructurescanner.structure.util.PositionHelper;
+import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.util.SeedHelper;
 
@@ -37,14 +34,23 @@ import com.simplestructurescanner.structure.util.SeedHelper;
  * Structure provider for AbyssalCraft mod.
  * Provides location data for AC's major structures.
  */
-public class AbyssalCraftStructureProvider implements StructureProvider {
+public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
 
     private static final String PROVIDER_ID = "abyssalcraft";
     private static final String MOD_ID = "abyssalcraft";
     private static final String MOD_NAME = "gui.structurescanner.provider.abyssalcraft";
-
-    private List<ResourceLocation> knownStructures;
-    private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
+    private static final int DEFAULT_SHOGGOTH_SWAMP_CHANCE = 35;
+    private static final int DEFAULT_SHOGGOTH_RIVER_CHANCE = 30;
+    private static final int DEFAULT_SHOGGOTH_MIN_DISTANCE = 100;
+    private static final int DEFAULT_GRAVEYARD_CHANCE = 50;
+    private static final int DEFAULT_GRAVEYARD_MIN_DISTANCE = 150;
+    private static final double DREADLANDS_MINESHAFT_CHUNKS = 250.0D;
+    private static final double OMOTHOL_CITY_CHUNKS = 1.0D;
+    private static final double OMOTHOL_STORAGE_CHUNKS = 2.0D;
+    private static final double OMOTHOL_INTERNAL_SHOGGOTH_CHUNKS = 200.0D;
+    private static final double OMOTHOL_INTERNAL_GRAVEYARD_CHUNKS = 50.0D;
+    private static final double STRONGHOLD_OUTER_RING_RADIUS_CHUNKS = 1472.0D;
+    private static final int STRONGHOLD_COUNT = 128;
 
     // Cache: seed -> list of AbyStronghold positions
     private static final Map<Long, List<BlockPos>> abyStrongholdCache = new HashMap<>();
@@ -53,40 +59,30 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
     private int abyssalWastelandId = -1;
     private int dreadlandsId = -1;
     private int omotholId = -1;
-    private int darkRealmId = -1;
 
     // AbyssalCraft biomes (fetched at runtime)
     private Biome abyssalWastelandsBiome;
-    private Biome dreadlandsBiome;
     private Biome omotholBiome;
+    private int shoggothLairSpawnRate = DEFAULT_SHOGGOTH_SWAMP_CHANCE;
+    private int shoggothLairSpawnRateRivers = DEFAULT_SHOGGOTH_RIVER_CHANCE;
+    private int shoggothLairGenerationDistance = DEFAULT_SHOGGOTH_MIN_DISTANCE;
+    private int graveyardGenerationChance = DEFAULT_GRAVEYARD_CHANCE;
+    private int graveyardGenerationDistance = DEFAULT_GRAVEYARD_MIN_DISTANCE;
 
     public AbyssalCraftStructureProvider() {
-    }
-
-    @Override
-    public String getProviderId() {
-        return PROVIDER_ID;
-    }
-
-    @Override
-    public String getModName() {
-        return MOD_NAME;
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return Loader.isModLoaded(MOD_ID);
+        super(PROVIDER_ID, MOD_ID, MOD_NAME, MOD_ID);
     }
 
     @Override
     public void postInit() {
+        resetStructures();
+
         // Get dimension IDs from ACLib
         try {
             Class<?> acLibClass = ReflectionHelper.loadClassRequired("com.shinoow.abyssalcraft.lib.ACLib");
             abyssalWastelandId = ReflectionHelper.getStaticIntField(acLibClass, "abyssal_wasteland_id");
             dreadlandsId = ReflectionHelper.getStaticIntField(acLibClass, "dreadlands_id");
             omotholId = ReflectionHelper.getStaticIntField(acLibClass, "omothol_id");
-            darkRealmId = ReflectionHelper.getStaticIntField(acLibClass, "dark_realm_id");
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.error("Failed to get AbyssalCraft dimension IDs", e);
         }
@@ -95,41 +91,45 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         try {
             Class<?> acBiomesClass = ReflectionHelper.loadClassRequired("com.shinoow.abyssalcraft.api.biome.ACBiomes");
             abyssalWastelandsBiome = (Biome) ReflectionHelper.getStaticField(acBiomesClass, "abyssal_wastelands");
-            dreadlandsBiome = (Biome) ReflectionHelper.getStaticField(acBiomesClass, "dreadlands");
             omotholBiome = (Biome) ReflectionHelper.getStaticField(acBiomesClass, "omothol");
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.error("Failed to get AbyssalCraft biomes", e);
         }
 
-        knownStructures = new ArrayList<>();
+        loadConfig();
 
         // Abyssal Wasteland structures
-        addStructure("aby_stronghold", "gui.structurescanner.structures.abyssalcraft.aby_stronghold", 0, 0, 0);
+        registerStructure("aby_stronghold", "gui.structurescanner.structures.abyssalcraft.aby_stronghold", 0, 0, 0);
 
         // Dreadlands structures
-        addStructure("dreadlands_mineshaft", "gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft", 0, 0, 0);
+        registerStructure("dreadlands_mineshaft", "gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft", 0, 0, 0);
 
         // TODO: Add Chagaroth's Lair?
 
         // Omothol structures
-        addStructure("jzahar_temple", "gui.structurescanner.structures.abyssalcraft.jzahar_temple", 64, 30, 96);
-        addStructure("omothol_city", "gui.structurescanner.structures.abyssalcraft.omothol_city", 0, 0, 0);
-        addStructure("omothol_storage", "gui.structurescanner.structures.abyssalcraft.omothol_storage", 17, 10, 18);
+        registerStructure("jzahar_temple", "gui.structurescanner.structures.abyssalcraft.jzahar_temple", 64, 30, 96);
+        registerStructure("omothol_city", "gui.structurescanner.structures.abyssalcraft.omothol_city", 0, 0, 0);
+        registerStructure("omothol_storage", "gui.structurescanner.structures.abyssalcraft.omothol_storage", 17, 10, 18);
 
         // Cross-dimension structures
-        addStructure("shoggoth_lair", "gui.structurescanner.structures.abyssalcraft.shoggoth_lair", 28, 15, 28);
-        addStructure("graveyard", "gui.structurescanner.structures.abyssalcraft.graveyard", 16, 8, 16);
+        registerStructure("shoggoth_lair", "gui.structurescanner.structures.abyssalcraft.shoggoth_lair", 28, 15, 28);
+        registerStructure("graveyard", "gui.structurescanner.structures.abyssalcraft.graveyard", 16, 8, 16);
 
         populateStructureMetadata();
         populateStructureContents();
     }
 
-    private void addStructure(String path, String displayName, int sizeX, int sizeY, int sizeZ) {
-        ResourceLocation id = new ResourceLocation(MOD_ID, path);
-        knownStructures.add(id);
-
-        StructureInfo info = new StructureInfo(id, LocalizedText.translatable(displayName), PROVIDER_ID, sizeX, sizeY, sizeZ);
-        structureInfos.put(id, info);
+    private void loadConfig() {
+        try {
+            Class<?> acConfigClass = ReflectionHelper.loadClassRequired("com.shinoow.abyssalcraft.lib.ACConfig");
+            shoggothLairSpawnRate = ReflectionHelper.getStaticIntField(acConfigClass, "shoggothLairSpawnRate");
+            shoggothLairSpawnRateRivers = ReflectionHelper.getStaticIntField(acConfigClass, "shoggothLairSpawnRateRivers");
+            shoggothLairGenerationDistance = ReflectionHelper.getStaticIntField(acConfigClass, "shoggothLairGenerationDistance");
+            graveyardGenerationChance = ReflectionHelper.getStaticIntField(acConfigClass, "graveyardGenerationChance");
+            graveyardGenerationDistance = ReflectionHelper.getStaticIntField(acConfigClass, "graveyardGenerationDistance");
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn("Could not load AbyssalCraft config, using defaults: {}", e.getMessage());
+        }
     }
 
     private void populateStructureMetadata() {
@@ -137,151 +137,143 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         DimensionInfo abyssalWastelandDim = new DimensionInfo(abyssalWastelandId, "gui.structurescanner.dimension.abyssal_wasteland");
         DimensionInfo dreadlandsDim = new DimensionInfo(dreadlandsId, "gui.structurescanner.dimension.dreadlands");
         DimensionInfo omotholDim = new DimensionInfo(omotholId, "gui.structurescanner.dimension.omothol");
-        DimensionInfo darkRealmDim = new DimensionInfo(darkRealmId, "gui.structurescanner.dimension.dark_realm");
 
         Set<DimensionInfo> abyssalWasteland = Collections.singleton(abyssalWastelandDim);
         Set<DimensionInfo> dreadlands = Collections.singleton(dreadlandsDim);
         Set<DimensionInfo> omothol = Collections.singleton(omotholDim);
-        Set<DimensionInfo> allDims = new HashSet<>();
-        allDims.add(DimensionInfo.OVERWORLD);
-        allDims.add(abyssalWastelandDim);
-        allDims.add(dreadlandsDim);
-        allDims.add(omotholDim);
-        allDims.add(darkRealmDim);
+        Set<DimensionInfo> overworldAndOmothol = new HashSet<>();
+        overworldAndOmothol.add(DimensionInfo.OVERWORLD);
+        overworldAndOmothol.add(omotholDim);
+
+        Set<Biome> omotholBiomes = omotholBiome == null ? null : Collections.singleton(omotholBiome);
 
         // AbyStronghold - Abyssal Wasteland only
         setMetadata("aby_stronghold",
             abyssalWastelandsBiome != null ? Collections.singleton(abyssalWastelandsBiome) : null,
             abyssalWasteland,
-            "gui.structurescanner.rarity.rare");
+            RarityTextHelper.oneInChunks(
+                RarityTextHelper.averageChunksForFixedCountInRadius(STRONGHOLD_COUNT, STRONGHOLD_OUTER_RING_RADIUS_CHUNKS)
+            ));
 
         // Dreadlands Mineshaft
-        setMetadata("dreadlands_mineshaft", null, dreadlands, "gui.structurescanner.rarity.uncommon");
+        setMetadata("dreadlands_mineshaft", null, dreadlands, RarityTextHelper.oneInChunks(DREADLANDS_MINESHAFT_CHUNKS));
 
         // J'zahar Temple - fixed position at origin
-        setMetadata("jzahar_temple",
-            omotholBiome != null ? Collections.singleton(omotholBiome) : null,
-            omothol,
-            "gui.structurescanner.rarity.unique");
+        setMetadata("jzahar_temple", omotholBiomes, omothol, RarityTextHelper.fixedPosition());
 
         // Omothol City - randomly generated buildings with various loot
-        setMetadata("omothol_city",
-            omotholBiome != null ? Collections.singleton(omotholBiome) : null,
-            omothol,
-            "gui.structurescanner.rarity.common");
+        setMetadata("omothol_city", omotholBiomes, omothol,
+            calculateApproximateRarity(OMOTHOL_CITY_CHUNKS, 18.0D));
 
         // Omothol Storage - storage buildings with crates
-        setMetadata("omothol_storage",
-            omotholBiome != null ? Collections.singleton(omotholBiome) : null,
-            omothol,
-            "gui.structurescanner.rarity.uncommon");
+        setMetadata("omothol_storage", omotholBiomes, omothol,
+            calculateApproximateRarity(OMOTHOL_STORAGE_CHUNKS, 300.0D));
 
-        // Shoggoth Lairs spawn in SWAMP and RIVER biomes in Overworld, all biomes in AC dimensions
+        // Shoggoth Lairs spawn in SWAMP and RIVER biomes in the Overworld.
+        // We do not calculate the Omothol rarity, because people usually need to find the first one in the Overworld
         Set<Biome> shoggothBiomes = new HashSet<>();
+        int swampBiomeCount = 0;
+        int riverBiomeCount = 0;
+
         for (Biome biome : Biome.REGISTRY) {
-            if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.SWAMP)
-                    || (BiomeDictionary.hasType(biome, BiomeDictionary.Type.RIVER)
-                        && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.OCEAN))) {
-                shoggothBiomes.add(biome);
+            boolean isSwamp = BiomeDictionary.hasType(biome, BiomeDictionary.Type.SWAMP);
+            boolean isRiver = BiomeDictionary.hasType(biome, BiomeDictionary.Type.RIVER)
+                && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.OCEAN);
+            if (!isSwamp && !isRiver) continue;
+
+            shoggothBiomes.add(biome);
+            if (isSwamp) {
+                swampBiomeCount++;
+                continue;
             }
+
+            riverBiomeCount++;
         }
 
-        setMetadata("shoggoth_lair", shoggothBiomes, allDims, "gui.structurescanner.rarity.uncommon");
+        if (omotholBiome != null) shoggothBiomes.add(omotholBiome);
 
-        // Graveyards spawn in multiple dimensions
-        setMetadata("graveyard", null, allDims, "gui.structurescanner.rarity.uncommon");
+
+        setMetadata("shoggoth_lair", shoggothBiomes, overworldAndOmothol,
+            calculateShoggothRarity(swampBiomeCount, riverBiomeCount));
+
+        // Graveyards spawn in the Overworld and Omothol.
+        setMetadata("graveyard", null, overworldAndOmothol, calculateGraveyardRarity());
     }
 
-    private void setMetadata(String path, Set<Biome> biomes, Set<DimensionInfo> dimensions, String rarity) {
-        StructureInfo info = structureInfos.get(new ResourceLocation(MOD_ID, path));
-        if (info == null) return;
+    private LocalizedText calculateShoggothRarity(int swampBiomeCount, int riverBiomeCount) {
+        double weightedProbability = 0.0D;
+        int totalWeight = 0;
 
-        info.setValidBiomes(biomes);
-        info.setValidDimensions(dimensions);
-        info.setRarityKey(rarity);
+        if (swampBiomeCount > 0 && shoggothLairSpawnRate > 0) {
+            weightedProbability += swampBiomeCount / calculateApproximateChunks(shoggothLairSpawnRate, shoggothLairGenerationDistance);
+            totalWeight += swampBiomeCount;
+        }
+
+        if (riverBiomeCount > 0 && shoggothLairSpawnRateRivers > 0) {
+            weightedProbability += riverBiomeCount / calculateApproximateChunks(shoggothLairSpawnRateRivers, shoggothLairGenerationDistance);
+            totalWeight += riverBiomeCount;
+        }
+
+        if (totalWeight <= 0) return RarityTextHelper.oneInChunks(OMOTHOL_INTERNAL_SHOGGOTH_CHUNKS);
+
+        return RarityTextHelper.oneInChunks(RarityTextHelper.chunksFromProbability(weightedProbability / totalWeight));
+    }
+
+    private LocalizedText calculateGraveyardRarity() {
+        double weightedProbability = 0.0D;
+        int totalWeight = 0;
+
+        if (graveyardGenerationChance > 0) {
+            weightedProbability += 1.0D / calculateApproximateChunks(graveyardGenerationChance, graveyardGenerationDistance);
+            totalWeight++;
+        }
+
+        weightedProbability += 1.0D / calculateApproximateChunks(OMOTHOL_INTERNAL_GRAVEYARD_CHUNKS, graveyardGenerationDistance);
+        totalWeight++;
+
+        return RarityTextHelper.oneInChunks(RarityTextHelper.chunksFromProbability(weightedProbability / totalWeight));
+    }
+
+    private LocalizedText calculateApproximateRarity(double rawChunks, double minDistanceBlocks) {
+        return RarityTextHelper.withMinimumSpacing(rawChunks, minDistanceBlocks);
+    }
+
+    private double calculateApproximateChunks(double rawChunks, double minDistanceBlocks) {
+        return Math.max(rawChunks, RarityTextHelper.minimumSpacingChunks(minDistanceBlocks));
     }
 
     private void populateStructureContents() {
         // AbyStronghold - contains portal room like vanilla stronghold
-        StructureInfo abyStronghold = structureInfos.get(new ResourceLocation(MOD_ID, "aby_stronghold"));
-        if (abyStronghold != null) {
-            List<LootEntry> loot = new ArrayList<>();
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/stronghold_corridor"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/stronghold_crossing"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            abyStronghold.setLootTables(loot);
-
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "abyssalzombie"), 1, true));
-            abyStronghold.setEntities(entities);
-        }
+        setLootTables("aby_stronghold",
+            createLootEntry("abyssalcraft:chests/stronghold_corridor", "gui.structurescanner.loot.chest"),
+            createLootEntry("abyssalcraft:chests/stronghold_crossing", "gui.structurescanner.loot.chest"));
+        setEntities("aby_stronghold", createEntityEntry("abyssalcraft:abyssalzombie", 1, true));
 
         // Dreadlands Mineshaft
-        StructureInfo dreadMine = structureInfos.get(new ResourceLocation(MOD_ID, "dreadlands_mineshaft"));
-        if (dreadMine != null) {
-            List<LootEntry> loot = Collections.singletonList(
-                new LootEntry(new ResourceLocation("abyssalcraft", "chests/mineshaft"),
-                    Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.minecart_chest"))
-            );
-            dreadMine.setLootTables(loot);
-        }
+        setLootTables("dreadlands_mineshaft",
+            createLootEntry("abyssalcraft:chests/mineshaft", "gui.structurescanner.loot.minecart_chest"));
 
         // J'zahar Temple - boss arena
-        StructureInfo jzaharTemple = structureInfos.get(new ResourceLocation(MOD_ID, "jzahar_temple"));
-        if (jzaharTemple != null) {
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "jzahar"), 1, false));
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "jzaharminion"), 3, false));
-            jzaharTemple.setEntities(entities);
-        }
+        setEntities("jzahar_temple",
+            createEntityEntry("abyssalcraft:jzahar", 1),
+            createEntityEntry("abyssalcraft:jzaharminion", 3));
 
         // Omothol City - various building types with different loot
-        StructureInfo omotholCity = structureInfos.get(new ResourceLocation(MOD_ID, "omothol_city"));
-        if (omotholCity != null) {
-            List<LootEntry> loot = new ArrayList<>();
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/blacksmith"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/house"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/library"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/farmhouse"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.chest")));
-            omotholCity.setLootTables(loot);
-
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "remnant"), 10, false));
-            omotholCity.setEntities(entities);
-        }
+        setLootTables("omothol_city",
+            createLootEntry("abyssalcraft:chests/omothol/blacksmith", "gui.structurescanner.loot.chest"),
+            createLootEntry("abyssalcraft:chests/omothol/house", "gui.structurescanner.loot.chest"),
+            createLootEntry("abyssalcraft:chests/omothol/library", "gui.structurescanner.loot.chest"),
+            createLootEntry("abyssalcraft:chests/omothol/farmhouse", "gui.structurescanner.loot.chest"));
+        setEntities("omothol_city", createEntityEntry("abyssalcraft:remnant", 10));
 
         // Omothol Storage - storage building with crates
-        StructureInfo omotholStorage = structureInfos.get(new ResourceLocation(MOD_ID, "omothol_storage"));
-        if (omotholStorage != null) {
-            List<LootEntry> loot = new ArrayList<>();
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/storage_junk"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.crate")));
-            loot.add(new LootEntry(new ResourceLocation("abyssalcraft", "chests/omothol/storage_treasure"),
-                Collections.emptyList(), LocalizedText.translatable("gui.structurescanner.loot.crate")));
-            omotholStorage.setLootTables(loot);
-
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "shoggoth"), 1, false));
-            omotholStorage.setEntities(entities);
-        }
+        setLootTables("omothol_storage",
+            createLootEntry("abyssalcraft:chests/omothol/storage_junk", "gui.structurescanner.loot.crate"),
+            createLootEntry("abyssalcraft:chests/omothol/storage_treasure", "gui.structurescanner.loot.crate"));
+        setEntities("omothol_storage", createEntityEntry("abyssalcraft:shoggoth", 1));
 
         // Shoggoth Lair
-        StructureInfo shoggothLair = structureInfos.get(new ResourceLocation(MOD_ID, "shoggoth_lair"));
-        if (shoggothLair != null) {
-            List<EntityEntry> entities = new ArrayList<>();
-            entities.add(new EntityEntry(new ResourceLocation("abyssalcraft", "shoggoth"), 1, false));
-            shoggothLair.setEntities(entities);
-        }
-    }
-
-    @Override
-    public List<ResourceLocation> getStructureIds() {
-        return new ArrayList<>(knownStructures);
+        setEntities("shoggoth_lair", createEntityEntry("abyssalcraft:shoggoth", 1));
     }
 
     @Override
@@ -291,13 +283,6 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         // Only deterministic structures can be searched
         return path.equals("aby_stronghold") || path.equals("jzahar_temple");
     }
-
-    @Override
-    @Nullable
-    public StructureInfo getStructureInfo(ResourceLocation structureId) {
-        return structureInfos.get(structureId);
-    }
-
     @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
@@ -331,25 +316,13 @@ public class AbyssalCraftStructureProvider implements StructureProvider {
         candidates = new ArrayList<>(candidates);
         PositionHelper.sortByHorizontalDistance(candidates, pos);
 
-        // Apply filter and skip to find the target
-        int validIndex = 0;
-        int totalValid = 0;
-        BlockPos targetPos = null;
+        PositionHelper.FilteredPositionResult selection = PositionHelper.selectFilteredPosition(candidates, skipCount, locationFilter);
+        if (selection == null) return null;
 
-        for (BlockPos candidate : candidates) {
-            if (locationFilter != null && !locationFilter.test(candidate)) continue;
-
-            if (validIndex == skipCount && targetPos == null) targetPos = candidate;
-
-            validIndex++;
-            totalValid++;
-        }
-
-        if (targetPos == null) return null;
-
+        BlockPos targetPos = selection.getPosition();
         boolean yAgnostic = targetPos.getY() == 0;
 
-        return new StructureLocation(targetPos, skipCount, totalValid, yAgnostic);
+        return new StructureLocation(targetPos, skipCount, selection.getTotalMatches(), yAgnostic);
     }
 
     /**

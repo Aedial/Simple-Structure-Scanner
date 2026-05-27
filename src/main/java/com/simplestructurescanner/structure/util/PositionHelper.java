@@ -2,6 +2,9 @@ package com.simplestructurescanner.structure.util;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Predicate;
+
+import javax.annotation.Nullable;
 
 import net.minecraft.util.math.BlockPos;
 
@@ -11,6 +14,24 @@ import net.minecraft.util.math.BlockPos;
  * Contains methods for sorting positions by distance and other spatial operations.
  */
 public final class PositionHelper {
+
+    public static final class FilteredPositionResult {
+        private final BlockPos position;
+        private final int totalMatches;
+
+        private FilteredPositionResult(BlockPos position, int totalMatches) {
+            this.position = position;
+            this.totalMatches = totalMatches;
+        }
+
+        public BlockPos getPosition() {
+            return position;
+        }
+
+        public int getTotalMatches() {
+            return totalMatches;
+        }
+    }
 
     private PositionHelper() {
     }
@@ -88,6 +109,31 @@ public final class PositionHelper {
 
             return Long.compare(distA, distB);
         };
+    }
+
+    /**
+     * Walk a distance-sorted candidate list once, applying the optional filter while keeping
+     * the caller's skip index and the total visible matches in sync.
+     */
+    @Nullable
+    public static FilteredPositionResult selectFilteredPosition(List<BlockPos> sortedPositions, int skipCount,
+            @Nullable Predicate<BlockPos> filter) {
+        int validIndex = 0;
+        int totalValid = 0;
+        BlockPos target = null;
+
+        for (BlockPos candidate : sortedPositions) {
+            if (filter != null && !filter.test(candidate)) continue;
+
+            if (validIndex == skipCount && target == null) target = candidate;
+
+            validIndex++;
+            totalValid++;
+        }
+
+        if (target == null) return null;
+
+        return new FilteredPositionResult(target, totalValid);
     }
 
     /**
