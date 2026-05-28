@@ -184,62 +184,12 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         applyStructureContentsFromNbt("end_ship");
 
         // Fill in remaining data (loot tables, entities) and fallback for structures without NBT data
-        populateDesertTemple();
-        populateJungleTemple();
-        populateWitchHut();
-        populateIgloo();
-        populateOceanMonument();
-        populateDungeon();
         populateStronghold();
         populateMineshaft();
         populateNetherFortress();
-        populateEndCity();
-        populateWoodlandMansion();
-        populateVillage();
     }
 
     // Procedural structures use hardcoded estimates since they're generated algorithmically
-
-    private void populateDesertTemple() {
-        setBlocksIfMissing("desert_temple", filterNulls(
-            createBlockEntry(Blocks.SANDSTONE, 0, 500),
-            createBlockEntry(Blocks.SANDSTONE, 1, 100),  // Chiseled
-            createBlockEntry(Blocks.SANDSTONE, 2, 50),   // Smooth
-            createBlockEntry(Blocks.STAINED_HARDENED_CLAY, 1, 80),  // Orange
-            createBlockEntry(Blocks.STAINED_HARDENED_CLAY, 11, 20), // Blue
-            createBlockEntry(Blocks.SANDSTONE_STAIRS, 0, 30),
-            createBlockEntry(Blocks.STONE_PRESSURE_PLATE, 0, 1),
-            createBlockEntry(Blocks.TNT, 0, 9)
-        ));
-        setLootTablesIfMissing("desert_temple",
-            createLootEntry("minecraft:chests/desert_pyramid", "gui.structurescanner.loot.chest"));
-    }
-
-    private void populateJungleTemple() {
-    }
-
-    private void populateWitchHut() {
-    }
-
-    private void populateIgloo() {
-    }
-
-    private void populateOceanMonument() {
-    }
-
-    private void populateDungeon() {
-        setBlocksIfMissing("dungeon", filterNulls(
-            createBlockEntry(Blocks.COBBLESTONE, 0, 50),
-            createBlockEntry(Blocks.MOSSY_COBBLESTONE, 0, 50),
-            createBlockEntry(Blocks.MOB_SPAWNER, 0, 1),
-            createBlockEntry(Blocks.CHEST, 0, 2)
-        ));
-        setLootTablesIfMissing("dungeon", createLootEntry("minecraft:chests/simple_dungeon", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("dungeon",
-            createEntityEntry("minecraft:zombie", 1, true),
-            createEntityEntry("minecraft:skeleton", 1, true),
-            createEntityEntry("minecraft:spider", 1, true));
-    }
 
     private void populateStronghold() {
         setBlocksIfMissing("stronghold", filterNulls(
@@ -275,48 +225,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
     }
 
     private void populateNetherFortress() {
-        setBlocksIfMissing("fortress", filterNulls(
-            createBlockEntry(Blocks.NETHER_BRICK, 0, 5000),
-            createBlockEntry(Blocks.NETHER_BRICK_FENCE, 0, 500),
-            createBlockEntry(Blocks.NETHER_BRICK_STAIRS, 0, 300),
-            createBlockEntry(Blocks.NETHER_WART, 0, 50),
-            createBlockEntry(Blocks.SOUL_SAND, 0, 20),
-            createBlockEntry(Blocks.MOB_SPAWNER, 0, 2)
-        ));
-        setLootTablesIfMissing("fortress", createLootEntry("minecraft:chests/nether_bridge", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("fortress",
-            createEntityEntry("minecraft:blaze", 1, true),
-            createEntityEntry("minecraft:wither_skeleton", 1));
-    }
-
-    private void populateEndCity() {
-        setBlocksIfMissing("endcity", filterNulls(
-            createBlockEntry(Blocks.PURPUR_BLOCK, 0, 2000),
-            createBlockEntry(Blocks.PURPUR_PILLAR, 0, 500),
-            createBlockEntry(Blocks.PURPUR_STAIRS, 0, 300),
-            createBlockEntry(Blocks.PURPUR_SLAB, 0, 200),
-            createBlockEntry(Blocks.END_BRICKS, 0, 500),
-            createBlockEntry(Blocks.END_ROD, 0, 100),
-            createBlockEntry(Blocks.STAINED_GLASS, 2, 50)  // Magenta stained glass (meta 2)
-        ));
-        setLootTablesIfMissing("endcity", createLootEntry("minecraft:chests/end_city_treasure", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("endcity", createEntityEntry("minecraft:shulker", 10));
-
-        // End ship info
-        setBlocksIfMissing("end_ship", filterNulls(
-            createBlockEntry(Blocks.PURPUR_BLOCK, 0, 300),
-            createBlockEntry(Blocks.PURPUR_STAIRS, 0, 50),
-            createBlockEntry(Blocks.OBSIDIAN, 0, 16),
-            createBlockEntry(Blocks.END_ROD, 0, 10)
-        ));
-        setLootTablesIfMissing("end_ship", createLootEntry("minecraft:chests/end_city_treasure", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("end_ship", createEntityEntry("minecraft:shulker", 3));
-    }
-
-    private void populateWoodlandMansion() {
-    }
-
-    private void populateVillage() {
+        // TODO: add Wither Skeletons spawns
     }
 
     private BlockEntry createBlockEntry(Block block, int meta, int count) {

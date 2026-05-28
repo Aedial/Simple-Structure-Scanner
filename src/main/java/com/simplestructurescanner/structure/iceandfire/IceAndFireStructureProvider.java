@@ -71,6 +71,8 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
         // Misc
         registerStructure("cyclops_cave", "gui.structurescanner.structures.iceandfire.cyclops_cave", 0, 0, 0);
         registerStructure("gorgon_temple", "gui.structurescanner.structures.iceandfire.gorgon_temple", 0, 0, 0);
+        // TODO: add mausoleum
+        // TODO: add hydra_lair
 
         // Myrmex hives
         registerStructure("myrmex_hive_desert", "gui.structurescanner.structures.iceandfire.myrmex_hive_desert", 0, 0, 0);
@@ -238,21 +240,11 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
         applyStructureContentsFromNbt("myrmex_hive_desert");
         applyStructureContentsFromNbt("myrmex_hive_jungle");
 
-        // Fire Dragon Roost
-        setLootTablesIfMissing("fire_dragon_roost",
-            createLootEntry("iceandfire:fire_dragon_female_cave", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("fire_dragon_roost", createEntityEntry("iceandfire:firedragon", 1));
-
         // Fire Dragon Cave
         setLootTablesIfMissing("fire_dragon_cave",
             createLootEntry("iceandfire:fire_dragon_female_cave", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:fire_dragon_male_cave", "gui.structurescanner.loot.chest"));
         setEntitiesIfMissing("fire_dragon_cave", createEntityEntry("iceandfire:firedragon", 1));
-
-        // Ice Dragon Roost
-        setLootTablesIfMissing("ice_dragon_roost",
-            createLootEntry("iceandfire:ice_dragon_female_cave", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("ice_dragon_roost", createEntityEntry("iceandfire:icedragon", 1));
 
         // Ice Dragon Cave
         setLootTablesIfMissing("ice_dragon_cave",
@@ -270,26 +262,6 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
             createLootEntry("iceandfire:lightning_dragon_female_cave", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:lightning_dragon_male_cave", "gui.structurescanner.loot.chest"));
         setEntitiesIfMissing("lightning_dragon_cave", createEntityEntry("iceandfire:lightningdragon", 1));
-
-        // Cyclops Cave
-        setLootTablesIfMissing("cyclops_cave",
-            createLootEntry("iceandfire:cyclops_cave", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("cyclops_cave", createEntityEntry("iceandfire:cyclops", 1));
-
-        // Gorgon Temple
-        setEntitiesIfMissing("gorgon_temple", createEntityEntry("iceandfire:gorgon", 1));
-
-        // Myrmex Hive Desert
-        setLootTablesIfMissing("myrmex_hive_desert",
-            createLootEntry("iceandfire:myrmex_loot_chest", "gui.structurescanner.loot.chest"),
-            createLootEntry("iceandfire:myrmex_desert_food_chest", "gui.structurescanner.loot.iceandfire.cocoon"),
-            createLootEntry("iceandfire:myrmex_trash_chest", "gui.structurescanner.loot.iceandfire.cocoon"));
-        setEntitiesIfMissing("myrmex_hive_desert",
-            createEntityEntry("iceandfire:myrmex_queen", 1),
-            createEntityEntry("iceandfire:myrmex_royal", 2),
-            createEntityEntry("iceandfire:myrmex_sentinel", 4),
-            createEntityEntry("iceandfire:myrmex_soldier", 8),
-            createEntityEntry("iceandfire:myrmex_worker", 12));
 
         // Myrmex Hive Jungle
         setLootTablesIfMissing("myrmex_hive_jungle",
