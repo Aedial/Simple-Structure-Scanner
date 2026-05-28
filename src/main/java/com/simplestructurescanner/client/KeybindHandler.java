@@ -8,8 +8,10 @@ import net.minecraftforge.client.settings.KeyConflictContext;
 import net.minecraftforge.fml.client.registry.ClientRegistry;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.common.gameevent.InputEvent;
+import net.minecraftforge.fml.common.network.FMLNetworkEvent;
 
 import com.simplestructurescanner.Tags;
+import com.simplestructurescanner.client.capture.StructureCaptureClientController;
 import com.simplestructurescanner.client.gui.GuiStructureScanner;
 
 
@@ -36,5 +38,11 @@ public class KeybindHandler {
                 mc.displayGuiScreen(new GuiStructureScanner());
             }
         }
+    }
+
+    @SubscribeEvent
+    public void onClientDisconnect(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
+        // Capture selections are world-scoped and must not carry into the next world.
+        StructureCaptureClientController.clearCaptureData();
     }
 }

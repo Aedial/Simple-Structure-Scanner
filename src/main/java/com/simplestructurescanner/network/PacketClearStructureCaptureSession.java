@@ -11,7 +11,7 @@ import com.simplestructurescanner.capture.StructureCaptureService;
 
 
 /**
- * Clears the server-side frozen capture session when the capture GUI closes without saving.
+ * Clears the server-side frozen capture session after an explicit capture reset.
  */
 public class PacketClearStructureCaptureSession implements IMessage {
 

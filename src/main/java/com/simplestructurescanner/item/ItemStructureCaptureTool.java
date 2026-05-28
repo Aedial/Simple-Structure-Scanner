@@ -38,6 +38,8 @@ public class ItemStructureCaptureTool extends Item {
         setCreativeTab(CreativeTabs.TOOLS);
     }
 
+    // TODO: Add something to adjust the bounds on the fly instead of re-doing the 2 corners
+
     @Override
     public ActionResult<ItemStack> onItemRightClick(World world, EntityPlayer player, EnumHand hand) {
         ItemStack stack = player.getHeldItem(hand);
@@ -66,5 +68,6 @@ public class ItemStructureCaptureTool extends Item {
         tooltip.add(I18n.format("item.simplestructurescanner.structure_capture_tool.tooltip.2"));
         tooltip.add(I18n.format("item.simplestructurescanner.structure_capture_tool.tooltip.3"));
         tooltip.add(I18n.format("item.simplestructurescanner.structure_capture_tool.tooltip.4"));
+        tooltip.add(I18n.format("item.simplestructurescanner.structure_capture_tool.tooltip.5"));
     }
 }

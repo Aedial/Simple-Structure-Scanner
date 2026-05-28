@@ -74,6 +74,16 @@ public class StructureCaptureExclusions {
         excludedContainerKeys.remove(key);
     }
 
+    public void clear() {
+        excludedBlockKeys.clear();
+        excludedEntityIds.clear();
+        excludedContainerKeys.clear();
+    }
+
+    public boolean isEmpty() {
+        return excludedBlockKeys.isEmpty() && excludedEntityIds.isEmpty() && excludedContainerKeys.isEmpty();
+    }
+
     public NBTTagCompound toNBT() {
         NBTTagCompound tag = new NBTTagCompound();
 

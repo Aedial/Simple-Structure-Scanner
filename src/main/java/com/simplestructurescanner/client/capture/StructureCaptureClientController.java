@@ -7,9 +7,11 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.TextComponentTranslation;
 
+import com.simplestructurescanner.capture.StructureCaptureExclusions;
 import com.simplestructurescanner.capture.StructureCaptureSummary;
 import com.simplestructurescanner.client.gui.GuiStructureCapture;
 import com.simplestructurescanner.network.NetworkHandler;
+import com.simplestructurescanner.network.PacketClearStructureCaptureSession;
 import com.simplestructurescanner.network.PacketRequestStructureCapturePreview;
 
 
@@ -22,6 +24,7 @@ public final class StructureCaptureClientController {
     private static BlockPos firstCorner;
     @Nullable
     private static BlockPos secondCorner;
+    private static final StructureCaptureExclusions exclusions = new StructureCaptureExclusions();
     private static boolean previewRequestPending;
 
     private StructureCaptureClientController() {
@@ -60,24 +63,21 @@ public final class StructureCaptureClientController {
     public static void handlePreviewResponse(@Nullable StructureCaptureSummary summary, String errorKey) {
         previewRequestPending = false;
 
-        if (firstCorner == null || secondCorner == null) {
-            clearSelection();
-            return;
-        }
+        if (firstCorner == null || secondCorner == null) return;
 
         if (summary == null) {
-            clearSelection();
             sendMessage(errorKey == null || errorKey.isEmpty() ? "chat.structurescanner.capture.empty" : errorKey);
             return;
         }
 
-        Minecraft.getMinecraft().displayGuiScreen(new GuiStructureCapture(summary, firstCorner, secondCorner));
+        Minecraft.getMinecraft().displayGuiScreen(new GuiStructureCapture(summary, firstCorner, secondCorner, exclusions));
     }
 
     public static void resetSelection() {
-        if (!hasSelection() && !previewRequestPending) return;
+        if (!hasSelection() && !previewRequestPending && exclusions.isEmpty()) return;
 
-        clearSelection();
+        NetworkHandler.INSTANCE.sendToServer(new PacketClearStructureCaptureSession());
+        clearCaptureData();
         sendMessage("chat.structurescanner.capture.reset");
     }
 
@@ -85,6 +85,11 @@ public final class StructureCaptureClientController {
         firstCorner = null;
         secondCorner = null;
         previewRequestPending = false;
+    }
+
+    public static void clearCaptureData() {
+        clearSelection();
+        exclusions.clear();
     }
 
     public static boolean hasSelection() {
@@ -116,6 +121,10 @@ public final class StructureCaptureClientController {
 
     public static boolean isPreviewRequestPending() {
         return previewRequestPending;
+    }
+
+    public static StructureCaptureExclusions getExclusions() {
+        return exclusions;
     }
 
     private static void sendMessage(String translationKey, Object... args) {

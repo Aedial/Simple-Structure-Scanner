@@ -84,27 +84,23 @@ public final class StructureCaptureService {
     @Nullable
     public static SaveResult saveCapture(UUID playerId, World world, BlockPos firstCorner, BlockPos secondCorner,
             StructureCaptureExclusions exclusions) throws IOException {
-        try {
-            FrozenCapture frozenCapture = getOrCreateCapture(playerId, world, firstCorner, secondCorner);
-            CapturedStructure capturedStructure = buildCapturedStructure(frozenCapture, exclusions);
-            if (capturedStructure == null) return null;
+        FrozenCapture frozenCapture = getOrCreateCapture(playerId, world, firstCorner, secondCorner);
+        CapturedStructure capturedStructure = buildCapturedStructure(frozenCapture, exclusions);
+        if (capturedStructure == null) return null;
 
-            File captureDirectory = getCaptureDirectory(world);
+        File captureDirectory = getCaptureDirectory(world);
 
-            File captureFile = createCaptureFile(captureDirectory);
-            try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
-                CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
-            }
-
-            return new SaveResult(
-                captureFile,
-                capturedStructure.getSizeX(),
-                capturedStructure.getSizeY(),
-                capturedStructure.getSizeZ()
-            );
-        } finally {
-            clearFrozenCapture(playerId);
+        File captureFile = createCaptureFile(captureDirectory);
+        try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
+            CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
         }
+
+        return new SaveResult(
+            captureFile,
+            capturedStructure.getSizeX(),
+            capturedStructure.getSizeY(),
+            capturedStructure.getSizeZ()
+        );
     }
 
     @Nullable

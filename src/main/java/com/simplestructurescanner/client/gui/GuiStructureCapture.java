@@ -18,10 +18,8 @@ import net.minecraft.util.text.TextComponentTranslation;
 
 import com.simplestructurescanner.capture.StructureCaptureExclusions;
 import com.simplestructurescanner.capture.StructureCaptureSummary;
-import com.simplestructurescanner.client.capture.StructureCaptureClientController;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.network.NetworkHandler;
-import com.simplestructurescanner.network.PacketClearStructureCaptureSession;
 import com.simplestructurescanner.network.PacketRequestStructureCaptureRenderedPreview;
 import com.simplestructurescanner.network.PacketRequestStructureCaptureSave;
 import com.simplestructurescanner.structure.StructureNBTParser;
@@ -55,24 +53,25 @@ public class GuiStructureCapture extends GuiScreen {
     private final StructureCaptureSummary summary;
     private final BlockPos firstCorner;
     private final BlockPos secondCorner;
-    private final StructureCaptureExclusions exclusions = new StructureCaptureExclusions();
+    private final StructureCaptureExclusions exclusions;
 
     private GuiCaptureBlocksWindow blocksWindow;
     private GuiCaptureEntitiesWindow entitiesWindow;
     private GuiCaptureLootWindow lootWindow;
     private GuiCapturePreviewWindow previewWindow;
     private boolean previewRequestPending;
-    private boolean saveRequested;
 
     private int panelX;
     private int panelY;
     private int panelWidth;
     private int panelHeight;
 
-    public GuiStructureCapture(StructureCaptureSummary summary, BlockPos firstCorner, BlockPos secondCorner) {
+    public GuiStructureCapture(StructureCaptureSummary summary, BlockPos firstCorner, BlockPos secondCorner,
+            StructureCaptureExclusions exclusions) {
         this.summary = summary;
         this.firstCorner = firstCorner;
         this.secondCorner = secondCorner;
+        this.exclusions = exclusions;
     }
 
     @Override
@@ -124,9 +123,7 @@ public class GuiStructureCapture extends GuiScreen {
         }
 
         if (button.id == BUTTON_SAVE) {
-            saveRequested = true;
             NetworkHandler.INSTANCE.sendToServer(new PacketRequestStructureCaptureSave(firstCorner, secondCorner, exclusions.copy()));
-            StructureCaptureClientController.clearSelection();
             mc.displayGuiScreen(null);
             return;
         }
@@ -214,10 +211,6 @@ public class GuiStructureCapture extends GuiScreen {
         if (previewWindow != null) {
             previewWindow.release();
             previewWindow = null;
-        }
-        if (!saveRequested) {
-            NetworkHandler.INSTANCE.sendToServer(new PacketClearStructureCaptureSession());
-            StructureCaptureClientController.clearSelection();
         }
     }
 

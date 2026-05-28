@@ -354,8 +354,8 @@ public class ClientRenderEvents {
         double camForwardZ = Math.cos(camYawRad) * Math.cos(camPitchRad);
 
         // Camera right direction (for horizontal offset)
-        double camRightX = Math.cos(camYawRad);
-        double camRightZ = Math.sin(camYawRad);
+        // double camRightX = Math.cos(camYawRad);
+        // double camRightZ = Math.sin(camYawRad);
 
         // Base position: in front of camera
         double baseX = playerX + camForwardX * ARROW_BASE_DISTANCE;

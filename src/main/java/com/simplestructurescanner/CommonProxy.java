@@ -2,6 +2,7 @@ package com.simplestructurescanner;
 
 import java.io.File;
 
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
@@ -18,6 +19,7 @@ public class CommonProxy {
         ModConfig.loadConfigs(configFile);
         ModItems.registerItems();
         NetworkHandler.init();
+        MinecraftForge.EVENT_BUS.register(new CaptureSessionEvents());
     }
 
     public void init(FMLInitializationEvent event) {
