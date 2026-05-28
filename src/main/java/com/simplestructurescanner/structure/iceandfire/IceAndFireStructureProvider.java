@@ -227,53 +227,64 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
     }
 
     private void populateStructureContents() {
+        applyStructureContentsFromNbt("fire_dragon_roost");
+        applyStructureContentsFromNbt("ice_dragon_roost");
+        applyStructureContentsFromNbt("fire_dragon_cave");
+        applyStructureContentsFromNbt("ice_dragon_cave");
+        applyStructureContentsFromNbt("lightning_dragon_roost");
+        applyStructureContentsFromNbt("lightning_dragon_cave");
+        applyStructureContentsFromNbt("cyclops_cave");
+        applyStructureContentsFromNbt("gorgon_temple");
+        applyStructureContentsFromNbt("myrmex_hive_desert");
+        applyStructureContentsFromNbt("myrmex_hive_jungle");
+
         // Fire Dragon Roost
-        setLootTables("fire_dragon_roost",
+        setLootTablesIfMissing("fire_dragon_roost",
             createLootEntry("iceandfire:fire_dragon_female_cave", "gui.structurescanner.loot.chest"));
-        setEntities("fire_dragon_roost", createEntityEntry("iceandfire:firedragon", 1));
+        setEntitiesIfMissing("fire_dragon_roost", createEntityEntry("iceandfire:firedragon", 1));
 
         // Fire Dragon Cave
-        setLootTables("fire_dragon_cave",
+        setLootTablesIfMissing("fire_dragon_cave",
             createLootEntry("iceandfire:fire_dragon_female_cave", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:fire_dragon_male_cave", "gui.structurescanner.loot.chest"));
-        setEntities("fire_dragon_cave", createEntityEntry("iceandfire:firedragon", 1));
+        setEntitiesIfMissing("fire_dragon_cave", createEntityEntry("iceandfire:firedragon", 1));
 
         // Ice Dragon Roost
-        setLootTables("ice_dragon_roost",
+        setLootTablesIfMissing("ice_dragon_roost",
             createLootEntry("iceandfire:ice_dragon_female_cave", "gui.structurescanner.loot.chest"));
-        setEntities("ice_dragon_roost", createEntityEntry("iceandfire:icedragon", 1));
+        setEntitiesIfMissing("ice_dragon_roost", createEntityEntry("iceandfire:icedragon", 1));
 
         // Ice Dragon Cave
-        setLootTables("ice_dragon_cave",
+        setLootTablesIfMissing("ice_dragon_cave",
             createLootEntry("iceandfire:ice_dragon_female_cave", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:ice_dragon_male_cave", "gui.structurescanner.loot.chest"));
-        setEntities("ice_dragon_cave", createEntityEntry("iceandfire:icedragon", 1));
+        setEntitiesIfMissing("ice_dragon_cave", createEntityEntry("iceandfire:icedragon", 1));
 
         // Lightning Dragon Roost
-        setLootTables("lightning_dragon_roost",
+        setLootTablesIfMissing("lightning_dragon_roost",
             createLootEntry("iceandfire:lightning_dragon_female_cave", "gui.structurescanner.loot.chest"));
-        setEntities("lightning_dragon_roost", createEntityEntry("iceandfire:lightningdragon", 1));
+        setEntitiesIfMissing("lightning_dragon_roost", createEntityEntry("iceandfire:lightningdragon", 1));
 
         // Lightning Dragon Cave
-        setLootTables("lightning_dragon_cave",
+        setLootTablesIfMissing("lightning_dragon_cave",
             createLootEntry("iceandfire:lightning_dragon_female_cave", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:lightning_dragon_male_cave", "gui.structurescanner.loot.chest"));
-        setEntities("lightning_dragon_cave", createEntityEntry("iceandfire:lightningdragon", 1));
+        setEntitiesIfMissing("lightning_dragon_cave", createEntityEntry("iceandfire:lightningdragon", 1));
 
         // Cyclops Cave
-        setLootTables("cyclops_cave",
+        setLootTablesIfMissing("cyclops_cave",
             createLootEntry("iceandfire:cyclops_cave", "gui.structurescanner.loot.chest"));
-        setEntities("cyclops_cave", createEntityEntry("iceandfire:cyclops", 1));
+        setEntitiesIfMissing("cyclops_cave", createEntityEntry("iceandfire:cyclops", 1));
 
         // Gorgon Temple
-        setEntities("gorgon_temple", createEntityEntry("iceandfire:gorgon", 1));
+        setEntitiesIfMissing("gorgon_temple", createEntityEntry("iceandfire:gorgon", 1));
 
         // Myrmex Hive Desert
-        setLootTables("myrmex_hive_desert",
+        setLootTablesIfMissing("myrmex_hive_desert",
             createLootEntry("iceandfire:myrmex_loot_chest", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:myrmex_desert_food_chest", "gui.structurescanner.loot.iceandfire.cocoon"),
             createLootEntry("iceandfire:myrmex_trash_chest", "gui.structurescanner.loot.iceandfire.cocoon"));
-        setEntities("myrmex_hive_desert",
+        setEntitiesIfMissing("myrmex_hive_desert",
             createEntityEntry("iceandfire:myrmex_queen", 1),
             createEntityEntry("iceandfire:myrmex_royal", 2),
             createEntityEntry("iceandfire:myrmex_sentinel", 4),
@@ -281,11 +292,11 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
             createEntityEntry("iceandfire:myrmex_worker", 12));
 
         // Myrmex Hive Jungle
-        setLootTables("myrmex_hive_jungle",
+        setLootTablesIfMissing("myrmex_hive_jungle",
             createLootEntry("iceandfire:myrmex_loot_chest", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:myrmex_jungle_food_chest", "gui.structurescanner.loot.iceandfire.cocoon"),
             createLootEntry("iceandfire:myrmex_trash_chest", "gui.structurescanner.loot.iceandfire.cocoon"));
-        setEntities("myrmex_hive_jungle",
+        setEntitiesIfMissing("myrmex_hive_jungle",
             createEntityEntry("iceandfire:myrmex_queen", 1),
             createEntityEntry("iceandfire:myrmex_royal", 2),
             createEntityEntry("iceandfire:myrmex_sentinel", 4),

@@ -1,13 +1,12 @@
 package com.simplestructurescanner.client.gui;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import javax.annotation.Nullable;
 
@@ -15,7 +14,6 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
-import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
@@ -27,12 +25,10 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.resources.I18n;
-import net.minecraft.init.Blocks;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 
-import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.client.ClientSettings;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
@@ -162,6 +158,13 @@ public class GuiStructureScanner extends GuiScreen {
         if (previewWindow != null) previewWindow.restoreIfHiddenForNavigation();
     }
 
+    @Override
+    public void onGuiClosed() {
+        super.onGuiClosed();
+        clearPreviewRenderer();
+        previewWindow = null;
+    }
+
     public void selectStructure(ResourceLocation id) {
         this.selected = id;
         this.selectedInfo = id != null ? StructureProviderRegistry.getStructureInfo(id) : null;
@@ -173,7 +176,7 @@ public class GuiStructureScanner extends GuiScreen {
     }
 
     @Override
-    protected void actionPerformed(GuiButton button) throws IOException {
+    protected void actionPerformed(GuiButton button) {
         if (button.id == BUTTON_I18N) {
             ClientSettings.setI18nNames(!ClientSettings.i18nNames);
             button.displayString = getI18nButtonString();
@@ -584,7 +587,7 @@ public class GuiStructureScanner extends GuiScreen {
                 // Sort dimensions alphabetically by display name
                 List<String> sortedDimensions = new ArrayList<>();
                 for (DimensionInfo dim : dimensions) sortedDimensions.add(ClientTextResolver.resolve(dim.getDisplayName()));
-                sortedDimensions.sort((a, b) -> a.compareToIgnoreCase(b));
+                sortedDimensions.sort(String::compareToIgnoreCase);
 
                 // Deduplicate dimension names
                 tooltipDimensions = new ArrayList<>(new LinkedHashSet<>(sortedDimensions));
@@ -617,7 +620,7 @@ public class GuiStructureScanner extends GuiScreen {
                 // Sort biomes: minecraft first, then alphabetically
                 List<String> sortedBiomes = new ArrayList<>();
                 for (Biome biome : biomes) sortedBiomes.add(biome.getBiomeName());
-                sortedBiomes.sort((a, b) -> a.compareToIgnoreCase(b));
+                sortedBiomes.sort(String::compareToIgnoreCase);
 
                 // Deduplicate biome names
                 tooltipBiomes = new ArrayList<>(new LinkedHashSet<>(sortedBiomes));
@@ -758,7 +761,7 @@ public class GuiStructureScanner extends GuiScreen {
         // Keep empty preview if no layer data - clear stale renderer
         if (selectedInfo == null || !selectedInfo.hasLayerData()) {
             if (lastRenderedStructure == null || !lastRenderedStructure.equals(selected)) {
-                previewRenderer = null;
+                clearPreviewRenderer();
                 lastRenderedStructure = selected;
             }
 
@@ -768,7 +771,7 @@ public class GuiStructureScanner extends GuiScreen {
         List<StructureLayer> layers = selectedInfo.getLayers();
         if (layers == null || layers.isEmpty()) {
             if (lastRenderedStructure == null || !lastRenderedStructure.equals(selected)) {
-                previewRenderer = null;
+                clearPreviewRenderer();
                 lastRenderedStructure = selected;
             }
 
@@ -796,27 +799,15 @@ public class GuiStructureScanner extends GuiScreen {
      * Builds the preview renderer with blocks from the structure layers.
      */
     private void buildPreviewRenderer(List<StructureLayer> layers) {
-        previewRenderer = new StructurePreviewRenderer();
+        clearPreviewRenderer();
+        previewRenderer = StructurePreviewRenderer.createFromLayers(layers);
+    }
 
-        // Y offset to ensure blocks are above y=0 (some structures have negative Y)
-        int minY = Integer.MAX_VALUE;
-        for (StructureLayer layer : layers) {
-            if (layer.y < minY) minY = layer.y;
-        }
-        int yOffset = minY < 0 ? -minY : 0;
+    private void clearPreviewRenderer() {
+        if (previewRenderer == null) return;
 
-        for (StructureLayer layer : layers) {
-            int y = layer.y + yOffset;
-
-            for (int x = 0; x < layer.width; x++) {
-                for (int z = 0; z < layer.depth; z++) {
-                    IBlockState state = layer.getBlockState(x, z);
-                    if (state == null || state.getBlock() == Blocks.AIR || state.getBlock() == Blocks.STRUCTURE_VOID) continue;
-
-                    previewRenderer.getWorld().addBlock(new BlockPos(x + layer.xOffset, y, z + layer.zOffset), state);
-                }
-            }
-        }
+        previewRenderer.release();
+        previewRenderer = null;
     }
 
     private int getRarityColor(String rarity) {
@@ -838,10 +829,6 @@ public class GuiStructureScanner extends GuiScreen {
         int y = pos.getY();
         int z = pos.getZ();
 
-        String xStr = String.valueOf(x);
-        String yStr = String.valueOf(y);
-        String zStr = String.valueOf(z);
-
         // Try full format first
         String fullFormat = yAgnostic
             ? I18n.format("gui.structurescanner.locate.xz", x, z)
@@ -859,10 +846,11 @@ public class GuiStructureScanner extends GuiScreen {
         if (fontRenderer.getStringWidth(compactFormat) <= maxWidth) return compactFormat;
 
         // Try minimal format without labels
+        String yStr = String.valueOf(y);
         String sep = I18n.format("gui.structurescanner.separator");
         String minimalFormat = yAgnostic
-            ? Arrays.asList(xCompact, zCompact).stream().collect(Collectors.joining(sep))
-            : Arrays.asList(xCompact, yStr, zCompact).stream().collect(Collectors.joining(sep));
+            ? String.join(sep, xCompact, zCompact)
+            : String.join(sep, xCompact, yStr, zCompact);
 
         return minimalFormat;
     }
@@ -1025,7 +1013,7 @@ public class GuiStructureScanner extends GuiScreen {
         if (mouseX < previewX || mouseX > previewX + previewSize) return;
         if (mouseY < previewY || mouseY > previewY + previewSize) return;
 
-        List<String> lines = Arrays.asList(I18n.format("gui.structurescanner.previewTooltip"));
+        List<String> lines = Collections.singletonList(I18n.format("gui.structurescanner.previewTooltip"));
         drawMultiColumnTooltip(mouseX, mouseY, lines);
     }
 
@@ -1099,7 +1087,7 @@ public class GuiStructureScanner extends GuiScreen {
     /**
      * Structure list widget with filtering and scrolling.
      */
-    class StructureListWidget {
+    static class StructureListWidget {
         private final int x, y, width, height;
         private final FontRenderer font;
         private final GuiStructureScanner parent;
@@ -1146,9 +1134,7 @@ public class GuiStructureScanner extends GuiScreen {
             if (filterContextInitialized
                     && lastShowNonSearchable == ClientSettings.showNonSearchable
                     && lastShowCurrentDimensionOnly == ClientSettings.showCurrentDimensionOnly
-                    && (lastDimensionId == null
-                        ? currentDimensionId == null
-                        : lastDimensionId.equals(currentDimensionId))) {
+                    && Objects.equals(lastDimensionId, currentDimensionId)) {
                 return;
             }
 

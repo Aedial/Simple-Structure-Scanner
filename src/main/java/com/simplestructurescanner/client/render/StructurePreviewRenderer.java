@@ -1,6 +1,13 @@
 package com.simplestructurescanner.client.render;
 
-import net.minecraft.block.Block;
+import java.nio.FloatBuffer;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
+
+import org.lwjgl.BufferUtils;
+import org.lwjgl.opengl.GL11;
+
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ScaledResolution;
@@ -12,6 +19,7 @@ import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
+import net.minecraft.client.renderer.vertex.VertexBuffer;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.math.BlockPos;
@@ -19,14 +27,8 @@ import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.client.MinecraftForgeClient;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL12;
-import org.lwjgl.opengl.GL14;
-import org.lwjgl.BufferUtils;
 
-import javax.vecmath.Vector3f;
-import java.nio.FloatBuffer;
-import java.nio.IntBuffer;
+import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 
 /**
  * Renders a structure preview in a GUI with isometric-style view.
@@ -35,8 +37,29 @@ import java.nio.IntBuffer;
 @SideOnly(Side.CLIENT)
 public class StructurePreviewRenderer {
 
+    private static final float ISOMETRIC_PITCH = 30f;
+    private static final float ROTATION_SPEED = 20f;
+    private static final float ZOOM_FACTOR = 0.75f;
+    private static final int CACHE_BUFFER_SIZE = 131072;
+    private static final BlockRenderLayer[] OPAQUE_LAYERS = new BlockRenderLayer[] {
+        BlockRenderLayer.SOLID,
+        BlockRenderLayer.CUTOUT_MIPPED,
+        BlockRenderLayer.CUTOUT
+    };
+    private static final FloatBuffer LIGHT_POSITION = makeLightBuffer(0.5f, 1.0f, 0.8f, 0.0f);
+    private static final FloatBuffer LIGHT_DIFFUSE = makeLightBuffer(0.9f, 0.9f, 0.9f, 1.0f);
+    private static final FloatBuffer LIGHT_AMBIENT = makeLightBuffer(0.4f, 0.4f, 0.4f, 1.0f);
+
     private final DummyWorld world;
-    private int backgroundColor = 0xFF1A1A1A;
+    private final EnumMap<BlockRenderLayer, List<RenderBlockEntry>> layerEntries = new EnumMap<>(BlockRenderLayer.class);
+    private final EnumMap<BlockRenderLayer, LayerBufferCache> layerBuffers = new EnumMap<>(BlockRenderLayer.class);
+
+    private LightingMode lightingMode = LightingMode.STRUCTURE;
+    private float centerX = 0.5f;
+    private float centerY = 0.5f;
+    private float centerZ = 0.5f;
+    private float maxDimension = 1.0f;
+    private boolean buffersUploaded;
 
     // Isometric camera settings
     public enum LightingMode {
@@ -50,13 +73,41 @@ public class StructurePreviewRenderer {
         WORLD
     }
 
-    private static final float ISOMETRIC_PITCH = 30f;   // degrees from horizontal
-    private static final float ROTATION_SPEED = 20f;    // degrees per second
-    private static final float ZOOM_FACTOR = 0.75f;     // higher = smaller structure
-    private LightingMode lightingMode = LightingMode.STRUCTURE;
-
     public StructurePreviewRenderer() {
         this.world = new DummyWorld();
+
+        for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            layerEntries.put(layer, new ArrayList<RenderBlockEntry>());
+            layerBuffers.put(layer, new LayerBufferCache());
+        }
+    }
+
+    public static StructurePreviewRenderer createFromLayers(List<StructureLayer> layers) {
+        StructurePreviewRenderer renderer = new StructurePreviewRenderer();
+        if (layers == null || layers.isEmpty()) return renderer;
+
+        int minY = Integer.MAX_VALUE;
+        for (StructureLayer layer : layers) {
+            if (layer.y < minY) minY = layer.y;
+        }
+
+        // Shift the preview upward when a structure uses negative layer coordinates.
+        int yOffset = minY < 0 ? -minY : 0;
+        for (StructureLayer layer : layers) {
+            int y = layer.y + yOffset;
+
+            for (int x = 0; x < layer.width; x++) {
+                for (int z = 0; z < layer.depth; z++) {
+                    IBlockState state = layer.getBlockState(x, z);
+                    if (state == null || state.getBlock() == Blocks.AIR || state.getBlock() == Blocks.STRUCTURE_VOID) continue;
+
+                    renderer.getWorld().addBlock(new BlockPos(x + layer.xOffset, y, z + layer.zOffset), state);
+                }
+            }
+        }
+
+        renderer.rebuildRenderCache();
+        return renderer;
     }
 
     public DummyWorld getWorld() {
@@ -64,7 +115,6 @@ public class StructurePreviewRenderer {
     }
 
     public void setBackgroundColor(int color) {
-        this.backgroundColor = color;
     }
 
     public void setLightingMode(LightingMode mode) {
@@ -75,6 +125,10 @@ public class StructurePreviewRenderer {
         return lightingMode;
     }
 
+    public void release() {
+        deleteLayerBuffers();
+    }
+
     /**
      * Renders the structure at the given GUI position with automatic rotation.
      */
@@ -82,132 +136,128 @@ public class StructurePreviewRenderer {
         if (world.renderedBlocks.isEmpty()) return;
 
         Minecraft mc = Minecraft.getMinecraft();
-        ScaledResolution res = new ScaledResolution(mc);
-        float scaleFactor = (float) res.getScaleFactor();
+        ScaledResolution resolution = new ScaledResolution(mc);
+        float scaleFactor = (float) resolution.getScaleFactor();
 
-        // Convert GUI to screen coordinates
         int screenX = (int) (guiX * scaleFactor);
         int screenY = mc.displayHeight - (int) ((guiY + guiHeight) * scaleFactor);
-        int screenW = (int) (guiWidth * scaleFactor);
-        int screenH = (int) (guiHeight * scaleFactor);
-
-        // Calculate time-based rotation
+        int screenW = Math.max(1, (int) (guiWidth * scaleFactor));
+        int screenH = Math.max(1, (int) (guiHeight * scaleFactor));
         float rotation = (System.currentTimeMillis() % 36000L) / 1000f * ROTATION_SPEED;
-
-        // Get structure bounds
-        Vector3f min = world.getMinPos();
-        Vector3f max = world.getMaxPos();
-        float sizeX = max.x - min.x + 1;
-        float sizeY = max.y - min.y + 1;
-        float sizeZ = max.z - min.z + 1;
-        float maxDimension = Math.max(Math.max(sizeX, sizeY), sizeZ);
-
-        // === SAVE STATE ===
-        // Save viewport
-        IntBuffer oldViewport = BufferUtils.createIntBuffer(16);
-        GL11.glGetInteger(GL11.GL_VIEWPORT, oldViewport);
-
-        // Save projection matrix
-        FloatBuffer projMatrix = BufferUtils.createFloatBuffer(16);
-        GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, projMatrix);
-
-        // Save modelview matrix
-        FloatBuffer mvMatrix = BufferUtils.createFloatBuffer(16);
-        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, mvMatrix);
-
-        // Save current texture binding
-        int oldTexture = GL11.glGetInteger(GL11.GL_TEXTURE_BINDING_2D);
-
-        // Save blend state
-        boolean wasBlend = GL11.glIsEnabled(GL11.GL_BLEND);
-        int oldBlendSrc = GL11.glGetInteger(GL11.GL_BLEND_SRC);
-        int oldBlendDst = GL11.glGetInteger(GL11.GL_BLEND_DST);
-
-        // Save other state
-        boolean wasDepth = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
-        boolean wasCull = GL11.glIsEnabled(GL11.GL_CULL_FACE);
-        boolean wasLighting = GL11.glIsEnabled(GL11.GL_LIGHTING);
-        boolean wasAlpha = GL11.glIsEnabled(GL11.GL_ALPHA_TEST);
-        boolean wasScissor = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
-        boolean wasRescale = GL11.glIsEnabled(GL12.GL_RESCALE_NORMAL);
-
-        // Save color
-        FloatBuffer colorBuf = BufferUtils.createFloatBuffer(16);
-        GL11.glGetFloat(GL11.GL_CURRENT_COLOR, colorBuf);
-
-        // === RENDER ===
-        // Set viewport and scissor
-        GlStateManager.viewport(screenX, screenY, screenW, screenH);
-        GL11.glEnable(GL11.GL_SCISSOR_TEST);
-        GL11.glScissor(screenX, screenY, screenW, screenH);
-
-        // Clear depth buffer in our region
-        GlStateManager.clear(GL11.GL_DEPTH_BUFFER_BIT);
-
-        // Set projection matrix
-        GlStateManager.matrixMode(GL11.GL_PROJECTION);
-        GlStateManager.loadIdentity();
-
-        float aspect = guiWidth / guiHeight;
+        float aspect = guiHeight <= 0.0f ? 1.0f : guiWidth / guiHeight;
         float orthoSize = maxDimension * ZOOM_FACTOR;
-        GL11.glOrtho(-orthoSize * aspect, orthoSize * aspect, -orthoSize, orthoSize, -1000, 1000);
 
-        // Set modelview matrix
-        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
-        GlStateManager.loadIdentity();
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
 
-        // For WORLD lighting mode, set up light position BEFORE rotation
-        // so light stays fixed while structure rotates
-        if (lightingMode == LightingMode.WORLD) setupLighting();
-
-        // Apply isometric view transformation
-        GlStateManager.rotate(ISOMETRIC_PITCH, 1, 0, 0);
-        GlStateManager.rotate(rotation, 0, 1, 0);
-
-        // For STRUCTURE lighting mode, set up light position AFTER rotation
-        // so light rotates with the structure (same faces always lit)
-        if (lightingMode == LightingMode.STRUCTURE) setupLighting();
-
-        // Center the structure
-        float centerX = (min.x + max.x) / 2f + 0.5f;
-        float centerY = (min.y + max.y) / 2f + 0.5f;
-        float centerZ = (min.z + max.z) / 2f + 0.5f;
-        GlStateManager.translate(-centerX, -centerY, -centerZ);
-
-        // Render the blocks
-        renderBlocks();
-
-        // === RESTORE STATE ===
-        // Disable scissor
-        if (!wasScissor) GL11.glDisable(GL11.GL_SCISSOR_TEST);
-
-        // Restore viewport
-        GlStateManager.viewport(oldViewport.get(0), oldViewport.get(1), oldViewport.get(2), oldViewport.get(3));
-
-        // Restore projection matrix
         GlStateManager.matrixMode(GL11.GL_PROJECTION);
+        GlStateManager.pushMatrix();
         GlStateManager.loadIdentity();
-        GL11.glLoadMatrix(projMatrix);
 
-        // Restore modelview matrix
         GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+        GlStateManager.pushMatrix();
         GlStateManager.loadIdentity();
-        GL11.glLoadMatrix(mvMatrix);
 
-        // Restore texture binding
-        GlStateManager.bindTexture(oldTexture);
-        GL11.glBlendFunc(oldBlendSrc, oldBlendDst);
-        if (wasBlend) GlStateManager.enableBlend(); else GlStateManager.disableBlend();
-        if (wasDepth) GlStateManager.enableDepth(); else GlStateManager.disableDepth();
-        if (wasCull) GlStateManager.enableCull(); else GlStateManager.disableCull();
-        if (wasLighting) GlStateManager.enableLighting(); else GlStateManager.disableLighting();
-        if (wasAlpha) GlStateManager.enableAlpha(); else GlStateManager.disableAlpha();
-        if (wasRescale) GlStateManager.enableRescaleNormal(); else GlStateManager.disableRescaleNormal();
-        GlStateManager.color(colorBuf.get(0), colorBuf.get(1), colorBuf.get(2), colorBuf.get(3));
-        GlStateManager.depthMask(true);
+        try {
+            GlStateManager.viewport(screenX, screenY, screenW, screenH);
+            GL11.glEnable(GL11.GL_SCISSOR_TEST);
+            GL11.glScissor(screenX, screenY, screenW, screenH);
+            GlStateManager.clear(GL11.GL_DEPTH_BUFFER_BIT);
+
+            GlStateManager.matrixMode(GL11.GL_PROJECTION);
+            GlStateManager.loadIdentity();
+            GL11.glOrtho(-orthoSize * aspect, orthoSize * aspect, -orthoSize, orthoSize, -1000, 1000);
+
+            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+            GlStateManager.loadIdentity();
+
+            if (lightingMode == LightingMode.WORLD) setupLighting();
+
+            // Apply isometric view transformations after setting up projection and lighting
+            GlStateManager.rotate(ISOMETRIC_PITCH, 1, 0, 0);
+            GlStateManager.rotate(rotation, 0, 1, 0);
+
+            if (lightingMode == LightingMode.STRUCTURE) setupLighting();
+
+            GlStateManager.translate(-centerX, -centerY, -centerZ);
+            renderBlocks();
+        } finally {
+            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+            GlStateManager.popMatrix();
+            GlStateManager.matrixMode(GL11.GL_PROJECTION);
+            GlStateManager.popMatrix();
+            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+            GL11.glPopClientAttrib();
+            GL11.glPopAttrib();
+            restoreGuiState();
+        }
+    }
+
+    private void restoreGuiState() {
+        OpenGlHelper.setClientActiveTexture(OpenGlHelper.lightmapTexUnit);
+        GlStateManager.glDisableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
+        OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit);
+        GlStateManager.glDisableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
+        GlStateManager.glDisableClientState(GL11.GL_COLOR_ARRAY);
+        GlStateManager.glDisableClientState(GL11.GL_VERTEX_ARRAY);
+
+        GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+        GlStateManager.enableTexture2D();
+        GlStateManager.enableAlpha();
+        GlStateManager.disableBlend();
+        GlStateManager.disableCull();
+        GlStateManager.disableDepth();
+        GlStateManager.disableLighting();
         GlStateManager.disableColorMaterial();
-        GL11.glDisable(GL11.GL_LIGHT0);
+        GlStateManager.disableRescaleNormal();
+        GlStateManager.depthMask(true);
+        GlStateManager.color(1f, 1f, 1f, 1f);
         RenderHelper.disableStandardItemLighting();
+    }
+
+    private void rebuildRenderCache() {
+        deleteLayerBuffers();
+
+        for (List<RenderBlockEntry> entries : layerEntries.values()) {
+            entries.clear();
+        }
+
+        if (world.renderedBlocks.isEmpty()) {
+            centerX = 0.5f;
+            centerY = 0.5f;
+            centerZ = 0.5f;
+            maxDimension = 1.0f;
+            return;
+        }
+
+        float minX = world.getMinPos().x;
+        float minY = world.getMinPos().y;
+        float minZ = world.getMinPos().z;
+        float maxX = world.getMaxPos().x;
+        float maxY = world.getMaxPos().y;
+        float maxZ = world.getMaxPos().z;
+
+        centerX = (minX + maxX) / 2f + 0.5f;
+        centerY = (minY + maxY) / 2f + 0.5f;
+        centerZ = (minZ + maxZ) / 2f + 0.5f;
+        maxDimension = Math.max(Math.max(maxX - minX + 1.0f, maxY - minY + 1.0f), maxZ - minZ + 1.0f);
+
+        // Resolve actual states once so large previews do not repeat the same block work every frame.
+        for (BlockPos pos : world.renderedBlocks) {
+            IBlockState state = world.getBlockState(pos);
+            if (state.getBlock() == Blocks.AIR) continue;
+
+            try {
+                state = state.getActualState(world, pos);
+            } catch (Exception ignored) {
+            }
+
+            for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+                if (state.getBlock().canRenderInLayer(state, layer)) {
+                    layerEntries.get(layer).add(new RenderBlockEntry(pos, state));
+                }
+            }
+        }
     }
 
     /**
@@ -219,25 +269,9 @@ public class StructurePreviewRenderer {
         // Enable lighting
         GlStateManager.enableLighting();
         GL11.glEnable(GL11.GL_LIGHT0);
-
-        // Light from upper-front-right (typical isometric lighting)
-        FloatBuffer lightPos = BufferUtils.createFloatBuffer(4);
-        lightPos.put(new float[]{0.5f, 1.0f, 0.8f, 0.0f}); // w=0 for directional light
-        lightPos.flip();
-        GL11.glLight(GL11.GL_LIGHT0, GL11.GL_POSITION, lightPos);
-
-        // Bright diffuse and ambient
-        FloatBuffer diffuse = BufferUtils.createFloatBuffer(4);
-        diffuse.put(new float[]{0.9f, 0.9f, 0.9f, 1.0f});
-        diffuse.flip();
-        GL11.glLight(GL11.GL_LIGHT0, GL11.GL_DIFFUSE, diffuse);
-
-        FloatBuffer ambient = BufferUtils.createFloatBuffer(4);
-        ambient.put(new float[]{0.4f, 0.4f, 0.4f, 1.0f});
-        ambient.flip();
-        GL11.glLight(GL11.GL_LIGHT0, GL11.GL_AMBIENT, ambient);
-
-        // Set material to use vertex colors
+        GL11.glLight(GL11.GL_LIGHT0, GL11.GL_POSITION, LIGHT_POSITION.duplicate());
+        GL11.glLight(GL11.GL_LIGHT0, GL11.GL_DIFFUSE, LIGHT_DIFFUSE.duplicate());
+        GL11.glLight(GL11.GL_LIGHT0, GL11.GL_AMBIENT, LIGHT_AMBIENT.duplicate());
         GlStateManager.enableColorMaterial();
         GL11.glColorMaterial(GL11.GL_FRONT_AND_BACK, GL11.GL_AMBIENT_AND_DIFFUSE);
     }
@@ -247,6 +281,8 @@ public class StructurePreviewRenderer {
      */
     private void renderBlocks() {
         Minecraft mc = Minecraft.getMinecraft();
+        BlockRendererDispatcher blockRenderer = mc.getBlockRendererDispatcher();
+        BlockRenderLayer oldLayer = MinecraftForgeClient.getRenderLayer();
 
         // Set up render state for blocks
         GlStateManager.enableDepth();
@@ -269,44 +305,115 @@ public class StructurePreviewRenderer {
 
         mc.renderEngine.bindTexture(TextureMap.LOCATION_BLOCKS_TEXTURE);
 
-        BlockRendererDispatcher blockRenderer = mc.getBlockRendererDispatcher();
-        BlockRenderLayer oldLayer = MinecraftForgeClient.getRenderLayer();
-
         try {
-            // Render opaque layers first
-            for (BlockRenderLayer layer : BlockRenderLayer.values()) {
-                if (layer == BlockRenderLayer.TRANSLUCENT) continue;
-
-                ForgeHooksClient.setRenderLayer(layer);
-
-                GlStateManager.disableBlend();
-                GlStateManager.depthMask(true);
-
-                Tessellator tess = Tessellator.getInstance();
-                BufferBuilder buffer = tess.getBuffer();
-                buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK);
-
-                for (BlockPos pos : world.renderedBlocks) {
-                    IBlockState state = world.getBlockState(pos);
-                    Block block = state.getBlock();
-                    if (block == Blocks.AIR) continue;
-
-                    try {
-                        state = state.getActualState(world, pos);
-                    } catch (Exception ignored) {
-                    }
-
-                    if (block.canRenderInLayer(state, layer)) {
-                        blockRenderer.renderBlock(state, pos, world, buffer);
-                    }
-                }
-
-                tess.draw();
-                buffer.setTranslation(0, 0, 0);
+            if (OpenGlHelper.useVbo()) {
+                ensureLayerBuffersUploaded(blockRenderer);
+                renderLayerBuffers();
+                return;
             }
 
-            // Render translucent layer last
-            ForgeHooksClient.setRenderLayer(BlockRenderLayer.TRANSLUCENT);
+            renderImmediateLayers(blockRenderer);
+        } finally {
+            ForgeHooksClient.setRenderLayer(oldLayer);
+        }
+    }
+
+    private void ensureLayerBuffersUploaded(BlockRendererDispatcher blockRenderer) {
+        if (buffersUploaded) return;
+
+        deleteLayerBuffers();
+
+        for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            List<RenderBlockEntry> entries = layerEntries.get(layer);
+            if (entries == null || entries.isEmpty()) continue;
+
+            ForgeHooksClient.setRenderLayer(layer);
+
+            BufferBuilder buffer = new BufferBuilder(CACHE_BUFFER_SIZE);
+            buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK);
+
+            for (RenderBlockEntry entry : entries) {
+                blockRenderer.renderBlock(entry.state, entry.pos, world, buffer);
+            }
+
+            if (buffer.getVertexCount() <= 0) {
+                buffer.reset();
+                continue;
+            }
+
+            buffer.finishDrawing();
+
+            LayerBufferCache layerBuffer = layerBuffers.get(layer);
+            layerBuffer.vertexBuffer = new VertexBuffer(DefaultVertexFormats.BLOCK);
+            layerBuffer.drawMode = buffer.getDrawMode();
+            layerBuffer.vertexBuffer.bufferData(buffer.getByteBuffer());
+        }
+
+        buffersUploaded = true;
+    }
+
+    private void renderImmediateLayers(BlockRendererDispatcher blockRenderer) {
+        Tessellator tessellator = Tessellator.getInstance();
+        BufferBuilder buffer = tessellator.getBuffer();
+
+        for (BlockRenderLayer layer : OPAQUE_LAYERS) {
+            renderImmediateLayer(blockRenderer, tessellator, buffer, layer, false);
+        }
+
+        renderImmediateLayer(blockRenderer, tessellator, buffer, BlockRenderLayer.TRANSLUCENT, true);
+    }
+
+    private void renderImmediateLayer(BlockRendererDispatcher blockRenderer, Tessellator tessellator, BufferBuilder buffer,
+            BlockRenderLayer layer, boolean translucent) {
+        List<RenderBlockEntry> entries = layerEntries.get(layer);
+        if (entries == null || entries.isEmpty()) return;
+
+        ForgeHooksClient.setRenderLayer(layer);
+
+        if (translucent) {
+            GlStateManager.enableBlend();
+            GlStateManager.tryBlendFuncSeparate(
+                GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+                GlStateManager.SourceFactor.ONE,
+                GlStateManager.DestFactor.ZERO
+            );
+            GlStateManager.depthMask(false);
+        } else {
+            GlStateManager.disableBlend();
+            GlStateManager.depthMask(true);
+        }
+
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK);
+
+        for (RenderBlockEntry entry : entries) {
+            blockRenderer.renderBlock(entry.state, entry.pos, world, buffer);
+        }
+
+        if (buffer.getVertexCount() > 0) {
+            tessellator.draw();
+            buffer.setTranslation(0, 0, 0);
+            return;
+        }
+
+        buffer.reset();
+        buffer.setTranslation(0, 0, 0);
+    }
+
+    private void renderLayerBuffers() {
+        GlStateManager.glEnableClientState(GL11.GL_VERTEX_ARRAY);
+        GlStateManager.glEnableClientState(GL11.GL_COLOR_ARRAY);
+        GlStateManager.glEnableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
+        OpenGlHelper.setClientActiveTexture(OpenGlHelper.lightmapTexUnit);
+        GlStateManager.glEnableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
+        OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit);
+
+        try {
+            for (BlockRenderLayer layer : OPAQUE_LAYERS) {
+                GlStateManager.disableBlend();
+                GlStateManager.depthMask(true);
+                renderLayerBuffer(layer);
+            }
 
             GlStateManager.enableBlend();
             GlStateManager.tryBlendFuncSeparate(
@@ -316,31 +423,69 @@ public class StructurePreviewRenderer {
                 GlStateManager.DestFactor.ZERO
             );
             GlStateManager.depthMask(false);
-
-            Tessellator tess = Tessellator.getInstance();
-            BufferBuilder buffer = tess.getBuffer();
-            buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK);
-
-            for (BlockPos pos : world.renderedBlocks) {
-                IBlockState state = world.getBlockState(pos);
-                Block block = state.getBlock();
-                if (block == Blocks.AIR) continue;
-
-                try {
-                    state = state.getActualState(world, pos);
-                } catch (Exception ignored) {
-                }
-
-                if (block.canRenderInLayer(state, BlockRenderLayer.TRANSLUCENT)) {
-                    blockRenderer.renderBlock(state, pos, world, buffer);
-                }
-            }
-
-            tess.draw();
-            buffer.setTranslation(0, 0, 0);
-
+            renderLayerBuffer(BlockRenderLayer.TRANSLUCENT);
         } finally {
-            ForgeHooksClient.setRenderLayer(oldLayer);
+            OpenGlHelper.glBindBuffer(OpenGlHelper.GL_ARRAY_BUFFER, 0);
+            OpenGlHelper.setClientActiveTexture(OpenGlHelper.lightmapTexUnit);
+            GlStateManager.glDisableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
+            OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit);
+            GlStateManager.glDisableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
+            GlStateManager.glDisableClientState(GL11.GL_COLOR_ARRAY);
+            GlStateManager.glDisableClientState(GL11.GL_VERTEX_ARRAY);
+            GlStateManager.resetColor();
         }
+    }
+
+    private void renderLayerBuffer(BlockRenderLayer layer) {
+        LayerBufferCache layerBuffer = layerBuffers.get(layer);
+        if (layerBuffer == null || layerBuffer.vertexBuffer == null) return;
+
+        ForgeHooksClient.setRenderLayer(layer);
+        layerBuffer.vertexBuffer.bindBuffer();
+        setupBlockArrayPointers();
+        layerBuffer.vertexBuffer.drawArrays(layerBuffer.drawMode);
+    }
+
+    private void setupBlockArrayPointers() {
+        GlStateManager.glVertexPointer(3, 5126, 28, 0);
+        GlStateManager.glColorPointer(4, 5121, 28, 12);
+        GlStateManager.glTexCoordPointer(2, 5126, 28, 16);
+        OpenGlHelper.setClientActiveTexture(OpenGlHelper.lightmapTexUnit);
+        GlStateManager.glTexCoordPointer(2, 5122, 28, 24);
+        OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit);
+    }
+
+    private void deleteLayerBuffers() {
+        for (LayerBufferCache layerBuffer : layerBuffers.values()) {
+            if (layerBuffer.vertexBuffer == null) continue;
+
+            layerBuffer.vertexBuffer.deleteGlBuffers();
+            layerBuffer.vertexBuffer = null;
+            layerBuffer.drawMode = GL11.GL_QUADS;
+        }
+
+        buffersUploaded = false;
+    }
+
+    private static FloatBuffer makeLightBuffer(float x, float y, float z, float w) {
+        FloatBuffer buffer = BufferUtils.createFloatBuffer(4);
+        buffer.put(new float[] {x, y, z, w});
+        buffer.flip();
+        return buffer.asReadOnlyBuffer();
+    }
+
+    private static class RenderBlockEntry {
+        private final BlockPos pos;
+        private final IBlockState state;
+
+        private RenderBlockEntry(BlockPos pos, IBlockState state) {
+            this.pos = pos;
+            this.state = state;
+        }
+    }
+
+    private static class LayerBufferCache {
+        private VertexBuffer vertexBuffer;
+        private int drawMode = GL11.GL_QUADS;
     }
 }

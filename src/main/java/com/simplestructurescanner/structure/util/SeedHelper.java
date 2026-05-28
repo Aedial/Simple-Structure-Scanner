@@ -26,9 +26,8 @@ public final class SeedHelper {
     @Nullable
     public static Long getWorldSeed(World world) {
         if (world == null) return null;
-        if (world.getWorldInfo() != null) return world.getWorldInfo().getSeed();
+        return world.getWorldInfo().getSeed();
 
-        return null;
     }
 
     /**

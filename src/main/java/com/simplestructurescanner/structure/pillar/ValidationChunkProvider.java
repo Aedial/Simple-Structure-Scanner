@@ -12,12 +12,12 @@ import javax.annotation.Nullable;
 
 /**
  * A chunk provider for the structure validation world that generates real terrain.
- *
+ * <p>
  * This provider:
  * - Generates chunks with actual terrain data using the real chunk generator
  * - Caches generated chunks in memory to avoid regenerating
  * - Provides chunks to the validation world for structure placement validation
- *
+ * <p>
  * The key difference from DummyChunkProvider is that this actually generates
  * terrain by delegating to the real world's chunk generator.
  */

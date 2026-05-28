@@ -7,12 +7,13 @@ import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import javax.annotation.Nullable;
@@ -41,6 +42,7 @@ import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.World;
 import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.fml.common.FMLCommonHandler;
+import net.minecraftforge.common.util.Constants;
 
 
 /**
@@ -59,8 +61,8 @@ public final class StructureCaptureService {
     public static StructureCaptureSummary buildSummary(World world, BlockPos firstCorner, BlockPos secondCorner) {
         NormalizedBounds selection = NormalizedBounds.fromCorners(firstCorner, secondCorner);
         ContentBounds contentBounds = new ContentBounds();
-        Map<String, BlockAccumulator> blocks = new LinkedHashMap<String, BlockAccumulator>();
-        Map<String, ContainerAccumulator> containers = new LinkedHashMap<String, ContainerAccumulator>();
+        Map<String, BlockAccumulator> blocks = new LinkedHashMap<>();
+        Map<String, ContainerAccumulator> containers = new LinkedHashMap<>();
 
         for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(selection.minPos, selection.maxPos)) {
             BlockPos blockPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
@@ -70,11 +72,7 @@ public final class StructureCaptureService {
 
             if (CaptureBlockHelper.shouldShowInSummary(state)) {
                 String blockKey = CaptureBlockHelper.createKey(state);
-                BlockAccumulator accumulator = blocks.get(blockKey);
-                if (accumulator == null) {
-                    accumulator = new BlockAccumulator(blockKey, state);
-                    blocks.put(blockKey, accumulator);
-                }
+                BlockAccumulator accumulator = blocks.computeIfAbsent(blockKey, k -> new BlockAccumulator(k, state));
 
                 accumulator.count++;
             }
@@ -91,11 +89,7 @@ public final class StructureCaptureService {
             if (lootTableId == null && itemCount <= 0) continue;
 
             String containerKey = createContainerKey(state, lootTableId);
-            ContainerAccumulator accumulator = containers.get(containerKey);
-            if (accumulator == null) {
-                accumulator = new ContainerAccumulator(containerKey, state, lootTableId);
-                containers.put(containerKey, accumulator);
-            }
+            ContainerAccumulator accumulator = containers.computeIfAbsent(containerKey, k -> new ContainerAccumulator(k, state, lootTableId));
 
             accumulator.containerCount++;
             accumulator.totalItemCount += itemCount;
@@ -105,22 +99,20 @@ public final class StructureCaptureService {
 
         if (!contentBounds.hasContent()) return null;
 
-        List<StructureCaptureSummary.BlockSummary> blockSummaries = new ArrayList<StructureCaptureSummary.BlockSummary>();
+        List<StructureCaptureSummary.BlockSummary> blockSummaries = new ArrayList<>();
         for (BlockAccumulator accumulator : blocks.values()) {
             blockSummaries.add(new StructureCaptureSummary.BlockSummary(accumulator.key, accumulator.representativeState, accumulator.count));
         }
 
-        Collections.sort(blockSummaries, new Comparator<StructureCaptureSummary.BlockSummary>() {
-            @Override
-            public int compare(StructureCaptureSummary.BlockSummary first, StructureCaptureSummary.BlockSummary second) {
-                int countCompare = Integer.compare(second.getCount(), first.getCount());
-                if (countCompare != 0) return countCompare;
+        blockSummaries.sort((first, second) -> {
+            int countCompare = Integer.compare(second.getCount(), first.getCount());
+            if (countCompare != 0)
+                return countCompare;
 
-                return first.getKey().compareTo(second.getKey());
-            }
+            return first.getKey().compareTo(second.getKey());
         });
 
-        List<StructureCaptureSummary.ContainerSummary> containerSummaries = new ArrayList<StructureCaptureSummary.ContainerSummary>();
+        List<StructureCaptureSummary.ContainerSummary> containerSummaries = new ArrayList<>();
         for (ContainerAccumulator accumulator : containers.values()) {
             containerSummaries.add(new StructureCaptureSummary.ContainerSummary(
                 accumulator.key,
@@ -131,15 +123,12 @@ public final class StructureCaptureService {
             ));
         }
 
-        Collections.sort(containerSummaries, new Comparator<StructureCaptureSummary.ContainerSummary>() {
-            @Override
-            public int compare(StructureCaptureSummary.ContainerSummary first,
-                    StructureCaptureSummary.ContainerSummary second) {
-                int countCompare = Integer.compare(second.getContainerCount(), first.getContainerCount());
-                if (countCompare != 0) return countCompare;
+        containerSummaries.sort((first, second) -> {
+            int countCompare = Integer.compare(second.getContainerCount(), first.getContainerCount());
+            if (countCompare != 0)
+                return countCompare;
 
-                return first.getKey().compareTo(second.getKey());
-            }
+            return first.getKey().compareTo(second.getKey());
         });
 
         return new StructureCaptureSummary(
@@ -155,30 +144,59 @@ public final class StructureCaptureService {
     @Nullable
     public static SaveResult saveCapture(World world, BlockPos firstCorner, BlockPos secondCorner,
             StructureCaptureExclusions exclusions) throws IOException {
+        CapturedStructure capturedStructure = buildCapturedStructure(world, firstCorner, secondCorner, exclusions);
+        if (capturedStructure == null) return null;
+
+        File captureDirectory = getCaptureDirectory(world);
+
+        File captureFile = createCaptureFile(captureDirectory);
+        try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
+            CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
+        }
+
+        return new SaveResult(
+            captureFile,
+            capturedStructure.getSizeX(),
+            capturedStructure.getSizeY(),
+            capturedStructure.getSizeZ()
+        );
+    }
+
+    @Nullable
+    public static CapturedStructure buildCapturedStructure(World world, BlockPos firstCorner, BlockPos secondCorner,
+            StructureCaptureExclusions exclusions) {
         NormalizedBounds selection = NormalizedBounds.fromCorners(firstCorner, secondCorner);
         ContentBounds finalBounds = collectFinalBounds(world, selection, exclusions);
         if (!finalBounds.hasContent()) return null;
 
         NBTTagCompound structureNbt = writeStructureNbt(world, finalBounds, exclusions);
-        File captureDirectory = getCaptureDirectory(world);
+        return new CapturedStructure(
+            structureNbt,
+            finalBounds.getSizeX(),
+            finalBounds.getSizeY(),
+            finalBounds.getSizeZ()
+        );
+    }
 
-        File captureFile = createCaptureFile(captureDirectory);
-        try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
-            CompressedStreamTools.writeCompressed(structureNbt, stream);
-        }
+    @Nullable
+    public static NBTTagCompound buildRenderedPreviewNbt(World world, BlockPos firstCorner, BlockPos secondCorner,
+            StructureCaptureExclusions exclusions) {
+        NormalizedBounds selection = NormalizedBounds.fromCorners(firstCorner, secondCorner);
+        ContentBounds finalBounds = collectFinalBounds(world, selection, exclusions);
+        if (!finalBounds.hasContent()) return null;
 
-        return new SaveResult(captureFile, finalBounds.getSizeX(), finalBounds.getSizeY(), finalBounds.getSizeZ());
+        return writeRenderedPreviewNbt(world, finalBounds, exclusions);
     }
 
     private static List<StructureCaptureSummary.EntityInstance> collectEntitySummaries(World world,
             NormalizedBounds selection, ContentBounds contentBounds) {
-        List<StructureCaptureSummary.EntityInstance> entities = new ArrayList<StructureCaptureSummary.EntityInstance>();
+        List<StructureCaptureSummary.EntityInstance> entities = new ArrayList<>();
         for (Entity entity : getEntitiesInBounds(world, selection.minPos, selection.maxPos)) {
             if (!shouldCaptureEntity(entity)) continue;
 
             UUID uuid = entity.getUniqueID();
             ResourceLocation entityId = EntityList.getKey(entity);
-            if (uuid == null || entityId == null) continue;
+            if (entityId == null) continue;
 
             BlockPos blockPos = entity instanceof EntityPainting
                 ? ((EntityPainting) entity).getHangingPosition()
@@ -188,20 +206,20 @@ public final class StructureCaptureService {
             entities.add(new StructureCaptureSummary.EntityInstance(uuid.toString(), entityId, blockPos));
         }
 
-        Collections.sort(entities, new Comparator<StructureCaptureSummary.EntityInstance>() {
-            @Override
-            public int compare(StructureCaptureSummary.EntityInstance first, StructureCaptureSummary.EntityInstance second) {
-                int idCompare = first.getEntityId().toString().compareTo(second.getEntityId().toString());
-                if (idCompare != 0) return idCompare;
+        entities.sort((first, second) -> {
+            int idCompare = first.getEntityId().toString().compareTo(second.getEntityId().toString());
+            if (idCompare != 0)
+                return idCompare;
 
-                int compareX = Integer.compare(first.getBlockPos().getX(), second.getBlockPos().getX());
-                if (compareX != 0) return compareX;
+            int compareX = Integer.compare(first.getBlockPos().getX(), second.getBlockPos().getX());
+            if (compareX != 0)
+                return compareX;
 
-                int compareY = Integer.compare(first.getBlockPos().getY(), second.getBlockPos().getY());
-                if (compareY != 0) return compareY;
+            int compareY = Integer.compare(first.getBlockPos().getY(), second.getBlockPos().getY());
+            if (compareY != 0)
+                return compareY;
 
-                return Integer.compare(first.getBlockPos().getZ(), second.getBlockPos().getZ());
-            }
+            return Integer.compare(first.getBlockPos().getZ(), second.getBlockPos().getZ());
         });
 
         return entities;
@@ -225,7 +243,7 @@ public final class StructureCaptureService {
             if (!shouldCaptureEntity(entity)) continue;
 
             UUID uuid = entity.getUniqueID();
-            if (uuid != null && exclusions.isEntityExcluded(uuid.toString())) continue;
+            if (exclusions.isEntityExcluded(uuid.toString())) continue;
 
             BlockPos blockPos = entity instanceof EntityPainting
                 ? ((EntityPainting) entity).getHangingPosition()
@@ -238,10 +256,12 @@ public final class StructureCaptureService {
 
     private static NBTTagCompound writeStructureNbt(World world, ContentBounds bounds,
             StructureCaptureExclusions exclusions) {
-        List<CapturedBlock> solidBlocks = new ArrayList<CapturedBlock>();
-        List<CapturedBlock> tileBlocks = new ArrayList<CapturedBlock>();
-        List<CapturedBlock> otherBlocks = new ArrayList<CapturedBlock>();
-        LinkedHashMap<IBlockState, Integer> palette = new LinkedHashMap<IBlockState, Integer>();
+        List<CapturedBlock> solidBlocks = new ArrayList<>();
+        List<CapturedBlock> tileBlocks = new ArrayList<>();
+        List<CapturedBlock> otherBlocks = new ArrayList<>();
+        LinkedHashMap<IBlockState, Integer> palette = new LinkedHashMap<>();
+        Set<String> referencedNamespaces = new LinkedHashSet<>();
+        AirRetentionMask airRetentionMask = buildAirRetentionMask(world, bounds, exclusions);
 
         for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
             BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
@@ -249,6 +269,12 @@ public final class StructureCaptureService {
             IBlockState state = world.getBlockState(worldPos);
             boolean excludedBlock = isBlockExcluded(state, exclusions);
             IBlockState storedState = excludedBlock ? Blocks.AIR.getDefaultState() : state;
+
+            if (CaptureBlockHelper.isAir(storedState) && !airRetentionMask.shouldKeep(relativePos)) continue;
+
+            if (!CaptureBlockHelper.isAir(storedState)) {
+                addNamespace(referencedNamespaces, storedState.getBlock().getRegistryName());
+            }
 
             NBTTagCompound tileData = null;
             if (!excludedBlock) {
@@ -261,9 +287,8 @@ public final class StructureCaptureService {
 
                     if (!listedContainer || !isContainerExcluded(state, lootTableId, exclusions)) {
                         tileData = serializedTileData;
-                        tileData.removeTag("x");
-                        tileData.removeTag("y");
-                        tileData.removeTag("z");
+                        trimTileEntityData(tileData);
+                        addNamespace(referencedNamespaces, TileEntity.getKey(tileEntity.getClass()));
                     }
                 }
             }
@@ -283,10 +308,10 @@ public final class StructureCaptureService {
             otherBlocks.add(block);
         }
 
-        List<CapturedEntity> entities = captureEntitiesForSave(world, bounds, exclusions);
+        List<CapturedEntity> entities = captureEntitiesForSave(world, bounds, exclusions, referencedNamespaces);
 
         NBTTagCompound nbt = new NBTTagCompound();
-        FMLCommonHandler.instance().getDataFixer().writeVersionData(nbt);
+        writeSelectedForgeDataVersions(nbt, referencedNamespaces);
         nbt.setTag("palette", writePalette(palette));
         nbt.setTag("blocks", writeBlocks(solidBlocks, tileBlocks, otherBlocks, palette));
         nbt.setTag("entities", writeEntities(entities));
@@ -296,18 +321,55 @@ public final class StructureCaptureService {
         return nbt;
     }
 
-    private static List<CapturedEntity> captureEntitiesForSave(World world, ContentBounds bounds,
+    private static NBTTagCompound writeRenderedPreviewNbt(World world, ContentBounds bounds,
             StructureCaptureExclusions exclusions) {
-        List<CapturedEntity> entities = new ArrayList<CapturedEntity>();
+        List<CapturedBlock> solidBlocks = new ArrayList<>();
+        List<CapturedBlock> otherBlocks = new ArrayList<>();
+        LinkedHashMap<IBlockState, Integer> palette = new LinkedHashMap<>();
+
+        for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
+            BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
+            IBlockState state = world.getBlockState(worldPos);
+            if (isBlockExcluded(state, exclusions)) continue;
+            if (CaptureBlockHelper.isAir(state)) continue;
+
+            BlockPos relativePos = worldPos.subtract(bounds.minPos);
+            idForState(palette, state);
+
+            CapturedBlock block = new CapturedBlock(relativePos, state, null);
+            if (state.isFullBlock() && state.isFullCube()) {
+                solidBlocks.add(block);
+                continue;
+            }
+
+            otherBlocks.add(block);
+        }
+
+        NBTTagCompound nbt = new NBTTagCompound();
+
+        // The preview renderer only needs visible block states. Save-only data such as air
+        // retention, tile NBT, and entities is omitted here to keep large previews small.
+        nbt.setTag("palette", writePalette(palette));
+        nbt.setTag("blocks", writeBlocks(solidBlocks, Collections.emptyList(), otherBlocks, palette));
+        nbt.setTag("size", writeInts(bounds.getSizeX(), bounds.getSizeY(), bounds.getSizeZ()));
+        return nbt;
+    }
+
+    private static List<CapturedEntity> captureEntitiesForSave(World world, ContentBounds bounds,
+            StructureCaptureExclusions exclusions, Set<String> referencedNamespaces) {
+        List<CapturedEntity> entities = new ArrayList<>();
 
         for (Entity entity : getEntitiesInBounds(world, bounds.minPos, bounds.maxPos)) {
             if (!shouldCaptureEntity(entity)) continue;
 
             UUID uuid = entity.getUniqueID();
-            if (uuid != null && exclusions.isEntityExcluded(uuid.toString())) continue;
+            if (exclusions.isEntityExcluded(uuid.toString())) continue;
 
             NBTTagCompound entityData = new NBTTagCompound();
             if (!entity.writeToNBTOptional(entityData)) continue;
+
+            addNamespacesFromEntityData(entityData, referencedNamespaces);
+            trimEntityData(entityData);
 
             Vec3d relativePos = new Vec3d(
                 entity.posX - bounds.minPos.getX(),
@@ -319,10 +381,33 @@ public final class StructureCaptureService {
                 ? ((EntityPainting) entity).getHangingPosition().subtract(bounds.minPos)
                 : new BlockPos(relativePos);
 
-            entities.add(new CapturedEntity(relativePos, relativeBlockPos, entityData));
+            Vec3d savedRelativePos = new Vec3d(
+                relativeBlockPos.getX() + 0.5D,
+                relativePos.y,
+                relativeBlockPos.getZ() + 0.5D
+            );
+
+            entities.add(new CapturedEntity(savedRelativePos, relativeBlockPos, entityData));
         }
 
         return entities;
+    }
+
+    private static AirRetentionMask buildAirRetentionMask(World world, ContentBounds bounds,
+            StructureCaptureExclusions exclusions) {
+        AirRetentionMask airRetentionMask = new AirRetentionMask();
+
+        for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
+            BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
+            IBlockState state = world.getBlockState(worldPos);
+            IBlockState storedState = isBlockExcluded(state, exclusions) ? Blocks.AIR.getDefaultState() : state;
+            if (CaptureBlockHelper.isAir(storedState)) continue;
+
+            BlockPos relativePos = worldPos.subtract(bounds.minPos);
+            airRetentionMask.include(relativePos);
+        }
+
+        return airRetentionMask;
     }
 
     private static NBTTagList writePalette(LinkedHashMap<IBlockState, Integer> palette) {
@@ -349,7 +434,7 @@ public final class StructureCaptureService {
         for (CapturedBlock block : blocks) {
             NBTTagCompound blockTag = new NBTTagCompound();
             blockTag.setTag("pos", writeInts(block.relativePos.getX(), block.relativePos.getY(), block.relativePos.getZ()));
-            blockTag.setInteger("state", palette.get(block.state).intValue());
+            blockTag.setInteger("state", palette.get(block.state));
             if (block.tileData != null) blockTag.setTag("nbt", block.tileData);
             blockList.appendTag(blockTag);
         }
@@ -396,6 +481,76 @@ public final class StructureCaptureService {
         return new ResourceLocation(lootTable);
     }
 
+    private static void trimTileEntityData(NBTTagCompound tileData) {
+        tileData.removeTag("x");
+        tileData.removeTag("y");
+        tileData.removeTag("z");
+        tileData.removeTag("ForgeCaps");
+        tileData.removeTag("Lock");
+    }
+
+    private static void trimEntityData(NBTTagCompound entityData) {
+        entityData.removeTag("Attributes");
+        entityData.removeTag("ForgeCaps");
+        entityData.removeTag("Motion");
+        entityData.removeTag("Rotation");
+        entityData.removeTag("UUIDMost");
+        entityData.removeTag("UUIDLeast");
+        entityData.removeTag("Pos");
+
+        if (!entityData.hasKey("Passengers", Constants.NBT.TAG_LIST)) return;
+
+        NBTTagList passengers = entityData.getTagList("Passengers", Constants.NBT.TAG_COMPOUND);
+        for (int i = 0; i < passengers.tagCount(); i++) {
+            trimEntityData(passengers.getCompoundTagAt(i));
+        }
+    }
+
+    private static void addNamespacesFromEntityData(NBTTagCompound entityData, Set<String> referencedNamespaces) {
+        addNamespaceFromIdString(referencedNamespaces, entityData.getString("id"));
+
+        if (!entityData.hasKey("Passengers", Constants.NBT.TAG_LIST)) return;
+
+        NBTTagList passengers = entityData.getTagList("Passengers", Constants.NBT.TAG_COMPOUND);
+        for (int i = 0; i < passengers.tagCount(); i++) {
+            addNamespacesFromEntityData(passengers.getCompoundTagAt(i), referencedNamespaces);
+        }
+    }
+
+    private static void addNamespace(Set<String> referencedNamespaces, @Nullable ResourceLocation id) {
+        if (id == null) return;
+
+        String namespace = id.getNamespace();
+        if (namespace.isEmpty() || "minecraft".equals(namespace)) return;
+
+        referencedNamespaces.add(namespace);
+    }
+
+    private static void addNamespaceFromIdString(Set<String> referencedNamespaces, String id) {
+        if (id.isEmpty()) return;
+
+        int separator = id.indexOf(':');
+        String namespace = separator >= 0 ? id.substring(0, separator) : "minecraft";
+        if (namespace.isEmpty() || "minecraft".equals(namespace)) return;
+
+        referencedNamespaces.add(namespace);
+    }
+
+    private static void writeSelectedForgeDataVersions(NBTTagCompound structureNbt, Set<String> referencedNamespaces) {
+        FMLCommonHandler.instance().getDataFixer().writeVersionData(structureNbt);
+        if (!structureNbt.hasKey("ForgeDataVersion", Constants.NBT.TAG_COMPOUND)) return;
+
+        NBTTagCompound forgeDataVersion = structureNbt.getCompoundTag("ForgeDataVersion");
+        List<String> namespaces = new ArrayList<>(forgeDataVersion.getKeySet());
+        for (String namespace : namespaces) {
+            if ("minecraft".equals(namespace) || !referencedNamespaces.contains(namespace)) {
+                forgeDataVersion.removeTag(namespace);
+            }
+        }
+
+        if (forgeDataVersion.getKeySet().isEmpty()) structureNbt.removeTag("ForgeDataVersion");
+    }
+
     private static boolean shouldCaptureEntity(@Nullable Entity entity) {
         if (entity == null || !entity.isEntityAlive()) return false;
         if (entity instanceof EntityItem) return false;
@@ -432,11 +587,15 @@ public final class StructureCaptureService {
 
     private static int idForState(LinkedHashMap<IBlockState, Integer> palette, IBlockState state) {
         Integer currentId = palette.get(state);
-        if (currentId != null) return currentId.intValue();
+        if (currentId != null) return currentId;
 
         int nextId = palette.size();
-        palette.put(state, Integer.valueOf(nextId));
+        palette.put(state, nextId);
         return nextId;
+    }
+
+    private static long createLineKey(int first, int second) {
+        return ((long) first << 32) | (second & 0xFFFFFFFFL);
     }
 
     private static NBTTagList writeInts(int... values) {
@@ -482,6 +641,36 @@ public final class StructureCaptureService {
 
         public File getFile() {
             return file;
+        }
+
+        public int getSizeX() {
+            return sizeX;
+        }
+
+        public int getSizeY() {
+            return sizeY;
+        }
+
+        public int getSizeZ() {
+            return sizeZ;
+        }
+    }
+
+    public static final class CapturedStructure {
+        private final NBTTagCompound structureNbt;
+        private final int sizeX;
+        private final int sizeY;
+        private final int sizeZ;
+
+        private CapturedStructure(NBTTagCompound structureNbt, int sizeX, int sizeY, int sizeZ) {
+            this.structureNbt = structureNbt;
+            this.sizeX = sizeX;
+            this.sizeY = sizeY;
+            this.sizeZ = sizeZ;
+        }
+
+        public NBTTagCompound getStructureNbt() {
+            return structureNbt;
         }
 
         public int getSizeX() {
@@ -590,6 +779,58 @@ public final class StructureCaptureService {
 
         private int getSizeZ() {
             return maxZ - minZ + 1;
+        }
+    }
+
+    /**
+     * Only keep air that is bracketed by kept non-air blocks on at least one axis.
+     */
+    private static final class AirRetentionMask {
+        private final Map<Long, AxisExtents> xAxis = new LinkedHashMap<>();
+        private final Map<Long, AxisExtents> yAxis = new LinkedHashMap<>();
+        private final Map<Long, AxisExtents> zAxis = new LinkedHashMap<>();
+
+        private void include(BlockPos relativePos) {
+            include(xAxis, relativePos.getY(), relativePos.getZ(), relativePos.getX());
+            include(yAxis, relativePos.getX(), relativePos.getZ(), relativePos.getY());
+            include(zAxis, relativePos.getX(), relativePos.getY(), relativePos.getZ());
+        }
+
+        private boolean shouldKeep(BlockPos relativePos) {
+            if (containsInterior(xAxis, relativePos.getY(), relativePos.getZ(), relativePos.getX())) return true;
+            if (containsInterior(yAxis, relativePos.getX(), relativePos.getZ(), relativePos.getY())) return true;
+
+            return containsInterior(zAxis, relativePos.getX(), relativePos.getY(), relativePos.getZ());
+        }
+
+        private void include(Map<Long, AxisExtents> axis, int first, int second, int value) {
+            long key = createLineKey(first, second);
+            AxisExtents extents = axis.get(key);
+            if (extents == null) {
+                extents = new AxisExtents();
+                axis.put(key, extents);
+            }
+
+            extents.include(value);
+        }
+
+        private boolean containsInterior(Map<Long, AxisExtents> axis, int first, int second, int value) {
+            AxisExtents extents = axis.get(createLineKey(first, second));
+            return extents != null && extents.containsInterior(value);
+        }
+    }
+
+    private static final class AxisExtents {
+        private int min = Integer.MAX_VALUE;
+        private int max = Integer.MIN_VALUE;
+
+        private void include(int value) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+        }
+
+        private boolean containsInterior(int value) {
+            return value > min && value < max;
         }
     }
 

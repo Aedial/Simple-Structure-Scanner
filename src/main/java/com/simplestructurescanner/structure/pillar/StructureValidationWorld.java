@@ -2,7 +2,6 @@ package com.simplestructurescanner.structure.pillar;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 
-import net.minecraft.block.Block;
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.profiler.Profiler;
@@ -22,18 +21,18 @@ import java.lang.reflect.Field;
 
 /**
  * A fake world used for validating structure placement with actual terrain data.
- *
+ * <p>
  * This world:
  * - Generates real chunks with terrain using the provided chunk generator
  * - Provides all world methods Pillar needs for structure placement validation
  * - Does not save any data to disk
  * - Is isolated from the real game world
- *
+ * <p>
  * Use this world to:
  * - Predict accurate Y-coordinates for structures
  * - Validate terrain conditions (liquids, sky visibility, etc.)
  * - Filter out structures that would fail to spawn
- *
+ * <p>
  * NOTE: This world must be properly cleaned up when done to prevent memory leaks.
  * Use ValidationContextManager to manage the lifecycle.
  */
@@ -78,7 +77,7 @@ public class StructureValidationWorld extends World {
 
     /**
      * Creates a new structure validation world.
-     *
+     * <p>
      * IMPORTANT: This constructor copies the real world's WorldInfo to ensure
      * identical terrain generation. Using a new WorldInfo with WorldType.DEFAULT
      * causes terrain height mismatches.

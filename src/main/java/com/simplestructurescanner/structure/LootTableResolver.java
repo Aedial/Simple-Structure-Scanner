@@ -148,13 +148,13 @@ public class LootTableResolver {
     public static List<LootItem> resolveLootTableWithSimulation(World world, ResourceLocation lootTableId, EntityPlayer player) {
         Map<String, LootItem> itemMap = new HashMap<>();
 
-        if (world == null || !(world instanceof WorldServer)) return resolveLootTableFallback(world, lootTableId);
+        if (!(world instanceof WorldServer)) return resolveLootTableFallback(world, lootTableId);
 
         WorldServer worldServer = (WorldServer) world;
         LootTableManager manager = worldServer.getLootTableManager();
         LootTable table = manager.getLootTableFromLocation(lootTableId);
 
-        if (table == null || table == LootTable.EMPTY_LOOT_TABLE) return new ArrayList<>();
+        if (table == LootTable.EMPTY_LOOT_TABLE) return new ArrayList<>();
 
         for (int i = 0; i < SIMULATION_COUNT; i++) {
             LootContext.Builder builder = new LootContext.Builder(worldServer);
@@ -201,7 +201,7 @@ public class LootTableResolver {
             LootTableManager manager = world.getLootTableManager();
             LootTable table = manager.getLootTableFromLocation(lootTableId);
 
-            if (table == null || table == LootTable.EMPTY_LOOT_TABLE) return items;
+            if (table == LootTable.EMPTY_LOOT_TABLE) return items;
 
             Map<String, LootItem> itemMap = new HashMap<>();
             List<LootPool> pools = getPools(table);

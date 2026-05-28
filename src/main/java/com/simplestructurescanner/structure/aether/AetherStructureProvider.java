@@ -150,34 +150,27 @@ public class AetherStructureProvider extends AbstractStructureProvider {
     }
 
     private void populateStructureContents() {
+        applyStructureContentsFromNbt("silver_dungeon");
+        applyStructureContentsFromNbt("gold_dungeon");
+        applyStructureContentsFromNbt("bronze_dungeon");
+
         populateSilverDungeon();
         populateGoldDungeon();
         populateBronzeDungeon();
     }
 
     private void populateSilverDungeon() {
-        setLootTables("silver_dungeon",
-            createLootEntry("aether_legacy:chests/silver_dungeon_chest", "gui.structurescanner.loot.chest"),
-            createLootEntry("aether_legacy:chests/silver_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
-        setEntities("silver_dungeon",
-            createEntityEntry("aether_legacy:valkyrie_queen", 1),
-            createEntityEntry("aether_legacy:valkyrie", 3),
-            createEntityEntry("aether_legacy:mimic", 3));
+        // TODO: add createLootEntry("aether_legacy:chests/silver_dungeon_reward", "gui.structurescanner.loot.aether.reward")
+        // TODO: add createEntityEntry("aether_legacy:mimic", 3)
     }
 
     private void populateGoldDungeon() {
-        setLootTables("gold_dungeon",
-            createLootEntry("aether_legacy:chests/gold_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
-        setEntities("gold_dungeon", createEntityEntry("aether_legacy:sun_spirit", 1));
+        // TODO: add createLootEntry("aether_legacy:chests/gold_dungeon_reward", "gui.structurescanner.loot.aether.reward")
     }
 
     private void populateBronzeDungeon() {
-        setLootTables("bronze_dungeon",
-            createLootEntry("aether_legacy:chests/bronze_dungeon_chest", "gui.structurescanner.loot.chest"),
-            createLootEntry("aether_legacy:chests/bronze_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
-        setEntities("bronze_dungeon",
-            createEntityEntry("aether_legacy:slider", 1),
-            createEntityEntry("aether_legacy:mimic", 3));
+        // TODO: add createLootEntry("aether_legacy:chests/bronze_dungeon_reward", "gui.structurescanner.loot.aether.reward")
+        // TODO: add createEntityEntry("aether_legacy:mimic", 3)
     }
 
     @Override
@@ -316,18 +309,18 @@ public class AetherStructureProvider extends AbstractStructureProvider {
 
     /**
      * Replicate the random check from MapGenSilverDungeon/MapGenGoldenDungeon.
-     *
+     * <p>
      * The Aether's canSpawnStructureAtCoords does:
      * 1. Random check (primary, then secondary if primary fails)
      * 2. Grid alignment check (chunkX % gridSize == 0 && chunkZ % gridSize == 0)
      * Both must pass for the structure to spawn.
-     *
+     * <p>
      * The seeding formula uses XOR between products:
      *   rand.setSeed(worldSeed);
      *   long i = rand.nextLong();
      *   long j = rand.nextLong();
      *   rand.setSeed((chunkX * i) ^ (chunkZ * j) ^ worldSeed);
-     *
+     * <p>
      * Additionally, there's 1 random call consumed between setSeed and the spawn
      * check (likely from MapGenStructure internals or during structure lookup).
      */
@@ -392,7 +385,7 @@ public class AetherStructureProvider extends AbstractStructureProvider {
     /**
      * Calculate Silver Dungeon Y offset.
      * Replicates MapGenSilverDungeon.Start.create() random sequence.
-     *
+     * <p>
      * The bounding box base Y is 80 (set in ComponentSilverDungeon constructor),
      * then offset by random.nextInt(64). The structure offset adds another 24
      * (from setStructureOffset(31, 24, 30)), giving the actual floor position.
@@ -415,7 +408,7 @@ public class AetherStructureProvider extends AbstractStructureProvider {
     /**
      * Calculate Gold Dungeon Y offset.
      * Replicates MapGenGoldenDungeon.Start.create() random sequence.
-     *
+     * <p>
      * The bounding box base Y is 80 (set in ComponentGoldenDungeon constructor),
      * then offset by random.nextInt(64) in customOffset(). Structure offset Y is 0.
      */

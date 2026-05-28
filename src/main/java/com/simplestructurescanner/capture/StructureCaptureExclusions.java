@@ -7,9 +7,7 @@ import javax.annotation.Nullable;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
-import net.minecraft.nbt.NBTTagLong;
 import net.minecraft.nbt.NBTTagString;
-import net.minecraft.util.math.BlockPos;
 import net.minecraftforge.common.util.Constants;
 
 
@@ -18,9 +16,9 @@ import net.minecraftforge.common.util.Constants;
  */
 public class StructureCaptureExclusions {
 
-    private final Set<String> excludedBlockKeys = new HashSet<String>();
-    private final Set<String> excludedEntityUuids = new HashSet<String>();
-    private final Set<String> excludedContainerKeys = new HashSet<String>();
+    private final Set<String> excludedBlockKeys = new HashSet<>();
+    private final Set<String> excludedEntityUuids = new HashSet<>();
+    private final Set<String> excludedContainerKeys = new HashSet<>();
 
     public boolean isBlockExcluded(@Nullable String key) {
         return key != null && excludedBlockKeys.contains(key);

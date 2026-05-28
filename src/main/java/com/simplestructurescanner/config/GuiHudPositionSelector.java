@@ -87,7 +87,7 @@ public class GuiHudPositionSelector extends GuiScreen {
     }
 
     @Override
-    protected void actionPerformed(GuiButton button) throws IOException {
+    protected void actionPerformed(GuiButton button) {
         if (button.id >= BTN_TOP_LEFT && button.id <= BTN_BOTTOM_RIGHT) {
             HudPosition[] positions = {
                 HudPosition.TOP_LEFT, HudPosition.TOP_CENTER, HudPosition.TOP_RIGHT,

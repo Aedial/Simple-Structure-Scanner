@@ -36,9 +36,9 @@ public class StructureCaptureSummary {
         this.sizeX = sizeX;
         this.sizeY = sizeY;
         this.sizeZ = sizeZ;
-        this.blocks = Collections.unmodifiableList(new ArrayList<BlockSummary>(blocks));
-        this.entities = Collections.unmodifiableList(new ArrayList<EntityInstance>(entities));
-        this.containers = Collections.unmodifiableList(new ArrayList<ContainerSummary>(containers));
+        this.blocks = Collections.unmodifiableList(new ArrayList<>(blocks));
+        this.entities = Collections.unmodifiableList(new ArrayList<>(entities));
+        this.containers = Collections.unmodifiableList(new ArrayList<>(containers));
     }
 
     public int getSizeX() {
@@ -73,7 +73,7 @@ public class StructureCaptureSummary {
     }
 
     public int getEntityTypeCount() {
-        Set<ResourceLocation> entityTypes = new HashSet<ResourceLocation>();
+        Set<ResourceLocation> entityTypes = new HashSet<>();
         for (EntityInstance entity : entities) entityTypes.add(entity.getEntityId());
 
         return entityTypes.size();
@@ -119,19 +119,19 @@ public class StructureCaptureSummary {
             return new StructureCaptureSummary(0, 0, 0, Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
         }
 
-        List<BlockSummary> blocks = new ArrayList<BlockSummary>();
+        List<BlockSummary> blocks = new ArrayList<>();
         NBTTagList blockList = tag.getTagList("blocks", Constants.NBT.TAG_COMPOUND);
         for (int index = 0; index < blockList.tagCount(); index++) {
             blocks.add(BlockSummary.fromNBT(blockList.getCompoundTagAt(index)));
         }
 
-        List<EntityInstance> entities = new ArrayList<EntityInstance>();
+        List<EntityInstance> entities = new ArrayList<>();
         NBTTagList entityList = tag.getTagList("entities", Constants.NBT.TAG_COMPOUND);
         for (int index = 0; index < entityList.tagCount(); index++) {
             entities.add(EntityInstance.fromNBT(entityList.getCompoundTagAt(index)));
         }
 
-        List<ContainerSummary> containers = new ArrayList<ContainerSummary>();
+        List<ContainerSummary> containers = new ArrayList<>();
         NBTTagList containerList = tag.getTagList("containers", Constants.NBT.TAG_COMPOUND);
         for (int index = 0; index < containerList.tagCount(); index++) {
             containers.add(ContainerSummary.fromNBT(containerList.getCompoundTagAt(index)));

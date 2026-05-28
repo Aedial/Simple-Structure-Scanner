@@ -25,7 +25,7 @@ import com.simplestructurescanner.util.WorldUtils;
 /**
  * Manages searched structures for live search feature.
  * Structures can be added to searching list via double-click in the GUI.
- *
+ * <p>
  * Caching strategy:
  * - locationCache: Raw structure positions indexed by (worldId, dimensionId, structureId).
  *   These positions are deterministic and don't change for a given world.
@@ -437,10 +437,8 @@ public class StructureSearchManager {
 
         if (mc.isSingleplayer() && mc.getIntegratedServer() != null) {
             World serverWorld = mc.getIntegratedServer().getWorld(world.provider.getDimension());
-            if (serverWorld != null) {
-                processSingleplayerSearch(serverWorld, id, playerPos, skipOffset, cacheKey);
-                return;
-            }
+            processSingleplayerSearch(serverWorld, id, playerPos, skipOffset, cacheKey);
+            return;
         }
 
         // Multiplayer: send request to server

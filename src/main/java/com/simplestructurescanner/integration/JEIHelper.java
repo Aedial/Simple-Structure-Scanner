@@ -7,11 +7,8 @@ import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fml.common.Loader;
 
 import mezz.jei.api.IJeiRuntime;
-import mezz.jei.api.JEIPlugin;
 import mezz.jei.api.recipe.IFocus;
 import mezz.jei.api.recipe.IRecipeCategory;
-
-import com.simplestructurescanner.SimpleStructureScanner;
 
 
 /**

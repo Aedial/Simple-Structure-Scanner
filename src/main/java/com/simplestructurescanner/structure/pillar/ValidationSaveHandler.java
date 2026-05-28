@@ -19,12 +19,12 @@ import java.io.File;
 /**
  * A save handler for the structure validation world that performs no actual save operations.
  * This prevents the fake world from writing any data to disk.
- *
+ * <p>
  * Implements:
  * - ISaveHandler: Main save handler interface
  * - IPlayerFileData: Player data management (no-op)
  * - IChunkLoader: Chunk loading/saving (no-op)
- *
+ * <p>
  * All methods return safe default values or perform no-ops to prevent
  * the validation world from affecting the real game state.
  */

@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import com.google.gson.JsonArray;
@@ -27,9 +28,9 @@ import net.minecraft.world.biome.Biome;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.structure.AbstractStructureProvider;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
-import com.simplestructurescanner.structure.ParsedStructureApplier;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureProvider;
@@ -119,7 +120,7 @@ public final class ExternalStructureProviderLoader {
         }
     }
 
-    @Nullable
+    @Nonnull
     private static StructureInfo parseStructure(String providerId, JsonObject structureObject, File file,
             String nbtRoot) {
         String idText = readRequiredString(structureObject, "id", file);
@@ -172,7 +173,7 @@ public final class ExternalStructureProviderLoader {
     }
 
     private static void applyParsedNbt(StructureInfo info, StructureNBTParser.ParsedStructure parsedNbt) {
-        ParsedStructureApplier.apply(info, parsedNbt);
+        AbstractStructureProvider.apply(info, parsedNbt);
     }
 
     @Nullable

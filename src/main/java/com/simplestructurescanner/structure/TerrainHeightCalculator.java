@@ -10,7 +10,7 @@ import net.minecraft.world.gen.NoiseGeneratorOctaves;
 /**
  * Calculates terrain height using Minecraft's noise generation algorithms.
  * This allows estimating structure Y coordinates without loading chunks.
- * 
+ * <p>
  * Based on MC 1.12's ChunkGeneratorOverworld terrain generation.
  */
 public class TerrainHeightCalculator {

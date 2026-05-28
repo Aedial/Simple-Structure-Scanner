@@ -243,37 +243,45 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
     }
 
     private void populateStructureContents() {
+        applyStructureContentsFromNbt("aby_stronghold");
+        applyStructureContentsFromNbt("dreadlands_mineshaft");
+        applyStructureContentsFromNbt("jzahar_temple");
+        applyStructureContentsFromNbt("omothol_city");
+        applyStructureContentsFromNbt("omothol_storage");
+        applyStructureContentsFromNbt("shoggoth_lair");
+        applyStructureContentsFromNbt("graveyard");
+
         // AbyStronghold - contains portal room like vanilla stronghold
-        setLootTables("aby_stronghold",
+        setLootTablesIfMissing("aby_stronghold",
             createLootEntry("abyssalcraft:chests/stronghold_corridor", "gui.structurescanner.loot.chest"),
             createLootEntry("abyssalcraft:chests/stronghold_crossing", "gui.structurescanner.loot.chest"));
-        setEntities("aby_stronghold", createEntityEntry("abyssalcraft:abyssalzombie", 1, true));
+        setEntitiesIfMissing("aby_stronghold", createEntityEntry("abyssalcraft:abyssalzombie", 1, true));
 
         // Dreadlands Mineshaft
-        setLootTables("dreadlands_mineshaft",
+        setLootTablesIfMissing("dreadlands_mineshaft",
             createLootEntry("abyssalcraft:chests/mineshaft", "gui.structurescanner.loot.minecart_chest"));
 
         // J'zahar Temple - boss arena
-        setEntities("jzahar_temple",
+        setEntitiesIfMissing("jzahar_temple",
             createEntityEntry("abyssalcraft:jzahar", 1),
             createEntityEntry("abyssalcraft:jzaharminion", 3));
 
         // Omothol City - various building types with different loot
-        setLootTables("omothol_city",
+        setLootTablesIfMissing("omothol_city",
             createLootEntry("abyssalcraft:chests/omothol/blacksmith", "gui.structurescanner.loot.chest"),
             createLootEntry("abyssalcraft:chests/omothol/house", "gui.structurescanner.loot.chest"),
             createLootEntry("abyssalcraft:chests/omothol/library", "gui.structurescanner.loot.chest"),
             createLootEntry("abyssalcraft:chests/omothol/farmhouse", "gui.structurescanner.loot.chest"));
-        setEntities("omothol_city", createEntityEntry("abyssalcraft:remnant", 10));
+        setEntitiesIfMissing("omothol_city", createEntityEntry("abyssalcraft:remnant", 10));
 
         // Omothol Storage - storage building with crates
-        setLootTables("omothol_storage",
+        setLootTablesIfMissing("omothol_storage",
             createLootEntry("abyssalcraft:chests/omothol/storage_junk", "gui.structurescanner.loot.crate"),
             createLootEntry("abyssalcraft:chests/omothol/storage_treasure", "gui.structurescanner.loot.crate"));
-        setEntities("omothol_storage", createEntityEntry("abyssalcraft:shoggoth", 1));
+        setEntitiesIfMissing("omothol_storage", createEntityEntry("abyssalcraft:shoggoth", 1));
 
         // Shoggoth Lair
-        setEntities("shoggoth_lair", createEntityEntry("abyssalcraft:shoggoth", 1));
+        setEntitiesIfMissing("shoggoth_lair", createEntityEntry("abyssalcraft:shoggoth", 1));
     }
 
     @Override
@@ -368,7 +376,7 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
 
     /**
      * Calculate AbyStronghold positions using MapGenAbyStronghold's algorithm.
-     *
+     * <p>
      * From checkBiomes():
      * - 128 strongholds total
      * - Uses spiral pattern with increasing distance

@@ -15,6 +15,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ### Fixed
 - Fix Pillar structure provider using client code, causing crashes on dedicated servers
+- Optimize structure rendering, so large previews stop tanking GUI framerate. Even the largest structures (e.g., Mansion) should now render at a smooth 60+ FPS without getting the CPU hot.
 
 
 ## [1.0.1] - 2026-05-20
