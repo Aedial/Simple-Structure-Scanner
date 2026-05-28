@@ -77,5 +77,12 @@ public class NetworkHandler {
             packetId++,
             Side.SERVER
         );
+
+        INSTANCE.registerMessage(
+            PacketClearStructureCaptureSession.Handler.class,
+            PacketClearStructureCaptureSession.class,
+            packetId++,
+            Side.SERVER
+        );
     }
 }

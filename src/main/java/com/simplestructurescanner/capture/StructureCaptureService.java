@@ -8,6 +8,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -54,19 +55,111 @@ public final class StructureCaptureService {
     private static final String CAPTURE_AUTHOR = "Simple Structure Scanner";
     private static final int DATA_VERSION = 1343;
 
+    // The capture UI is configured against this frozen source snapshot. Reusing it for later
+    // preview/save requests keeps the final output aligned with what the player reviewed.
+    private static final Map<UUID, FrozenCapture> FROZEN_CAPTURES = new HashMap<>();
+
     private StructureCaptureService() {
     }
 
     @Nullable
+    public static StructureCaptureSummary buildSummary(UUID playerId, World world, BlockPos firstCorner,
+            BlockPos secondCorner) {
+        FrozenCapture frozenCapture = captureSnapshot(world, firstCorner, secondCorner);
+        StructureCaptureSummary summary = buildSummary(frozenCapture);
+        if (summary == null) {
+            clearFrozenCapture(playerId);
+            return null;
+        }
+
+        FROZEN_CAPTURES.put(playerId, frozenCapture);
+        return summary;
+    }
+
+    @Nullable
     public static StructureCaptureSummary buildSummary(World world, BlockPos firstCorner, BlockPos secondCorner) {
-        NormalizedBounds selection = NormalizedBounds.fromCorners(firstCorner, secondCorner);
+        return buildSummary(captureSnapshot(world, firstCorner, secondCorner));
+    }
+
+    @Nullable
+    public static SaveResult saveCapture(UUID playerId, World world, BlockPos firstCorner, BlockPos secondCorner,
+            StructureCaptureExclusions exclusions) throws IOException {
+        try {
+            FrozenCapture frozenCapture = getOrCreateCapture(playerId, world, firstCorner, secondCorner);
+            CapturedStructure capturedStructure = buildCapturedStructure(frozenCapture, exclusions);
+            if (capturedStructure == null) return null;
+
+            File captureDirectory = getCaptureDirectory(world);
+
+            File captureFile = createCaptureFile(captureDirectory);
+            try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
+                CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
+            }
+
+            return new SaveResult(
+                captureFile,
+                capturedStructure.getSizeX(),
+                capturedStructure.getSizeY(),
+                capturedStructure.getSizeZ()
+            );
+        } finally {
+            clearFrozenCapture(playerId);
+        }
+    }
+
+    @Nullable
+    public static SaveResult saveCapture(World world, BlockPos firstCorner, BlockPos secondCorner,
+            StructureCaptureExclusions exclusions) throws IOException {
+        CapturedStructure capturedStructure = buildCapturedStructure(world, firstCorner, secondCorner, exclusions);
+        if (capturedStructure == null) return null;
+
+        File captureDirectory = getCaptureDirectory(world);
+
+        File captureFile = createCaptureFile(captureDirectory);
+        try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
+            CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
+        }
+
+        return new SaveResult(
+            captureFile,
+            capturedStructure.getSizeX(),
+            capturedStructure.getSizeY(),
+            capturedStructure.getSizeZ()
+        );
+    }
+
+    @Nullable
+    public static CapturedStructure buildCapturedStructure(World world, BlockPos firstCorner, BlockPos secondCorner,
+            StructureCaptureExclusions exclusions) {
+        return buildCapturedStructure(captureSnapshot(world, firstCorner, secondCorner), exclusions);
+    }
+
+    @Nullable
+    public static NBTTagCompound buildRenderedPreviewNbt(UUID playerId, World world, BlockPos firstCorner,
+            BlockPos secondCorner, StructureCaptureExclusions exclusions) {
+        FrozenCapture frozenCapture = getOrCreateCapture(playerId, world, firstCorner, secondCorner);
+        return buildRenderedPreviewNbt(frozenCapture, exclusions);
+    }
+
+    @Nullable
+    public static NBTTagCompound buildRenderedPreviewNbt(World world, BlockPos firstCorner, BlockPos secondCorner,
+            StructureCaptureExclusions exclusions) {
+        return buildRenderedPreviewNbt(captureSnapshot(world, firstCorner, secondCorner), exclusions);
+    }
+
+    public static void clearFrozenCapture(UUID playerId) {
+        FROZEN_CAPTURES.remove(playerId);
+    }
+
+    @Nullable
+    private static StructureCaptureSummary buildSummary(FrozenCapture frozenCapture) {
         ContentBounds contentBounds = new ContentBounds();
         Map<String, BlockAccumulator> blocks = new LinkedHashMap<>();
         Map<String, ContainerAccumulator> containers = new LinkedHashMap<>();
 
-        for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(selection.minPos, selection.maxPos)) {
-            BlockPos blockPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
-            IBlockState state = world.getBlockState(blockPos);
+        for (FrozenBlock frozenBlock : frozenCapture.blocks.values()) {
+            BlockPos blockPos = frozenBlock.worldPos;
+            IBlockState state = frozenBlock.state;
 
             if (CaptureBlockHelper.contributesToBounds(state)) contentBounds.include(blockPos);
 
@@ -77,25 +170,17 @@ public final class StructureCaptureService {
                 accumulator.count++;
             }
 
-            TileEntity tileEntity = world.getTileEntity(blockPos);
-            if (tileEntity == null) continue;
+            if (frozenBlock.tileData == null) continue;
+            if (frozenBlock.lootTableId == null && frozenBlock.itemCount <= 0) continue;
 
-            NBTTagCompound tileData = tileEntity.writeToNBT(new NBTTagCompound());
-            ResourceLocation lootTableId = getLootTableId(tileData);
-
-            // Accessing IInventory on TileEntityLockableLoot generates its loot, so only count
-            // fixed inventories after confirming no loot table is still attached.
-            int itemCount = lootTableId == null ? countInventoryItems(tileEntity) : 0;
-            if (lootTableId == null && itemCount <= 0) continue;
-
-            String containerKey = createContainerKey(state, lootTableId);
-            ContainerAccumulator accumulator = containers.computeIfAbsent(containerKey, k -> new ContainerAccumulator(k, state, lootTableId));
+            String containerKey = createContainerKey(state, frozenBlock.lootTableId);
+            ContainerAccumulator accumulator = containers.computeIfAbsent(containerKey, k -> new ContainerAccumulator(k, state, frozenBlock.lootTableId));
 
             accumulator.containerCount++;
-            accumulator.totalItemCount += itemCount;
+            accumulator.totalItemCount += frozenBlock.itemCount;
         }
 
-        List<StructureCaptureSummary.EntityInstance> entities = collectEntitySummaries(world, selection, contentBounds);
+        List<StructureCaptureSummary.EntityInstance> entities = collectEntitySummaries(frozenCapture, contentBounds);
 
         if (!contentBounds.hasContent()) return null;
 
@@ -142,34 +227,12 @@ public final class StructureCaptureService {
     }
 
     @Nullable
-    public static SaveResult saveCapture(World world, BlockPos firstCorner, BlockPos secondCorner,
-            StructureCaptureExclusions exclusions) throws IOException {
-        CapturedStructure capturedStructure = buildCapturedStructure(world, firstCorner, secondCorner, exclusions);
-        if (capturedStructure == null) return null;
-
-        File captureDirectory = getCaptureDirectory(world);
-
-        File captureFile = createCaptureFile(captureDirectory);
-        try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
-            CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
-        }
-
-        return new SaveResult(
-            captureFile,
-            capturedStructure.getSizeX(),
-            capturedStructure.getSizeY(),
-            capturedStructure.getSizeZ()
-        );
-    }
-
-    @Nullable
-    public static CapturedStructure buildCapturedStructure(World world, BlockPos firstCorner, BlockPos secondCorner,
+    private static CapturedStructure buildCapturedStructure(FrozenCapture frozenCapture,
             StructureCaptureExclusions exclusions) {
-        NormalizedBounds selection = NormalizedBounds.fromCorners(firstCorner, secondCorner);
-        ContentBounds finalBounds = collectFinalBounds(world, selection, exclusions);
+        ContentBounds finalBounds = collectFinalBounds(frozenCapture, exclusions);
         if (!finalBounds.hasContent()) return null;
 
-        NBTTagCompound structureNbt = writeStructureNbt(world, finalBounds, exclusions);
+        NBTTagCompound structureNbt = writeStructureNbt(frozenCapture, finalBounds, exclusions);
         return new CapturedStructure(
             structureNbt,
             finalBounds.getSizeX(),
@@ -179,31 +242,24 @@ public final class StructureCaptureService {
     }
 
     @Nullable
-    public static NBTTagCompound buildRenderedPreviewNbt(World world, BlockPos firstCorner, BlockPos secondCorner,
+    private static NBTTagCompound buildRenderedPreviewNbt(FrozenCapture frozenCapture,
             StructureCaptureExclusions exclusions) {
-        NormalizedBounds selection = NormalizedBounds.fromCorners(firstCorner, secondCorner);
-        ContentBounds finalBounds = collectFinalBounds(world, selection, exclusions);
+        ContentBounds finalBounds = collectFinalBounds(frozenCapture, exclusions);
         if (!finalBounds.hasContent()) return null;
 
-        return writeRenderedPreviewNbt(world, finalBounds, exclusions);
+        return writeRenderedPreviewNbt(frozenCapture, finalBounds, exclusions);
     }
 
-    private static List<StructureCaptureSummary.EntityInstance> collectEntitySummaries(World world,
-            NormalizedBounds selection, ContentBounds contentBounds) {
+    private static List<StructureCaptureSummary.EntityInstance> collectEntitySummaries(FrozenCapture frozenCapture,
+            ContentBounds contentBounds) {
         List<StructureCaptureSummary.EntityInstance> entities = new ArrayList<>();
-        for (Entity entity : getEntitiesInBounds(world, selection.minPos, selection.maxPos)) {
-            if (!shouldCaptureEntity(entity)) continue;
-
-            UUID uuid = entity.getUniqueID();
-            ResourceLocation entityId = EntityList.getKey(entity);
-            if (entityId == null) continue;
-
-            BlockPos blockPos = entity instanceof EntityPainting
-                ? ((EntityPainting) entity).getHangingPosition()
-                : new BlockPos(entity.posX, entity.posY, entity.posZ);
-
-            contentBounds.include(blockPos);
-            entities.add(new StructureCaptureSummary.EntityInstance(uuid.toString(), entityId, blockPos));
+        for (FrozenEntity frozenEntity : frozenCapture.entities) {
+            contentBounds.include(frozenEntity.anchorPos);
+            entities.add(new StructureCaptureSummary.EntityInstance(
+                frozenEntity.uuid,
+                frozenEntity.entityId,
+                frozenEntity.anchorPos
+            ));
         }
 
         entities.sort((first, second) -> {
@@ -225,48 +281,41 @@ public final class StructureCaptureService {
         return entities;
     }
 
-    private static ContentBounds collectFinalBounds(World world, NormalizedBounds selection,
-            StructureCaptureExclusions exclusions) {
+    private static ContentBounds collectFinalBounds(FrozenCapture frozenCapture, StructureCaptureExclusions exclusions) {
         ContentBounds contentBounds = new ContentBounds();
 
-        for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(selection.minPos, selection.maxPos)) {
-            BlockPos blockPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
-            IBlockState state = world.getBlockState(blockPos);
-
+        for (FrozenBlock frozenBlock : frozenCapture.blocks.values()) {
+            BlockPos blockPos = frozenBlock.worldPos;
+            IBlockState state = frozenBlock.state;
             if (!CaptureBlockHelper.contributesToBounds(state)) continue;
             if (isBlockExcluded(state, exclusions)) continue;
 
             contentBounds.include(blockPos);
         }
 
-        for (Entity entity : getEntitiesInBounds(world, selection.minPos, selection.maxPos)) {
-            if (!shouldCaptureEntity(entity)) continue;
+        for (FrozenEntity frozenEntity : frozenCapture.entities) {
+            if (exclusions.isEntityExcluded(frozenEntity.entityId)) continue;
 
-            UUID uuid = entity.getUniqueID();
-            if (exclusions.isEntityExcluded(uuid.toString())) continue;
-
-            BlockPos blockPos = entity instanceof EntityPainting
-                ? ((EntityPainting) entity).getHangingPosition()
-                : new BlockPos(entity.posX, entity.posY, entity.posZ);
-            contentBounds.include(blockPos);
+            contentBounds.include(frozenEntity.anchorPos);
         }
 
         return contentBounds;
     }
 
-    private static NBTTagCompound writeStructureNbt(World world, ContentBounds bounds,
+    private static NBTTagCompound writeStructureNbt(FrozenCapture frozenCapture, ContentBounds bounds,
             StructureCaptureExclusions exclusions) {
         List<CapturedBlock> solidBlocks = new ArrayList<>();
         List<CapturedBlock> tileBlocks = new ArrayList<>();
         List<CapturedBlock> otherBlocks = new ArrayList<>();
         LinkedHashMap<IBlockState, Integer> palette = new LinkedHashMap<>();
         Set<String> referencedNamespaces = new LinkedHashSet<>();
-        AirRetentionMask airRetentionMask = buildAirRetentionMask(world, bounds, exclusions);
+        AirRetentionMask airRetentionMask = buildAirRetentionMask(frozenCapture, bounds, exclusions);
 
         for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
             BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
             BlockPos relativePos = worldPos.subtract(bounds.minPos);
-            IBlockState state = world.getBlockState(worldPos);
+            FrozenBlock frozenBlock = frozenCapture.getBlock(worldPos);
+            IBlockState state = frozenBlock == null ? Blocks.AIR.getDefaultState() : frozenBlock.state;
             boolean excludedBlock = isBlockExcluded(state, exclusions);
             IBlockState storedState = excludedBlock ? Blocks.AIR.getDefaultState() : state;
 
@@ -277,19 +326,12 @@ public final class StructureCaptureService {
             }
 
             NBTTagCompound tileData = null;
-            if (!excludedBlock) {
-                TileEntity tileEntity = world.getTileEntity(worldPos);
-                if (tileEntity != null) {
-                    NBTTagCompound serializedTileData = tileEntity.writeToNBT(new NBTTagCompound());
-                    ResourceLocation lootTableId = getLootTableId(serializedTileData);
-                    int itemCount = lootTableId == null ? countInventoryItems(tileEntity) : 0;
-                    boolean listedContainer = lootTableId != null || itemCount > 0;
-
-                    if (!listedContainer || !isContainerExcluded(state, lootTableId, exclusions)) {
-                        tileData = serializedTileData;
-                        trimTileEntityData(tileData);
-                        addNamespace(referencedNamespaces, TileEntity.getKey(tileEntity.getClass()));
-                    }
+            if (!excludedBlock && frozenBlock != null && frozenBlock.tileData != null) {
+                boolean listedContainer = frozenBlock.lootTableId != null || frozenBlock.itemCount > 0;
+                if (!listedContainer || !isContainerExcluded(state, frozenBlock.lootTableId, exclusions)) {
+                    tileData = frozenBlock.tileData.copy();
+                    trimTileEntityData(tileData);
+                    addNamespace(referencedNamespaces, frozenBlock.tileEntityId);
                 }
             }
 
@@ -308,7 +350,7 @@ public final class StructureCaptureService {
             otherBlocks.add(block);
         }
 
-        List<CapturedEntity> entities = captureEntitiesForSave(world, bounds, exclusions, referencedNamespaces);
+        List<CapturedEntity> entities = captureEntitiesForSave(frozenCapture, bounds, exclusions, referencedNamespaces);
 
         NBTTagCompound nbt = new NBTTagCompound();
         writeSelectedForgeDataVersions(nbt, referencedNamespaces);
@@ -321,7 +363,7 @@ public final class StructureCaptureService {
         return nbt;
     }
 
-    private static NBTTagCompound writeRenderedPreviewNbt(World world, ContentBounds bounds,
+    private static NBTTagCompound writeRenderedPreviewNbt(FrozenCapture frozenCapture, ContentBounds bounds,
             StructureCaptureExclusions exclusions) {
         List<CapturedBlock> solidBlocks = new ArrayList<>();
         List<CapturedBlock> otherBlocks = new ArrayList<>();
@@ -329,7 +371,8 @@ public final class StructureCaptureService {
 
         for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
             BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
-            IBlockState state = world.getBlockState(worldPos);
+            FrozenBlock frozenBlock = frozenCapture.getBlock(worldPos);
+            IBlockState state = frozenBlock == null ? Blocks.AIR.getDefaultState() : frozenBlock.state;
             if (isBlockExcluded(state, exclusions)) continue;
             if (CaptureBlockHelper.isAir(state)) continue;
 
@@ -355,31 +398,26 @@ public final class StructureCaptureService {
         return nbt;
     }
 
-    private static List<CapturedEntity> captureEntitiesForSave(World world, ContentBounds bounds,
+    private static List<CapturedEntity> captureEntitiesForSave(FrozenCapture frozenCapture, ContentBounds bounds,
             StructureCaptureExclusions exclusions, Set<String> referencedNamespaces) {
         List<CapturedEntity> entities = new ArrayList<>();
 
-        for (Entity entity : getEntitiesInBounds(world, bounds.minPos, bounds.maxPos)) {
-            if (!shouldCaptureEntity(entity)) continue;
+        for (FrozenEntity frozenEntity : frozenCapture.entities) {
+            if (exclusions.isEntityExcluded(frozenEntity.entityId)) continue;
+            if (frozenEntity.entityData == null) continue;
 
-            UUID uuid = entity.getUniqueID();
-            if (exclusions.isEntityExcluded(uuid.toString())) continue;
-
-            NBTTagCompound entityData = new NBTTagCompound();
-            if (!entity.writeToNBTOptional(entityData)) continue;
+            NBTTagCompound entityData = frozenEntity.entityData.copy();
 
             addNamespacesFromEntityData(entityData, referencedNamespaces);
             trimEntityData(entityData);
 
             Vec3d relativePos = new Vec3d(
-                entity.posX - bounds.minPos.getX(),
-                entity.posY - bounds.minPos.getY(),
-                entity.posZ - bounds.minPos.getZ()
+                frozenEntity.worldPos.x - bounds.minPos.getX(),
+                frozenEntity.worldPos.y - bounds.minPos.getY(),
+                frozenEntity.worldPos.z - bounds.minPos.getZ()
             );
 
-            BlockPos relativeBlockPos = entity instanceof EntityPainting
-                ? ((EntityPainting) entity).getHangingPosition().subtract(bounds.minPos)
-                : new BlockPos(relativePos);
+            BlockPos relativeBlockPos = frozenEntity.anchorPos.subtract(bounds.minPos);
 
             Vec3d savedRelativePos = new Vec3d(
                 relativeBlockPos.getX() + 0.5D,
@@ -393,13 +431,14 @@ public final class StructureCaptureService {
         return entities;
     }
 
-    private static AirRetentionMask buildAirRetentionMask(World world, ContentBounds bounds,
+    private static AirRetentionMask buildAirRetentionMask(FrozenCapture frozenCapture, ContentBounds bounds,
             StructureCaptureExclusions exclusions) {
         AirRetentionMask airRetentionMask = new AirRetentionMask();
 
         for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
             BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
-            IBlockState state = world.getBlockState(worldPos);
+            FrozenBlock frozenBlock = frozenCapture.getBlock(worldPos);
+            IBlockState state = frozenBlock == null ? Blocks.AIR.getDefaultState() : frozenBlock.state;
             IBlockState storedState = isBlockExcluded(state, exclusions) ? Blocks.AIR.getDefaultState() : state;
             if (CaptureBlockHelper.isAir(storedState)) continue;
 
@@ -469,6 +508,85 @@ public final class StructureCaptureService {
     private static List<Entity> getEntitiesInBounds(World world, BlockPos minPos, BlockPos maxPos) {
         AxisAlignedBB bounds = new AxisAlignedBB(minPos, maxPos.add(1, 1, 1));
         return world.getEntitiesWithinAABB(Entity.class, bounds, entity -> !(entity instanceof EntityPlayer));
+    }
+
+    private static FrozenCapture captureSnapshot(World world, BlockPos firstCorner, BlockPos secondCorner) {
+        NormalizedBounds selection = NormalizedBounds.fromCorners(firstCorner, secondCorner);
+        Map<Long, FrozenBlock> blocks = new LinkedHashMap<>();
+
+        for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(selection.minPos, selection.maxPos)) {
+            BlockPos blockPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
+            IBlockState state = world.getBlockState(blockPos);
+            TileEntity tileEntity = world.getTileEntity(blockPos);
+            NBTTagCompound tileData = null;
+            ResourceLocation tileEntityId = null;
+            ResourceLocation lootTableId = null;
+            int itemCount = 0;
+
+            if (tileEntity != null) {
+                tileData = tileEntity.writeToNBT(new NBTTagCompound());
+                tileEntityId = TileEntity.getKey(tileEntity.getClass());
+                lootTableId = getLootTableId(tileData);
+
+                // Accessing IInventory on TileEntityLockableLoot generates its loot, so only count
+                // fixed inventories after confirming no loot table is still attached.
+                itemCount = lootTableId == null ? countInventoryItems(tileEntity) : 0;
+            }
+
+            blocks.put(blockPos.toLong(), new FrozenBlock(blockPos, state, tileData, tileEntityId, lootTableId, itemCount));
+        }
+
+        List<FrozenEntity> entities = new ArrayList<>();
+        for (Entity entity : getEntitiesInBounds(world, selection.minPos, selection.maxPos)) {
+            if (!shouldCaptureEntity(entity)) continue;
+
+            ResourceLocation entityId = EntityList.getKey(entity);
+            if (entityId == null) continue;
+
+            BlockPos anchorPos = entity instanceof EntityPainting
+                ? ((EntityPainting) entity).getHangingPosition()
+                : new BlockPos(entity.posX, entity.posY, entity.posZ);
+            NBTTagCompound entityData = new NBTTagCompound();
+
+            entities.add(new FrozenEntity(
+                entity.getUniqueID().toString(),
+                entityId,
+                anchorPos,
+                new Vec3d(entity.posX, entity.posY, entity.posZ),
+                entity.writeToNBTOptional(entityData) ? entityData : null
+            ));
+        }
+
+        return new FrozenCapture(
+            world.provider.getDimension(),
+            selection.minPos,
+            selection.maxPos,
+            blocks,
+            entities
+        );
+    }
+
+    private static FrozenCapture getOrCreateCapture(UUID playerId, World world, BlockPos firstCorner,
+            BlockPos secondCorner) {
+        FrozenCapture frozenCapture = FROZEN_CAPTURES.get(playerId);
+        if (matchesFrozenCapture(frozenCapture, world, firstCorner, secondCorner)) return frozenCapture;
+
+        // This only happens if the server-side session was lost or the corners changed. Refreshing
+        // the snapshot keeps the capture flow functional instead of hard-failing the request.
+        frozenCapture = captureSnapshot(world, firstCorner, secondCorner);
+        FROZEN_CAPTURES.put(playerId, frozenCapture);
+        return frozenCapture;
+    }
+
+    private static boolean matchesFrozenCapture(@Nullable FrozenCapture frozenCapture, World world,
+            BlockPos firstCorner, BlockPos secondCorner) {
+        if (frozenCapture == null) return false;
+
+        NormalizedBounds selection = NormalizedBounds.fromCorners(firstCorner, secondCorner);
+        if (frozenCapture.dimension != world.provider.getDimension()) return false;
+        if (!frozenCapture.selectionMinPos.equals(selection.minPos)) return false;
+
+        return frozenCapture.selectionMaxPos.equals(selection.maxPos);
     }
 
     @Nullable
@@ -855,6 +973,68 @@ public final class StructureCaptureService {
         private CapturedEntity(Vec3d relativePos, BlockPos relativeBlockPos, NBTTagCompound entityData) {
             this.relativePos = relativePos;
             this.relativeBlockPos = relativeBlockPos;
+            this.entityData = entityData;
+        }
+    }
+
+    private static final class FrozenCapture {
+        private final int dimension;
+        private final BlockPos selectionMinPos;
+        private final BlockPos selectionMaxPos;
+        private final Map<Long, FrozenBlock> blocks;
+        private final List<FrozenEntity> entities;
+
+        private FrozenCapture(int dimension, BlockPos selectionMinPos, BlockPos selectionMaxPos,
+                Map<Long, FrozenBlock> blocks, List<FrozenEntity> entities) {
+            this.dimension = dimension;
+            this.selectionMinPos = selectionMinPos;
+            this.selectionMaxPos = selectionMaxPos;
+            this.blocks = blocks;
+            this.entities = entities;
+        }
+
+        @Nullable
+        private FrozenBlock getBlock(BlockPos blockPos) {
+            return blocks.get(blockPos.toLong());
+        }
+    }
+
+    private static final class FrozenBlock {
+        private final BlockPos worldPos;
+        private final IBlockState state;
+        @Nullable
+        private final NBTTagCompound tileData;
+        @Nullable
+        private final ResourceLocation tileEntityId;
+        @Nullable
+        private final ResourceLocation lootTableId;
+        private final int itemCount;
+
+        private FrozenBlock(BlockPos worldPos, IBlockState state, @Nullable NBTTagCompound tileData,
+                @Nullable ResourceLocation tileEntityId, @Nullable ResourceLocation lootTableId, int itemCount) {
+            this.worldPos = worldPos;
+            this.state = state;
+            this.tileData = tileData;
+            this.tileEntityId = tileEntityId;
+            this.lootTableId = lootTableId;
+            this.itemCount = itemCount;
+        }
+    }
+
+    private static final class FrozenEntity {
+        private final String uuid;
+        private final ResourceLocation entityId;
+        private final BlockPos anchorPos;
+        private final Vec3d worldPos;
+        @Nullable
+        private final NBTTagCompound entityData;
+
+        private FrozenEntity(String uuid, ResourceLocation entityId, BlockPos anchorPos, Vec3d worldPos,
+                @Nullable NBTTagCompound entityData) {
+            this.uuid = uuid;
+            this.entityId = entityId;
+            this.anchorPos = anchorPos;
+            this.worldPos = worldPos;
             this.entityData = entityData;
         }
     }

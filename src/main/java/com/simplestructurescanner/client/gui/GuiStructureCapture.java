@@ -21,6 +21,7 @@ import com.simplestructurescanner.capture.StructureCaptureSummary;
 import com.simplestructurescanner.client.capture.StructureCaptureClientController;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.network.NetworkHandler;
+import com.simplestructurescanner.network.PacketClearStructureCaptureSession;
 import com.simplestructurescanner.network.PacketRequestStructureCaptureRenderedPreview;
 import com.simplestructurescanner.network.PacketRequestStructureCaptureSave;
 import com.simplestructurescanner.structure.StructureNBTParser;
@@ -214,7 +215,10 @@ public class GuiStructureCapture extends GuiScreen {
             previewWindow.release();
             previewWindow = null;
         }
-        if (!saveRequested) StructureCaptureClientController.clearSelection();
+        if (!saveRequested) {
+            NetworkHandler.INSTANCE.sendToServer(new PacketClearStructureCaptureSession());
+            StructureCaptureClientController.clearSelection();
+        }
     }
 
     @Override
@@ -593,7 +597,7 @@ public class GuiStructureCapture extends GuiScreen {
     private int getExcludedEntityCount() {
         int count = 0;
         for (StructureCaptureSummary.EntityInstance entity : summary.getEntities()) {
-            if (exclusions.isEntityExcluded(entity.getUuid())) count++;
+            if (exclusions.isEntityExcluded(entity.getEntityId())) count++;
         }
 
         return count;

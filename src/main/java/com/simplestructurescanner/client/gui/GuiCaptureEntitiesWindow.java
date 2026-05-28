@@ -127,19 +127,11 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
     }
 
     private boolean isGroupExcluded(EntityGroup group) {
-        if (group.uuids.isEmpty()) return false;
-
-        for (String uuid : group.uuids) {
-            if (!exclusions.isEntityExcluded(uuid)) return false;
-        }
-
-        return true;
+        return exclusions.isEntityExcluded(group.entityId);
     }
 
     private void setGroupExcluded(EntityGroup group, boolean excluded) {
-        for (String uuid : group.uuids) {
-            exclusions.setEntityExcluded(uuid, excluded);
-        }
+        exclusions.setEntityExcluded(group.entityId, excluded);
     }
 
     private int getTotalEntityCount() {
@@ -175,7 +167,6 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
 
     static final class EntityGroup {
         private final ResourceLocation entityId;
-        private final List<String> uuids = new ArrayList<>();
         private int count;
 
         private EntityGroup(ResourceLocation entityId) {
@@ -183,7 +174,6 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
         }
 
         private void add(EntityInstance entity) {
-            uuids.add(entity.getUuid());
             count++;
         }
     }

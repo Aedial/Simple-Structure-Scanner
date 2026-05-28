@@ -61,6 +61,7 @@ public class PacketRequestStructureCaptureRenderedPreview implements IMessage {
             player.getServerWorld().addScheduledTask(() -> {
                 StructureCaptureExclusions exclusions = StructureCaptureExclusions.fromNBT(message.exclusionTag);
                 NBTTagCompound previewTag = StructureCaptureService.buildRenderedPreviewNbt(
+                    player.getUniqueID(),
                     player.world,
                     message.firstCorner,
                     message.secondCorner,
