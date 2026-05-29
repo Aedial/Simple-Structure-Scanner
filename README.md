@@ -41,6 +41,14 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 - Search blacklist file example: [docs/examples/search-blacklists/examplepack.txt](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/examples/search-blacklists/examplepack.txt)
 - Full provider implementation guide: [docs/STRUCTURE_PROVIDER_GUIDE.md](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/STRUCTURE_PROVIDER_GUIDE.md)
 
+## NBT Tools
+- `python3.12 tools/structure_nbt_air.py strip <path...>` removes every `minecraft:air` block entry and writes sibling `*.stripped.nbt` files.
+- `python3.12 tools/structure_nbt_air.py restore <path...>` adds back only the air blocks the Structure Capture Ruler would keep and writes sibling `*.restored.nbt` files.
+- Each path may be a file or a directory. Directory inputs recurse and process every `.nbt` file they contain.
+- Add `--dry` to print the per-file summary without writing output files.
+- Add `-f` or `--force` to replace an existing `*.stripped.nbt` or `*.restored.nbt` file.
+- Add `-i` or `--inplace` to overwrite each input file instead of writing a sibling output file.
+
 ## FAQ
 ### Do I need to install this on a server?
 If you wish the query structure locations, you will need to put the mod on the server as well. However, if you only want to view structure information, you can use it client-side, as long as the mods providing said structures are also installed client-side.

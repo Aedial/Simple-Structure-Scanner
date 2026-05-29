@@ -177,8 +177,10 @@ public class StructureInfo {
 
         int minY = Integer.MAX_VALUE;
         int maxY = Integer.MIN_VALUE;
-        int maxWidth = 0;
-        int maxDepth = 0;
+        int minX = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxZ = Integer.MIN_VALUE;
 
         for (StructureLayer layer : layers) {
             if (layer == null) continue;
@@ -186,15 +188,22 @@ public class StructureInfo {
             if (layer.y < minY) minY = layer.y;
             if (layer.y > maxY) maxY = layer.y;
 
-            if (layer.width > maxWidth) maxWidth = layer.width;
-            if (layer.depth > maxDepth) maxDepth = layer.depth;
+            if (layer.width <= 0 || layer.depth <= 0) continue;
+
+            if (layer.xOffset < minX) minX = layer.xOffset;
+            if (layer.zOffset < minZ) minZ = layer.zOffset;
+
+            int layerMaxX = layer.xOffset + layer.width - 1;
+            int layerMaxZ = layer.zOffset + layer.depth - 1;
+            if (layerMaxX > maxX) maxX = layerMaxX;
+            if (layerMaxZ > maxZ) maxZ = layerMaxZ;
         }
 
         if (minY == Integer.MAX_VALUE || maxY == Integer.MIN_VALUE) return;
 
         this.sizeY = maxY - minY + 1;
-        this.sizeX = maxWidth;
-        this.sizeZ = maxDepth;
+        this.sizeX = minX <= maxX ? maxX - minX + 1 : 0;
+        this.sizeZ = minZ <= maxZ ? maxZ - minZ + 1 : 0;
     }
 
     /**

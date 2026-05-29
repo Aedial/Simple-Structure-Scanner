@@ -112,6 +112,9 @@ gui.structurescanner.loot.iceandfire.cocoon=Myrmex Cocoon
 # Providers - Pillar
 gui.structurescanner.providers.pillar=Pillar
 
+# Providers - Recurrent Complex
+gui.structurescanner.provider.recurrentcomplex=Recurrent Complex
+
 # Buttons
 gui.structurescanner.blocksButton=[Blocks]
 gui.structurescanner.lootButton=[Loot]
