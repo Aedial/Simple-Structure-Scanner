@@ -271,6 +271,33 @@ public class StructureNBTParser {
     public static ParsedStructure parseStructure(String structurePath, @Nullable StructureParseExtension extension) {
         String resourcePath = "/assets/minecraft/structures/" + structurePath + ".nbt";
 
+        return parseResource(resourcePath, "minecraft:" + structurePath, extension);
+    }
+
+    /**
+     * Parse a structure NBT from bundled mod assets.
+     * @param namespace Asset namespace
+     * @param structurePath Path relative to assets/<namespace>/structures/ without .nbt extension
+     */
+    @Nullable
+    public static ParsedStructure parseBundledStructure(String namespace, String structurePath) {
+        return parseBundledStructure(namespace, structurePath, null);
+    }
+
+    /**
+     * Parse a structure NBT from bundled mod assets with a custom extension.
+     */
+    @Nullable
+    public static ParsedStructure parseBundledStructure(String namespace, String structurePath,
+            @Nullable StructureParseExtension extension) {
+        String resourcePath = "/assets/" + namespace + "/structures/" + structurePath + ".nbt";
+
+        return parseResource(resourcePath, namespace + ":" + structurePath, extension);
+    }
+
+    @Nullable
+    private static ParsedStructure parseResource(String resourcePath, String structureId,
+            @Nullable StructureParseExtension extension) {
         try (InputStream stream = StructureNBTParser.class.getResourceAsStream(resourcePath)) {
             if (stream == null) {
                 SimpleStructureScanner.LOGGER.debug("Structure file not found: {}", resourcePath);
@@ -280,7 +307,7 @@ public class StructureNBTParser {
             NBTTagCompound nbt = CompressedStreamTools.readCompressed(stream);
             return parseNBT(nbt, extension);
         } catch (IOException e) {
-            SimpleStructureScanner.LOGGER.warn("Failed to parse structure {}: {}", structurePath, e.getMessage());
+            SimpleStructureScanner.LOGGER.warn("Failed to parse structure {}: {}", structureId, e.getMessage());
             return null;
         }
     }
@@ -307,6 +334,17 @@ public class StructureNBTParser {
             SimpleStructureScanner.LOGGER.warn("Failed to parse structure NBT file {}: {}", nbtFile.getAbsolutePath(), e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Parse an in-memory structure NBT tag.
+     * Used by features that already have the serialized structure contents without a backing file.
+     */
+    @Nullable
+    public static ParsedStructure parseStructureNbt(@Nullable NBTTagCompound nbt) {
+        if (nbt == null) return null;
+
+        return parseNBT(nbt, null);
     }
 
     @Nullable

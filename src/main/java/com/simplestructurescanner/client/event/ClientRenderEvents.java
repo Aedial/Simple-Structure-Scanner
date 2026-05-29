@@ -142,11 +142,6 @@ public class ClientRenderEvents {
         ModConfig.HudPosition hudPos = ModConfig.getClientHudPosition();
 
         switch (hudPos) {
-            case TOP_LEFT:
-            default:
-                boxX = paddingExternal;
-                boxY = paddingExternal;
-                break;
             case TOP_CENTER:
                 boxX = (screenW - boxW) / 2;
                 boxY = paddingExternal;
@@ -178,6 +173,11 @@ public class ClientRenderEvents {
             case BOTTOM_RIGHT:
                 boxX = screenW - boxW - paddingExternal;
                 boxY = screenH - boxH - paddingExternal;
+                break;
+            case TOP_LEFT:
+            default:
+                boxX = paddingExternal;
+                boxY = paddingExternal;
                 break;
         }
 
@@ -354,8 +354,8 @@ public class ClientRenderEvents {
         double camForwardZ = Math.cos(camYawRad) * Math.cos(camPitchRad);
 
         // Camera right direction (for horizontal offset)
-        double camRightX = Math.cos(camYawRad);
-        double camRightZ = Math.sin(camYawRad);
+        // double camRightX = Math.cos(camYawRad);
+        // double camRightZ = Math.sin(camYawRad);
 
         // Base position: in front of camera
         double baseX = playerX + camForwardX * ARROW_BASE_DISTANCE;
@@ -444,6 +444,7 @@ public class ClientRenderEvents {
             float curve0 = (float) (1.0 - Math.pow(1.0 - t0, GRADIENT_CURVE));
             float curve1 = (float) (1.0 - Math.pow(1.0 - t1, GRADIENT_CURVE));
 
+            // FIXME: What was I thinking??? END and START are probably inverted in one of the cases
             float factor0, factor1;
             if (GRADIENT_FRONT_TO_BACK) {
                 // Front dark, back light: front (t=1) gets END_FACTOR, back (t=0) gets START_FACTOR

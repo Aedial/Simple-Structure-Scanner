@@ -7,20 +7,19 @@ import javax.annotation.Nullable;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
-import net.minecraft.nbt.NBTTagLong;
 import net.minecraft.nbt.NBTTagString;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.common.util.Constants;
 
 
 /**
- * Mutable exclusion set for block keys, entity UUIDs, and container positions.
+ * Mutable exclusion set for block keys, entity IDs, and container positions.
  */
 public class StructureCaptureExclusions {
 
-    private final Set<String> excludedBlockKeys = new HashSet<String>();
-    private final Set<String> excludedEntityUuids = new HashSet<String>();
-    private final Set<String> excludedContainerKeys = new HashSet<String>();
+    private final Set<String> excludedBlockKeys = new HashSet<>();
+    private final Set<String> excludedEntityIds = new HashSet<>();
+    private final Set<String> excludedContainerKeys = new HashSet<>();
 
     public boolean isBlockExcluded(@Nullable String key) {
         return key != null && excludedBlockKeys.contains(key);
@@ -37,19 +36,27 @@ public class StructureCaptureExclusions {
         excludedBlockKeys.remove(key);
     }
 
-    public boolean isEntityExcluded(@Nullable String uuid) {
-        return uuid != null && excludedEntityUuids.contains(uuid);
+    public boolean isEntityExcluded(@Nullable String entityId) {
+        return entityId != null && excludedEntityIds.contains(entityId);
     }
 
-    public void setEntityExcluded(@Nullable String uuid, boolean excluded) {
-        if (uuid == null) return;
+    public boolean isEntityExcluded(@Nullable ResourceLocation entityId) {
+        return isEntityExcluded(createEntityKey(entityId));
+    }
+
+    public void setEntityExcluded(@Nullable String entityId, boolean excluded) {
+        if (entityId == null) return;
 
         if (excluded) {
-            excludedEntityUuids.add(uuid);
+            excludedEntityIds.add(entityId);
             return;
         }
 
-        excludedEntityUuids.remove(uuid);
+        excludedEntityIds.remove(entityId);
+    }
+
+    public void setEntityExcluded(@Nullable ResourceLocation entityId, boolean excluded) {
+        setEntityExcluded(createEntityKey(entityId), excluded);
     }
 
     public boolean isContainerExcluded(@Nullable String key) {
@@ -67,6 +74,16 @@ public class StructureCaptureExclusions {
         excludedContainerKeys.remove(key);
     }
 
+    public void clear() {
+        excludedBlockKeys.clear();
+        excludedEntityIds.clear();
+        excludedContainerKeys.clear();
+    }
+
+    public boolean isEmpty() {
+        return excludedBlockKeys.isEmpty() && excludedEntityIds.isEmpty() && excludedContainerKeys.isEmpty();
+    }
+
     public NBTTagCompound toNBT() {
         NBTTagCompound tag = new NBTTagCompound();
 
@@ -75,9 +92,9 @@ public class StructureCaptureExclusions {
             blockKeyList.appendTag(new NBTTagString(blockKey));
         }
 
-        NBTTagList entityUuidList = new NBTTagList();
-        for (String entityUuid : excludedEntityUuids) {
-            entityUuidList.appendTag(new NBTTagString(entityUuid));
+        NBTTagList entityIdList = new NBTTagList();
+        for (String entityId : excludedEntityIds) {
+            entityIdList.appendTag(new NBTTagString(entityId));
         }
 
         NBTTagList containerList = new NBTTagList();
@@ -86,7 +103,7 @@ public class StructureCaptureExclusions {
         }
 
         tag.setTag("blocks", blockKeyList);
-        tag.setTag("entities", entityUuidList);
+        tag.setTag("entities", entityIdList);
         tag.setTag("containers", containerList);
         return tag;
     }
@@ -100,9 +117,9 @@ public class StructureCaptureExclusions {
             exclusions.excludedBlockKeys.add(blockKeyList.getStringTagAt(index));
         }
 
-        NBTTagList entityUuidList = tag.getTagList("entities", Constants.NBT.TAG_STRING);
-        for (int index = 0; index < entityUuidList.tagCount(); index++) {
-            exclusions.excludedEntityUuids.add(entityUuidList.getStringTagAt(index));
+        NBTTagList entityIdList = tag.getTagList("entities", Constants.NBT.TAG_STRING);
+        for (int index = 0; index < entityIdList.tagCount(); index++) {
+            exclusions.excludedEntityIds.add(entityIdList.getStringTagAt(index));
         }
 
         NBTTagList containerList = tag.getTagList("containers", Constants.NBT.TAG_STRING);
@@ -116,8 +133,13 @@ public class StructureCaptureExclusions {
     public StructureCaptureExclusions copy() {
         StructureCaptureExclusions copy = new StructureCaptureExclusions();
         copy.excludedBlockKeys.addAll(excludedBlockKeys);
-        copy.excludedEntityUuids.addAll(excludedEntityUuids);
+        copy.excludedEntityIds.addAll(excludedEntityIds);
         copy.excludedContainerKeys.addAll(excludedContainerKeys);
         return copy;
+    }
+
+    @Nullable
+    public static String createEntityKey(@Nullable ResourceLocation entityId) {
+        return entityId == null ? null : entityId.toString();
     }
 }

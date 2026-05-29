@@ -42,12 +42,12 @@ abstract class AbstractEntityBrowserWindow<T> {
     private static final int ENTRY_BUTTON_HEIGHT = 12;
     private static final int ENTRY_BUTTON_PADDING = 4;
 
-    private static final Map<ResourceLocation, String> ENTITY_NAME_CACHE = new HashMap<ResourceLocation, String>();
+    private static final Map<ResourceLocation, String> ENTITY_NAME_CACHE = new HashMap<>();
 
     private final GuiScreen parent;
     private final List<T> entries;
-    private final Map<ResourceLocation, Entity> entityCache = new HashMap<ResourceLocation, Entity>();
-    private final Set<ResourceLocation> entitiesWithRenderErrors = new HashSet<ResourceLocation>();
+    private final Map<ResourceLocation, Entity> entityCache = new HashMap<>();
+    private final Set<ResourceLocation> entitiesWithRenderErrors = new HashSet<>();
 
     private boolean visible;
     private int windowX;

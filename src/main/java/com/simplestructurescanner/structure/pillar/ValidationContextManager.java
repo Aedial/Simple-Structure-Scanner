@@ -19,18 +19,18 @@ import java.util.WeakHashMap;
 
 /**
  * Manages the lifecycle of structure validation worlds.
- *
+ * <p>
  * This class:
  * - Creates and caches validation worlds by dimension
  * - Reuses existing validation worlds to avoid regenerating chunks
  * - Cleans up worlds when done to prevent memory leaks
  * - Resolves the correct generation world before validation
- *
+ * <p>
  * USAGE:
  * 1. Get a validation world for a world: getValidationWorld(world)
  * 2. Use the world for structure validation
  * 3. Clear cache when done: clearCache()
- *
+ * <p>
  * IMPORTANT: Always call clearCache() when done validating to free memory.
  */
 public class ValidationContextManager {
@@ -158,7 +158,7 @@ public class ValidationContextManager {
 
     /**
      * Gets or creates a validation world for the given real world.
-     *
+     * <p>
      * This method:
      * - Returns cached validation world if available
      * - Creates new validation world if not cached
@@ -196,10 +196,8 @@ public class ValidationContextManager {
         // This is a client world, try to get the server world
         try {
             FMLCommonHandler handler = FMLCommonHandler.instance();
-            if (handler != null) {
-                MinecraftServer server = handler.getMinecraftServerInstance();
-                if (server != null) return findServerWorld(server, world.provider.getDimension());
-            }
+            MinecraftServer server = handler.getMinecraftServerInstance();
+            if (server != null) return findServerWorld(server, world.provider.getDimension());
         } catch (Exception e) {
             // Failed to get server world, return null
         }
@@ -209,7 +207,7 @@ public class ValidationContextManager {
 
     /**
      * Creates a new validation world based on the real world.
-     *
+     * <p>
      * IMPORTANT: We clone the real world's WorldInfo to prevent any modifications
      * from affecting the actual world. Some mod providers (like BiomesOPlenty with Lost Cities)
      * may inadvertently modify the WorldInfo's terrain type during initialization.

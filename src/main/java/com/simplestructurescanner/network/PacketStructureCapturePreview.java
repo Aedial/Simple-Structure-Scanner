@@ -47,12 +47,10 @@ public class PacketStructureCapturePreview implements IMessage {
     public static class Handler implements IMessageHandler<PacketStructureCapturePreview, IMessage> {
         @Override
         public IMessage onMessage(PacketStructureCapturePreview message, MessageContext ctx) {
-            Minecraft.getMinecraft().addScheduledTask(() -> {
-                StructureCaptureClientController.handlePreviewResponse(
-                    message.summaryTag != null ? StructureCaptureSummary.fromNBT(message.summaryTag) : null,
-                    message.errorKey
-                );
-            });
+            Minecraft.getMinecraft().addScheduledTask(() -> StructureCaptureClientController.handlePreviewResponse(
+                message.summaryTag != null ? StructureCaptureSummary.fromNBT(message.summaryTag) : null,
+                message.errorKey
+                                                                                                              ));
 
             return null;
         }

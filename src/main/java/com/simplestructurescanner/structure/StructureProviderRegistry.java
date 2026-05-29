@@ -32,14 +32,14 @@ public class StructureProviderRegistry {
     private static final Map<ResourceLocation, StructureProvider> structureToProvider = new LinkedHashMap<>();
     private static boolean initialized = false;
 
-    private static List<Class<? extends StructureProvider>> providerClasses = Arrays.asList(
+    private static final List<Class<? extends StructureProvider>> providerClasses = Arrays.asList(
         VanillaStructureProvider.class,
         AbyssalCraftStructureProvider.class,
         AetherStructureProvider.class,
         IceAndFireStructureProvider.class,
         PillarStructureProvider.class
         // <b>IMPORTANT, DO NOT REMOVE:</b> Add other provider classes here
-    );
+                                                                                                 );
 
     /**
      * Discover and register all available structure providers.

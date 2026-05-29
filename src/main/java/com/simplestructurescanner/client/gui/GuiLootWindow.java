@@ -61,8 +61,8 @@ public class GuiLootWindow {
     private int dropRateHoverIndex = -1;
 
     // Loot data - resolved and aggregated
-    private List<LootEntry> lootEntries;
-    private List<List<LootItem>> resolvedLoot = new ArrayList<>();
+    private final List<LootEntry> lootEntries;
+    private final List<List<LootItem>> resolvedLoot = new ArrayList<>();
     private boolean lootResolved = false;
     private int simulationCount = 0;
 
@@ -96,7 +96,7 @@ public class GuiLootWindow {
         World world = mc.world;
         if (mc.getIntegratedServer() != null) {
             WorldServer serverWorld = mc.getIntegratedServer().getWorld(mc.world.provider.getDimension());
-            if (serverWorld != null) world = serverWorld;
+            world = serverWorld;
         }
 
         simulationCount = LootTableResolver.getSimulationCount();
@@ -179,10 +179,10 @@ public class GuiLootWindow {
         if (itemsPerRow < 1) itemsPerRow = 1;
 
         contentHeight = 0;
-        for (int i = 0; i < resolvedLoot.size(); i++) {
-            List<LootItem> items = resolvedLoot.get(i);
+        for (List<LootItem> items : resolvedLoot) {
             int itemRows = (items.size() + itemsPerRow - 1) / itemsPerRow;
-            if (itemRows == 0) itemRows = 1;
+            if (itemRows == 0)
+                itemRows = 1;
             contentHeight += ENTRY_HEADER_HEIGHT + itemRows * (ITEM_SIZE + ITEM_RATE_HEIGHT + ITEM_PADDING) + ENTRY_PADDING;
         }
 

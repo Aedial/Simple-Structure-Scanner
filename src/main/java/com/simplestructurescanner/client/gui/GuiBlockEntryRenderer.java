@@ -46,7 +46,6 @@ final class GuiBlockEntryRenderer {
         if (stillTexture == null) return false;
 
         TextureAtlasSprite sprite = mc.getTextureMapBlocks().getAtlasSprite(stillTexture.toString());
-        if (sprite == null) return false;
 
         int color = fluid.getColor(fluidStack);
         float alpha = (float) (color >> 24 & 255) / 255.0F;

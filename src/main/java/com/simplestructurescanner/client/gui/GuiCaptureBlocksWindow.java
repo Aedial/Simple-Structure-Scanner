@@ -35,7 +35,7 @@ public class GuiCaptureBlocksWindow {
 
     private final GuiScreen parent;
     private final List<BlockSummary> blockSummaries;
-    private final List<BlockEntry> blockEntries = new ArrayList<BlockEntry>();
+    private final List<BlockEntry> blockEntries = new ArrayList<>();
     private final StructureCaptureExclusions exclusions;
 
     private boolean visible;
@@ -159,7 +159,7 @@ public class GuiCaptureBlocksWindow {
 
         if (hoveredIndex >= 0 && hoveredIndex < blockEntries.size()) {
             BlockEntry entry = blockEntries.get(hoveredIndex);
-            List<String> tooltipLines = new ArrayList<String>();
+            List<String> tooltipLines = new ArrayList<>();
 
             if (entry.displayStack != null) {
                 ITooltipFlag.TooltipFlags tooltipFlag = mc.gameSettings.advancedItemTooltips

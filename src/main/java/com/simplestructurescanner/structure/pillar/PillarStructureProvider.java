@@ -23,7 +23,6 @@ import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.AbstractStructureProvider;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
-import com.simplestructurescanner.structure.ParsedStructureApplier;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureSearchOverrides;
@@ -188,7 +187,7 @@ public class PillarStructureProvider extends AbstractStructureProvider {
                 continue;
             }
 
-            ParsedStructureApplier.apply(info, parsed);
+            AbstractStructureProvider.apply(info, parsed);
         }
     }
 
@@ -411,7 +410,6 @@ public class PillarStructureProvider extends AbstractStructureProvider {
     /**
      * Create a {@link PillarSchemaProxy} from a Pillar StructureSchema instance.
      */
-    @SuppressWarnings("unchecked")
     private static PillarSchemaProxy createSchemaProxy(Object pillarSchema) throws ReflectionException {
         Class<?> cls = pillarSchema.getClass();
 

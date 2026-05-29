@@ -291,7 +291,7 @@ public class PillarNBTParser {
         if (state == null) return;
 
         Block block = state.getBlock();
-        if (block == null || !block.hasTileEntity(state)) return;
+        if (!block.hasTileEntity(state)) return;
 
         TileEntity tileEntity = createContainerTileEntity(state, nbtData);
         if (tileEntity == null) return;

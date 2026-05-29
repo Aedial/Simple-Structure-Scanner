@@ -69,6 +69,7 @@ public class PacketRequestStructureCaptureSave implements IMessage {
 
                 try {
                     SaveResult result = StructureCaptureService.saveCapture(
+                        player.getUniqueID(),
                         player.world,
                         message.firstCorner,
                         message.secondCorner,

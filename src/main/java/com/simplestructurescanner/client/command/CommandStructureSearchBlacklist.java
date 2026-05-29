@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
+import com.simplestructurescanner.structure.StructureProvider;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
@@ -89,7 +90,7 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
         if (args.length == 2) return getListOfStringsMatchingLastWord(args, ACTIONS);
         if (args.length == 3) {
             List<String> providerIds = StructureProviderRegistry.getProviders().stream()
-                .map(provider -> provider.getProviderId())
+                .map(StructureProvider::getProviderId)
                 .distinct()
                 .sorted()
                 .collect(Collectors.toList());

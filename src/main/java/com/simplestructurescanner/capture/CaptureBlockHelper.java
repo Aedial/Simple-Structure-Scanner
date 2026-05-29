@@ -17,7 +17,7 @@ import com.simplestructurescanner.structure.StructureNBTParser;
 
 /**
  * Shared block helpers for capture previews and final NBT saves.
- *
+ * <p>
  * The capture flow groups blocks by their displayed item or fluid identity so the UI matches the
  * rest of the scanner while the saved structure still preserves exact block states.
  */
@@ -46,7 +46,7 @@ public final class CaptureBlockHelper {
 
     public static String createKey(@Nullable IBlockState state) {
         Block block = state != null ? state.getBlock() : null;
-        if (state == null || block == null) return BLOCK_PREFIX + "minecraft:air";
+        if (state == null) return BLOCK_PREFIX + "minecraft:air";
 
         FluidStack displayFluid = createDisplayFluid(state);
         if (displayFluid != null && displayFluid.getFluid() != null) {
@@ -54,9 +54,11 @@ public final class CaptureBlockHelper {
         }
 
         ItemStack displayStack = StructureNBTParser.createDisplayStack(state);
-        if (!displayStack.isEmpty() && displayStack.getItem() != null
-                && displayStack.getItem().getRegistryName() != null) {
-            return ITEM_PREFIX + displayStack.getItem().getRegistryName() + ":" + displayStack.getMetadata();
+        if (!displayStack.isEmpty()) {
+            displayStack.getItem();
+            if (displayStack.getItem().getRegistryName() != null) {
+                return ITEM_PREFIX + displayStack.getItem().getRegistryName() + ":" + displayStack.getMetadata();
+            }
         }
 
         String blockId = block.getRegistryName() != null ? block.getRegistryName().toString() : "minecraft:air";
@@ -66,7 +68,7 @@ public final class CaptureBlockHelper {
     @Nullable
     public static FluidStack createDisplayFluid(@Nullable IBlockState state) {
         Block block = state != null ? state.getBlock() : null;
-        if (state == null || block == null) return null;
+        if (state == null) return null;
 
         Fluid fluid = FluidRegistry.lookupFluidForBlock(block);
         if (fluid == null && block instanceof IFluidBlock) fluid = ((IFluidBlock) block).getFluid();

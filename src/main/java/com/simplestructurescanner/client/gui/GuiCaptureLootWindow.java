@@ -55,7 +55,7 @@ public class GuiCaptureLootWindow extends GuiCaptureToggleListWindow<ContainerSu
 
     @Override
     protected List<String> getTooltipLines(ContainerSummary entry) {
-        List<String> lines = new ArrayList<String>();
+        List<String> lines = new ArrayList<>();
         lines.add(getContainerName(entry));
         lines.add(getContainerDetails(entry));
         lines.add(I18n.format("gui.structurescanner.capture.loot.containerCount", entry.getContainerCount()));

@@ -133,6 +133,11 @@ These providers split data in two parts:
 
 This NBT parsing path uses the shared `StructureNBTParser`.
 
+Built-in providers can also source their structure contents from NBT.
+`populateStructureContents()` checks `config/simplestructurescanner/structures/<provider>/<structure>.nbt` first, then falls back to the bundled scanner snapshot shipped in the mod JAR.
+That single NBT file is treated as the authoritative source for blocks, layers, entities, and loot tables.
+This is the expected drop-in override path for Structure Capture Ruler output after you rename the saved capture to the registered structure path.
+
 Per-provider hidden blacklist files live in `config/simplestructurescanner/hidden-blacklists/`.
 Per-provider search blacklist files live in `config/simplestructurescanner/search-blacklists/`.
 Each file is named after the provider ID, for example `minecraft.txt` or `pillar.txt`.

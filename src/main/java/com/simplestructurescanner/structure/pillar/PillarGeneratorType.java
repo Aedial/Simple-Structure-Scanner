@@ -2,6 +2,7 @@ package com.simplestructurescanner.structure.pillar;
 
 import java.util.Random;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import net.minecraft.block.BlockLiquid;
@@ -118,7 +119,7 @@ public enum PillarGeneratorType {
         return pos;
     }
 
-    @Nullable
+    @Nonnull
     private static BlockPos getAnywherePosition(
             PillarSchemaProxy schema,
             Random random,
@@ -181,7 +182,7 @@ public enum PillarGeneratorType {
         return Math.max(maxY - minY, 1);
     }
 
-    private static interface PositionProvider {
+    private interface PositionProvider {
 
         @Nullable
         BlockPos getGenerationPosition(
@@ -191,7 +192,7 @@ public enum PillarGeneratorType {
                 BlockPos xzPos);
     }
 
-    private static interface RandomConsumer {
+    private interface RandomConsumer {
 
         void consume(PillarSchemaProxy schema, Random random);
     }

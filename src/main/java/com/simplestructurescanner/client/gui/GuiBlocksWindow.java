@@ -53,8 +53,8 @@ public class GuiBlocksWindow {
     private boolean hoveringTotal = false;
 
     // Block data
-    private List<BlockEntry> blocks;
-    private int totalBlocks = 0;
+    private final List<BlockEntry> blocks;
+    private int totalBlocks;
 
     public GuiBlocksWindow(GuiScreen parent, ResourceLocation structureId, StructureInfo structureInfo) {
         this.parent = parent;
@@ -113,7 +113,7 @@ public class GuiBlocksWindow {
             int itemsPerRow = Math.max(1, (int) Math.ceil(Math.sqrt(itemCount * screenRatio)));
             int rowCount = (int) Math.ceil((double) itemCount / itemsPerRow);
 
-            itemsPerRow = Math.max(1, Math.min(itemsPerRow, 16));
+            itemsPerRow = Math.min(itemsPerRow, 16);
             rowCount = Math.max(1, Math.min(rowCount, 12));
 
             columns = itemsPerRow;

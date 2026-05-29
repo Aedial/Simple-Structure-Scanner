@@ -58,8 +58,29 @@ public class NetworkHandler {
         );
 
         INSTANCE.registerMessage(
+            PacketRequestStructureCaptureRenderedPreview.Handler.class,
+            PacketRequestStructureCaptureRenderedPreview.class,
+            packetId++,
+            Side.SERVER
+        );
+
+        INSTANCE.registerMessage(
+            PacketStructureCaptureRenderedPreview.Handler.class,
+            PacketStructureCaptureRenderedPreview.class,
+            packetId++,
+            Side.CLIENT
+        );
+
+        INSTANCE.registerMessage(
             PacketRequestStructureCaptureSave.Handler.class,
             PacketRequestStructureCaptureSave.class,
+            packetId++,
+            Side.SERVER
+        );
+
+        INSTANCE.registerMessage(
+            PacketClearStructureCaptureSession.Handler.class,
+            PacketClearStructureCaptureSession.class,
             packetId++,
             Side.SERVER
         );

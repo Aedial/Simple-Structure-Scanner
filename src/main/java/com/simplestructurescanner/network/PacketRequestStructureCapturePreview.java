@@ -50,6 +50,7 @@ public class PacketRequestStructureCapturePreview implements IMessage {
             EntityPlayerMP player = ctx.getServerHandler().player;
             player.getServerWorld().addScheduledTask(() -> {
                 StructureCaptureSummary summary = StructureCaptureService.buildSummary(
+                    player.getUniqueID(),
                     player.world,
                     message.firstCorner,
                     message.secondCorner

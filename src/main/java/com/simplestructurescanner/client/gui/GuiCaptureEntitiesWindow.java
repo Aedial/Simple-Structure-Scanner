@@ -118,7 +118,7 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
 
     @Override
     protected List<String> getEntryTooltipLines(EntityGroup entry) {
-        List<String> tooltipLines = new ArrayList<String>();
+        List<String> tooltipLines = new ArrayList<>();
         tooltipLines.add(entry.entityId.toString());
         tooltipLines.add(I18n.format("gui.structurescanner.capture.entities.count", entry.count));
         if (isGroupExcluded(entry)) tooltipLines.add(I18n.format("gui.structurescanner.capture.excludedTooltip"));
@@ -127,19 +127,11 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
     }
 
     private boolean isGroupExcluded(EntityGroup group) {
-        if (group.uuids.isEmpty()) return false;
-
-        for (String uuid : group.uuids) {
-            if (!exclusions.isEntityExcluded(uuid)) return false;
-        }
-
-        return true;
+        return exclusions.isEntityExcluded(group.entityId);
     }
 
     private void setGroupExcluded(EntityGroup group, boolean excluded) {
-        for (String uuid : group.uuids) {
-            exclusions.setEntityExcluded(uuid, excluded);
-        }
+        exclusions.setEntityExcluded(group.entityId, excluded);
     }
 
     private int getTotalEntityCount() {
@@ -150,7 +142,7 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
     }
 
     private static List<EntityGroup> aggregateEntities(List<EntityInstance> entityInstances) {
-        LinkedHashMap<ResourceLocation, EntityGroup> groupedEntities = new LinkedHashMap<ResourceLocation, EntityGroup>();
+        LinkedHashMap<ResourceLocation, EntityGroup> groupedEntities = new LinkedHashMap<>();
         for (EntityInstance entity : entityInstances) {
             EntityGroup group = groupedEntities.get(entity.getEntityId());
             if (group == null) {
@@ -161,10 +153,11 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
             group.add(entity);
         }
 
-        List<EntityGroup> aggregatedEntities = new ArrayList<EntityGroup>(groupedEntities.values());
-        Collections.sort(aggregatedEntities, (first, second) -> {
+        List<EntityGroup> aggregatedEntities = new ArrayList<>(groupedEntities.values());
+        aggregatedEntities.sort((first, second) -> {
             int countCompare = Integer.compare(second.count, first.count);
-            if (countCompare != 0) return countCompare;
+            if (countCompare != 0)
+                return countCompare;
 
             return first.entityId.toString().compareTo(second.entityId.toString());
         });
@@ -174,7 +167,6 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
 
     static final class EntityGroup {
         private final ResourceLocation entityId;
-        private final List<String> uuids = new ArrayList<String>();
         private int count;
 
         private EntityGroup(ResourceLocation entityId) {
@@ -182,7 +174,6 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
         }
 
         private void add(EntityInstance entity) {
-            uuids.add(entity.getUuid());
             count++;
         }
     }
