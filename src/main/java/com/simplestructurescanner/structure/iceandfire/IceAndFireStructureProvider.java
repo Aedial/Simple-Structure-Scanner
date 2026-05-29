@@ -41,6 +41,8 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
     private static final int DEFAULT_DRAGON_ROOST_CHANCE = 360;
     private static final int DEFAULT_GORGON_CHANCE = 75;
     private static final int DEFAULT_CYCLOPS_CAVE_CHANCE = 170;
+    private static final int DEFAULT_MAUSOLEUM_CHANCE = 1800;
+    private static final int DEFAULT_HYDRA_CHANCE = 200;
     private static final int DEFAULT_MYRMEX_CHANCE = 150;
     private static final int MYRMEX_MIN_DISTANCE_BLOCKS = 500;
 
@@ -49,6 +51,8 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
     private int dragonRoostChance = DEFAULT_DRAGON_ROOST_CHANCE;
     private int gorgonChance = DEFAULT_GORGON_CHANCE;
     private int cyclopsCaveChance = DEFAULT_CYCLOPS_CAVE_CHANCE;
+    private int mausoleumChance = DEFAULT_MAUSOLEUM_CHANCE;
+    private int hydraChance = DEFAULT_HYDRA_CHANCE;
     private int myrmexChance = DEFAULT_MYRMEX_CHANCE;
 
     public IceAndFireStructureProvider() {
@@ -71,8 +75,8 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
         // Misc
         registerStructure("cyclops_cave", "gui.structurescanner.structures.iceandfire.cyclops_cave", 0, 0, 0);
         registerStructure("gorgon_temple", "gui.structurescanner.structures.iceandfire.gorgon_temple", 0, 0, 0);
-        // TODO: add mausoleum
-        // TODO: add hydra_lair
+        registerStructure("mausoleum", "gui.structurescanner.structures.iceandfire.mausoleum", 0, 0, 0);
+        registerStructure("hydra_lair", "gui.structurescanner.structures.iceandfire.hydra_lair", 0, 0, 0);
 
         // Myrmex hives
         registerStructure("myrmex_hive_desert", "gui.structurescanner.structures.iceandfire.myrmex_hive_desert", 0, 0, 0);
@@ -93,6 +97,8 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
             dragonRoostChance = configClass.getField("generateDragonRoostChance").getInt(config);
             gorgonChance = configClass.getField("spawnGorgonsChance").getInt(config);
             cyclopsCaveChance = configClass.getField("spawnCyclopsCaveChance").getInt(config);
+            mausoleumChance = configClass.getField("generateMausoleumChance").getInt(config);
+            hydraChance = configClass.getField("generateHydraChance").getInt(config);
             myrmexChance = configClass.getField("myrmexColonyGenChance").getInt(config);
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.warn("Could not load Ice and Fire config, using defaults: {}", e.getMessage());
@@ -174,6 +180,21 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
         setMetadata("gorgon_temple", beachBiomes, overworld,
             calculateApproximateRarity(gorgonChance + 1.0D, worldGenDistance));
 
+        // Mausoleum - cold, snowy biomes
+        setMetadata("mausoleum", iceDragonRoostBiomes, overworld,
+            calculateApproximateRarity(mausoleumChance + 1.0D, worldGenDistance));
+
+        // Hydra Lair - swamp biomes
+        Set<Biome> swampBiomes = new HashSet<>();
+        for (Biome biome : Biome.REGISTRY) {
+            if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.SWAMP)) {
+                swampBiomes.add(biome);
+            }
+        }
+
+        setMetadata("hydra_lair", swampBiomes, overworld,
+            calculateApproximateRarity(hydraChance + 1.0D, worldGenDistance));
+
         // Myrmex Hive Desert - hot, dry, sandy biomes
         Set<Biome> desertBiomes = new HashSet<>();
         for (Biome biome : Biome.REGISTRY) {
@@ -237,38 +258,40 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
         applyStructureContentsFromNbt("lightning_dragon_cave");
         applyStructureContentsFromNbt("cyclops_cave");
         applyStructureContentsFromNbt("gorgon_temple");
+        applyStructureContentsFromNbt("mausoleum");
+        applyStructureContentsFromNbt("hydra_lair");
         applyStructureContentsFromNbt("myrmex_hive_desert");
         applyStructureContentsFromNbt("myrmex_hive_jungle");
 
         // Fire Dragon Cave
-        setLootTablesIfMissing("fire_dragon_cave",
+        addLootTables("fire_dragon_cave",
             createLootEntry("iceandfire:fire_dragon_female_cave", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:fire_dragon_male_cave", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("fire_dragon_cave", createEntityEntry("iceandfire:firedragon", 1));
+        addEntities("fire_dragon_cave", createEntityEntry("iceandfire:firedragon", 1));
 
         // Ice Dragon Cave
-        setLootTablesIfMissing("ice_dragon_cave",
+        addLootTables("ice_dragon_cave",
             createLootEntry("iceandfire:ice_dragon_female_cave", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:ice_dragon_male_cave", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("ice_dragon_cave", createEntityEntry("iceandfire:icedragon", 1));
+        addEntities("ice_dragon_cave", createEntityEntry("iceandfire:icedragon", 1));
 
         // Lightning Dragon Roost
-        setLootTablesIfMissing("lightning_dragon_roost",
+        addLootTables("lightning_dragon_roost",
             createLootEntry("iceandfire:lightning_dragon_female_cave", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("lightning_dragon_roost", createEntityEntry("iceandfire:lightningdragon", 1));
+        addEntities("lightning_dragon_roost", createEntityEntry("iceandfire:lightningdragon", 1));
 
         // Lightning Dragon Cave
-        setLootTablesIfMissing("lightning_dragon_cave",
+        addLootTables("lightning_dragon_cave",
             createLootEntry("iceandfire:lightning_dragon_female_cave", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:lightning_dragon_male_cave", "gui.structurescanner.loot.chest"));
-        setEntitiesIfMissing("lightning_dragon_cave", createEntityEntry("iceandfire:lightningdragon", 1));
+        addEntities("lightning_dragon_cave", createEntityEntry("iceandfire:lightningdragon", 1));
 
         // Myrmex Hive Jungle
-        setLootTablesIfMissing("myrmex_hive_jungle",
+        addLootTables("myrmex_hive_jungle",
             createLootEntry("iceandfire:myrmex_loot_chest", "gui.structurescanner.loot.chest"),
             createLootEntry("iceandfire:myrmex_jungle_food_chest", "gui.structurescanner.loot.iceandfire.cocoon"),
             createLootEntry("iceandfire:myrmex_trash_chest", "gui.structurescanner.loot.iceandfire.cocoon"));
-        setEntitiesIfMissing("myrmex_hive_jungle",
+        addEntities("myrmex_hive_jungle",
             createEntityEntry("iceandfire:myrmex_queen", 1),
             createEntityEntry("iceandfire:myrmex_royal", 2),
             createEntityEntry("iceandfire:myrmex_sentinel", 4),

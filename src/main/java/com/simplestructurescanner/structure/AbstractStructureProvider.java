@@ -169,6 +169,29 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         info.setLootTables(lootEntries);
     }
 
+    /**
+     * Supplements NBT-derived loot data without replacing it.
+     * Exact duplicate entries are skipped so providers can safely layer manual additions.
+     */
+    protected void addLootTables(String path, LootEntry... lootEntries) {
+        addLootTables(path, Arrays.asList(lootEntries));
+    }
+
+    protected void addLootTables(String path, @Nullable List<LootEntry> lootEntries) {
+        StructureInfo info = getMutableStructureInfo(path);
+        if (info == null || lootEntries == null || lootEntries.isEmpty()) return;
+
+        List<LootEntry> mergedEntries = new ArrayList<>(info.getLootTables());
+
+        for (LootEntry lootEntry : lootEntries) {
+            if (lootEntry == null || containsLootEntry(mergedEntries, lootEntry)) continue;
+
+            mergedEntries.add(lootEntry);
+        }
+
+        info.setLootTables(mergedEntries);
+    }
+
     protected void setEntities(String path, EntityEntry... entityEntries) {
         setEntities(path, Arrays.asList(entityEntries));
     }
@@ -189,6 +212,29 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         if (info == null || !info.getEntities().isEmpty()) return;
 
         info.setEntities(entityEntries);
+    }
+
+    /**
+     * Supplements NBT-derived entity data without replacing it.
+     * Exact duplicate entries are skipped so providers can safely layer manual additions.
+     */
+    protected void addEntities(String path, EntityEntry... entityEntries) {
+        addEntities(path, Arrays.asList(entityEntries));
+    }
+
+    protected void addEntities(String path, @Nullable List<EntityEntry> entityEntries) {
+        StructureInfo info = getMutableStructureInfo(path);
+        if (info == null || entityEntries == null || entityEntries.isEmpty()) return;
+
+        List<EntityEntry> mergedEntries = new ArrayList<>(info.getEntities());
+
+        for (EntityEntry entityEntry : entityEntries) {
+            if (entityEntry == null || containsEntityEntry(mergedEntries, entityEntry)) continue;
+
+            mergedEntries.add(entityEntry);
+        }
+
+        info.setEntities(mergedEntries);
     }
 
     public static void apply(StructureInfo info, StructureNBTParser.ParsedStructure parsed) {
@@ -287,5 +333,31 @@ public abstract class AbstractStructureProvider implements StructureProvider {
 
     protected EntityEntry createEntityEntry(ResourceLocation entityId, int count, boolean spawner) {
         return new EntityEntry(entityId, count, spawner);
+    }
+
+    private static boolean containsLootEntry(List<LootEntry> existingEntries, LootEntry candidate) {
+        for (LootEntry existingEntry : existingEntries) {
+            if (existingEntry == null) continue;
+            if (!existingEntry.lootTableId.equals(candidate.lootTableId)) continue;
+            if (existingEntry.containerType.isTranslatable() != candidate.containerType.isTranslatable()) continue;
+            if (!existingEntry.containerType.getValue().equals(candidate.containerType.getValue())) continue;
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private static boolean containsEntityEntry(List<EntityEntry> existingEntries, EntityEntry candidate) {
+        for (EntityEntry existingEntry : existingEntries) {
+            if (existingEntry == null) continue;
+            if (!existingEntry.entityId.equals(candidate.entityId)) continue;
+            if (existingEntry.count != candidate.count) continue;
+            if (existingEntry.spawner != candidate.spawner) continue;
+
+            return true;
+        }
+
+        return false;
     }
 }

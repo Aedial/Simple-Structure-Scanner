@@ -18,10 +18,12 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Add the Structure Capture Ruler, a tool that allows you to select two corners in-world and save the structure as an NBT file, with options to review and exclude blocks/entities/loot entries before saving. Use it to easily save structure previews for providers (or other mods) without manually entering the full structure description in the provider.
 - Populate the structure preview with the captured structure data for all existing providers, allowing accurate preview and content display for these structures.
 - Add a standalone `tools/structure_nbt_air.py` helper to strip explicit air blocks from structure NBT files and restore the Structure Capture Ruler's air mask when needed.
+- Add missing Hydra Lair and Mausoleum structures to the Ice and Fire provider.
 
 ### Fixed
 - Fix Pillar structure provider using client code, causing crashes on dedicated servers
 - Optimize structure rendering, so large previews stop tanking GUI framerate. Even the largest structures (e.g., Mansion) should now render at a smooth 60+ FPS without getting the CPU hot.
+- Fix Blocks window not collapsing different block facings into the same entry, causing an duplicate entry for some blocks with many facings (e.g., stairs, torches, chests, etc.)
 
 
 ## [1.0.1] - 2026-05-20

@@ -5,7 +5,6 @@ import javax.annotation.Nullable;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
-import net.minecraft.item.ItemStack;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fluids.FluidStack;
@@ -22,10 +21,6 @@ import com.simplestructurescanner.structure.StructureNBTParser;
  * rest of the scanner while the saved structure still preserves exact block states.
  */
 public final class CaptureBlockHelper {
-
-    private static final String FLUID_PREFIX = "fluid:";
-     private static final String ITEM_PREFIX = "item:";
-    private static final String BLOCK_PREFIX = "block:";
 
     private CaptureBlockHelper() {
     }
@@ -45,24 +40,11 @@ public final class CaptureBlockHelper {
     }
 
     public static String createKey(@Nullable IBlockState state) {
-        Block block = state != null ? state.getBlock() : null;
-        if (state == null) return BLOCK_PREFIX + "minecraft:air";
-
-        FluidStack displayFluid = createDisplayFluid(state);
-        if (displayFluid != null && displayFluid.getFluid() != null) {
-            return FLUID_PREFIX + displayFluid.getFluid().getName();
-        }
-
-        ItemStack displayStack = StructureNBTParser.createDisplayStack(state);
-        if (!displayStack.isEmpty()) {
-            displayStack.getItem();
-            if (displayStack.getItem().getRegistryName() != null) {
-                return ITEM_PREFIX + displayStack.getItem().getRegistryName() + ":" + displayStack.getMetadata();
-            }
-        }
-
-        String blockId = block.getRegistryName() != null ? block.getRegistryName().toString() : "minecraft:air";
-        return BLOCK_PREFIX + blockId;
+        return StructureNBTParser.createDisplayedBlockKey(
+            state,
+            createDisplayFluid(state),
+            StructureNBTParser.createDisplayStack(state)
+        );
     }
 
     @Nullable

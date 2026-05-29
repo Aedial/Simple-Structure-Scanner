@@ -49,6 +49,10 @@ import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
  */
 public class StructureNBTParser {
 
+    private static final String FLUID_BLOCK_KEY_PREFIX = "fluid:";
+    private static final String ITEM_BLOCK_KEY_PREFIX = "item:";
+    private static final String BLOCK_BLOCK_KEY_PREFIX = "block:";
+
     /**
      * Extension point for custom structure parsers.
      * <p>
@@ -62,10 +66,11 @@ public class StructureNBTParser {
 
         @Nullable
         default Object getBlockCountKey(@Nullable IBlockState state, @Nullable Block block) {
-            FluidStack displayFluid = StructureNBTParser.createDisplayFluid(state);
-            if (displayFluid != null && displayFluid.getFluid() != null) return displayFluid.getFluid().getName();
-
-            return state;
+            return StructureNBTParser.createDisplayedBlockKey(
+                state,
+                StructureNBTParser.createDisplayFluid(state),
+                StructureNBTParser.createDisplayStack(state)
+            );
         }
 
         default boolean shouldStoreLayerBlock(@Nullable IBlockState state, @Nullable Block block) {
@@ -486,6 +491,25 @@ public class StructureNBTParser {
         if (displayFluid != null) return new BlockEntry(state, null, displayFluid, count);
 
         return new BlockEntry(state, createDisplayStack(state), count);
+    }
+
+    /**
+     * Build the UI grouping key for a block using the already-resolved display fluid or item.
+     */
+    public static String createDisplayedBlockKey(@Nullable IBlockState state, @Nullable FluidStack displayFluid,
+            @Nullable ItemStack displayStack) {
+        Block block = state != null ? state.getBlock() : null;
+
+        if (displayFluid != null && displayFluid.getFluid() != null) {
+            return FLUID_BLOCK_KEY_PREFIX + displayFluid.getFluid().getName();
+        }
+
+        if (displayStack != null && !displayStack.isEmpty() && displayStack.getItem().getRegistryName() != null) {
+            return ITEM_BLOCK_KEY_PREFIX + displayStack.getItem().getRegistryName() + ":" + displayStack.getMetadata();
+        }
+
+        String blockId = block != null && block.getRegistryName() != null ? block.getRegistryName().toString() : "minecraft:air";
+        return BLOCK_BLOCK_KEY_PREFIX + blockId;
     }
 
     @Nullable

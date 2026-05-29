@@ -160,17 +160,20 @@ public class AetherStructureProvider extends AbstractStructureProvider {
     }
 
     private void populateSilverDungeon() {
-        // TODO: add createLootEntry("aether_legacy:chests/silver_dungeon_reward", "gui.structurescanner.loot.aether.reward")
-        // TODO: add createEntityEntry("aether_legacy:mimic", 3)
+        addLootTables("silver_dungeon",
+            createLootEntry("aether_legacy:chests/silver_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
+        addEntities("silver_dungeon", createEntityEntry("aether_legacy:mimic", 3));
     }
 
     private void populateGoldDungeon() {
-        // TODO: add createLootEntry("aether_legacy:chests/gold_dungeon_reward", "gui.structurescanner.loot.aether.reward")
+        addLootTables("gold_dungeon",
+            createLootEntry("aether_legacy:chests/gold_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
     }
 
     private void populateBronzeDungeon() {
-        // TODO: add createLootEntry("aether_legacy:chests/bronze_dungeon_reward", "gui.structurescanner.loot.aether.reward")
-        // TODO: add createEntityEntry("aether_legacy:mimic", 3)
+        addLootTables("bronze_dungeon",
+            createLootEntry("aether_legacy:chests/bronze_dungeon_reward", "gui.structurescanner.loot.aether.reward"));
+        addEntities("bronze_dungeon", createEntityEntry("aether_legacy:mimic", 3));
     }
 
     @Override

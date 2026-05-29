@@ -225,7 +225,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
     }
 
     private void populateNetherFortress() {
-        // TODO: add Wither Skeletons spawns
+        addEntities("fortress", createEntityEntry("minecraft:wither_skeleton", 3));
     }
 
     private BlockEntry createBlockEntry(Block block, int meta, int count) {
