@@ -20,6 +20,7 @@ import com.simplestructurescanner.structure.aether.AetherStructureProvider;
 import com.simplestructurescanner.structure.external.ExternalStructureProviderLoader;
 import com.simplestructurescanner.structure.iceandfire.IceAndFireStructureProvider;
 import com.simplestructurescanner.structure.pillar.PillarStructureProvider;
+import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexStructureProvider;
 import com.simplestructurescanner.structure.vanilla.VanillaStructureProvider;
 
 
@@ -37,7 +38,8 @@ public class StructureProviderRegistry {
         AbyssalCraftStructureProvider.class,
         AetherStructureProvider.class,
         IceAndFireStructureProvider.class,
-        PillarStructureProvider.class
+        PillarStructureProvider.class,
+        RecurrentComplexStructureProvider.class
         // <b>IMPORTANT, DO NOT REMOVE:</b> Add other provider classes here
                                                                                                  );
 

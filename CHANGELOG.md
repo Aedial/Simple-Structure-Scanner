@@ -10,10 +10,10 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ## [1.2.0] - 2026-06-15
 ### Added
-- Add Recurrent Complex structure provider, supporting all RC structures with their configured loot tables and entity spawners.
+- Add Recurrent Complex structure provider, supporting all RC structures with their configured loot tables and entity spawners. The search is not yet implemented, because it is substantially more complex than Pillar's.
 
 
-## [1.1.0] - 2026-05-29
+## [1.1.0] - 2026-05-30
 ### Added
 - Add the Structure Capture Ruler, a tool that allows you to select two corners in-world and save the structure as an NBT file, with options to review and exclude blocks/entities/loot entries before saving. Use it to easily save structure previews for providers (or other mods) without manually entering the full structure description in the provider.
 - Populate the structure preview with the captured structure data for all existing providers, allowing accurate preview and content display for these structures.
