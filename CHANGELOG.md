@@ -12,6 +12,9 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Added
 - Add Recurrent Complex structure provider, supporting all RC structures with their configured loot tables and entity spawners. The search is not yet implemented, because it is substantially more complex than Pillar's.
 
+### Fixed
+- Fix Structure Capture Ruler rounding the player position incorrectly, which could push captured corners onto the positive-adjacent block instead of the actual feet block.
+
 
 ## [1.1.0] - 2026-05-30
 ### Added
