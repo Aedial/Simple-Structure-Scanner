@@ -26,6 +26,8 @@ import com.simplestructurescanner.structure.LootTableResolver;
 import com.simplestructurescanner.structure.LootTableResolver.LootItem;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
+import com.simplestructurescanner.structure.StructureInfo.LootEntryKind;
+import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexLootResolver;
 
 
 /**
@@ -105,9 +107,13 @@ public class GuiLootWindow {
             List<LootItem> entryLoot = new ArrayList<>();
 
             // Try to resolve from loot table ID first
-            if (entry.lootTableId != null) {
+            if (entry.kind == LootEntryKind.LOOT_TABLE && entry.lootTableId != null) {
                 entryLoot = LootTableResolver.resolveLootTableWithSimulation(
                     world, entry.lootTableId, mc.player);
+            }
+
+            if (entry.kind == LootEntryKind.GENERATED_ITEMS && entry.sourceStack != null) {
+                entryLoot = RecurrentComplexLootResolver.resolveGeneratedLootWithSimulation(world, entry.sourceStack);
             }
 
             // If loot table resolution failed or wasn't available, use possibleDrops as fallback
@@ -116,12 +122,47 @@ public class GuiLootWindow {
                     int count = stack.getCount();
                     stack = stack.copy();
                     stack.setCount(1);
-                    entryLoot.add(new LootItem(stack, count * simulationCount));
+                    int dropCount = entry.kind == LootEntryKind.FIXED_ITEMS ? count * simulationCount : count;
+                    entryLoot.add(new LootItem(stack, dropCount));
                 }
             }
 
             resolvedLoot.add(entryLoot);
         }
+    }
+
+    private boolean isFixedInventoryEntry(LootEntry entry) {
+        return entry.kind == LootEntryKind.FIXED_ITEMS;
+    }
+
+    private String getEntryTitle(LootEntry entry) {
+        String containerName = ClientTextResolver.resolve(entry.containerType);
+        if (isFixedInventoryEntry(entry)) return I18n.format("gui.structurescanner.loot.fixedInventory", containerName);
+        if (entry.sourceName != null) return ClientTextResolver.resolve(entry.sourceName) + " (" + containerName + ")";
+        if (entry.lootTableId == null) return containerName;
+
+        return entry.lootTableId.getPath() + " (" + containerName + ")";
+    }
+
+    private String getItemMetricText(LootEntry entry, LootItem item) {
+        if (isFixedInventoryEntry(entry)) return String.valueOf(getFixedItemCount(item));
+
+        return item.formatDropRate(simulationCount);
+    }
+
+    private String getItemMetricTooltip(LootEntry entry, LootItem item) {
+        if (isFixedInventoryEntry(entry)) {
+            return I18n.format("gui.structurescanner.loot.fixedCountTooltip", getFixedItemCount(item));
+        }
+
+        return I18n.format("gui.structurescanner.loot.rateTooltipSimulated",
+            item.dropCount, simulationCount);
+    }
+
+    private int getFixedItemCount(LootItem item) {
+        if (simulationCount <= 0) return item.dropCount;
+
+        return item.dropCount / simulationCount;
     }
 
     public void hide() {
@@ -384,7 +425,7 @@ public class GuiLootWindow {
             }
 
             // Draw entry header
-            String tableName = entry.lootTableId.getPath() + " (" + ClientTextResolver.resolve(entry.containerType) + ")";
+            String tableName = getEntryTitle(entry);
             String elidedName = font.trimStringToWidth(tableName, contentW - 6);
             if (!elidedName.equals(tableName)) elidedName += "...";
 
@@ -424,7 +465,7 @@ public class GuiLootWindow {
                 mc.getRenderItem().renderItemIntoGUI(item.stack, itemX, itemPosY);
 
                 // Draw drop rate below item
-                String rate = item.formatDropRate(simulationCount);
+                String rate = getItemMetricText(entry, item);
                 int rateW = (int) (font.getStringWidth(rate) * textScale);
                 int rateX = itemX + (16 - rateW) / 2;
                 int rateY = itemPosY + 18;
@@ -480,13 +521,13 @@ public class GuiLootWindow {
             GlStateManager.popMatrix();
         }
 
-        // Drop rate tooltip
+        // Item metric tooltip
         if (hoveringDropRate && hoveredEntryIndex >= 0 && hoveredEntryIndex < resolvedLoot.size() &&
             dropRateHoverIndex >= 0 && dropRateHoverIndex < resolvedLoot.get(hoveredEntryIndex).size()) {
 
+            LootEntry entry = lootEntries.get(hoveredEntryIndex);
             LootItem item = resolvedLoot.get(hoveredEntryIndex).get(dropRateHoverIndex);
-            String tooltip = I18n.format("gui.structurescanner.loot.rateTooltipSimulated",
-                item.dropCount, simulationCount);
+            String tooltip = getItemMetricTooltip(entry, item);
 
             GlStateManager.pushMatrix();
             GlStateManager.translate(0, 0, 500);

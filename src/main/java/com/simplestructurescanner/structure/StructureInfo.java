@@ -285,17 +285,48 @@ public class StructureInfo {
     }
 
     /**
-     * Represents a loot table entry with potential drops.
+     * Represents one loot source entry.
+     * A null lootTableId means the entry is not backed by a vanilla loot table.
+     * Use kind to distinguish fixed inventories from generated loot sources.
      */
+    public enum LootEntryKind {
+        LOOT_TABLE,
+        FIXED_ITEMS,
+        GENERATED_ITEMS,
+    }
+
     public static class LootEntry {
+        @Nullable
         public final ResourceLocation lootTableId;
         public final List<ItemStack> possibleDrops;
         public final LocalizedText containerType;
+        public final LootEntryKind kind;
+        @Nullable
+        public final LocalizedText sourceName;
+        @Nullable
+        public final ItemStack sourceStack;
 
-        public LootEntry(ResourceLocation lootTableId, List<ItemStack> possibleDrops, LocalizedText containerType) {
+        public LootEntry(@Nullable ResourceLocation lootTableId, List<ItemStack> possibleDrops,
+                LocalizedText containerType) {
+            this(lootTableId, possibleDrops, containerType,
+                lootTableId != null ? LootEntryKind.LOOT_TABLE : LootEntryKind.FIXED_ITEMS,
+                null, null);
+        }
+
+        public LootEntry(@Nullable ResourceLocation lootTableId, List<ItemStack> possibleDrops,
+                LocalizedText containerType, LootEntryKind kind) {
+            this(lootTableId, possibleDrops, containerType, kind, null, null);
+        }
+
+        public LootEntry(@Nullable ResourceLocation lootTableId, List<ItemStack> possibleDrops,
+                LocalizedText containerType, LootEntryKind kind,
+                @Nullable LocalizedText sourceName, @Nullable ItemStack sourceStack) {
             this.lootTableId = lootTableId;
             this.possibleDrops = possibleDrops;
             this.containerType = containerType;
+            this.kind = kind;
+            this.sourceName = sourceName;
+            this.sourceStack = sourceStack != null && !sourceStack.isEmpty() ? sourceStack.copy() : null;
         }
     }
 

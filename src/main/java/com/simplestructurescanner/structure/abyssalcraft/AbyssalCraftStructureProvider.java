@@ -276,8 +276,8 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
 
         // Omothol Storage - storage building with crates
         setLootTablesIfMissing("omothol_storage",
-            createLootEntry("abyssalcraft:chests/omothol/storage_junk", "gui.structurescanner.loot.crate"),
-            createLootEntry("abyssalcraft:chests/omothol/storage_treasure", "gui.structurescanner.loot.crate"));
+            createLootEntry("abyssalcraft:chests/omothol/storage_junk", "gui.structurescanner.loot.abyssalcraft.crate"),
+            createLootEntry("abyssalcraft:chests/omothol/storage_treasure", "gui.structurescanner.loot.abyssalcraft.crate"));
         setEntitiesIfMissing("omothol_storage", createEntityEntry("abyssalcraft:shoggoth", 1));
 
         // Shoggoth Lair

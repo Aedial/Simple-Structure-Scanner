@@ -73,6 +73,7 @@ public class StructurePreviewRenderer {
         WORLD
     }
 
+    // TODO: get the proper rendering from Machinery Assembler. Currently, TESR (chest, skull, etc) is broken
     public StructurePreviewRenderer() {
         this.world = new DummyWorld();
 

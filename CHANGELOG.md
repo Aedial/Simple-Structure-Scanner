@@ -24,6 +24,8 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Fix Pillar structure provider using client code, causing crashes on dedicated servers
 - Optimize structure rendering, so large previews stop tanking GUI framerate. Even the largest structures (e.g., Mansion) should now render at a smooth 60+ FPS without getting the CPU hot.
 - Fix Blocks window not collapsing different block facings into the same entry, causing an duplicate entry for some blocks with many facings (e.g., stairs, torches, chests, etc.)
+- Fix structure loot windows skipping fixed container contents stored directly in structure NBT, so static inventories like the Igloo chest and brewing stand now appear in the loot list.
+- Fix loot window drop-rate labels rounding very rare generated items down to 0% instead of showing a small non-zero chance.
 
 
 ## [1.0.1] - 2026-05-20

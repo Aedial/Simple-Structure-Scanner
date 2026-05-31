@@ -11,6 +11,8 @@ import java.util.Set;
 
 import javax.annotation.Nullable;
 
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.fml.common.Loader;
@@ -338,14 +340,38 @@ public abstract class AbstractStructureProvider implements StructureProvider {
     private static boolean containsLootEntry(List<LootEntry> existingEntries, LootEntry candidate) {
         for (LootEntry existingEntry : existingEntries) {
             if (existingEntry == null) continue;
-            if (!existingEntry.lootTableId.equals(candidate.lootTableId)) continue;
-            if (existingEntry.containerType.isTranslatable() != candidate.containerType.isTranslatable()) continue;
-            if (!existingEntry.containerType.getValue().equals(candidate.containerType.getValue())) continue;
+            if (existingEntry.kind != candidate.kind) continue;
+            if (existingEntry.lootTableId == null ? candidate.lootTableId != null :
+                    !existingEntry.lootTableId.equals(candidate.lootTableId)) {
+                continue;
+            }
+            if (!sameLocalizedText(existingEntry.containerType, candidate.containerType)) continue;
+            if (!sameLocalizedText(existingEntry.sourceName, candidate.sourceName)) continue;
+            if (!sameItemStack(existingEntry.sourceStack, candidate.sourceStack)) continue;
 
             return true;
         }
 
         return false;
+    }
+
+    private static boolean sameLocalizedText(@Nullable LocalizedText first, @Nullable LocalizedText second) {
+        if (first == null || second == null) return first == second;
+        if (first.isTranslatable() != second.isTranslatable()) return false;
+
+        return first.getValue().equals(second.getValue());
+    }
+
+    private static boolean sameItemStack(@Nullable ItemStack first, @Nullable ItemStack second) {
+        if (first == null || second == null) return first == second;
+        if (first.isEmpty() || second.isEmpty()) return first.isEmpty() == second.isEmpty();
+
+        NBTTagCompound firstTag = first.copy().writeToNBT(new NBTTagCompound());
+        NBTTagCompound secondTag = second.copy().writeToNBT(new NBTTagCompound());
+        firstTag.removeTag("Count");
+        secondTag.removeTag("Count");
+
+        return firstTag.equals(secondTag);
     }
 
     private static boolean containsEntityEntry(List<EntityEntry> existingEntries, EntityEntry candidate) {

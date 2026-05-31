@@ -68,6 +68,11 @@ gui.structurescanner.dimension.overworld=Overworld
 gui.structurescanner.dimension.nether=Nether
 gui.structurescanner.dimension.end=The End
 
+# Loot containers - Minecraft
+gui.structurescanner.loot.chest=Chest
+gui.structurescanner.loot.dispenser=Dispenser
+gui.structurescanner.loot.minecart_chest=Minecart with Chest
+
 # Structures - AbyssalCraft
 gui.structurescanner.structures.abyssalcraft.aby_stronghold=Abyssal Stronghold
 gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft=Dreadlands Mineshaft
@@ -83,6 +88,9 @@ gui.structurescanner.dimension.dreadlands=Dreadlands
 gui.structurescanner.dimension.omothol=Omothol
 gui.structurescanner.dimension.dark_realm=Dark Realm
 
+# Loot containers - AbyssalCraft
+gui.structurescanner.loot.abyssalcraft.crate=Crate
+
 # Structures - Aether
 gui.structurescanner.structures.aether.bronze_dungeon=Bronze Dungeon
 gui.structurescanner.structures.aether.silver_dungeon=Silver Dungeon
@@ -90,6 +98,9 @@ gui.structurescanner.structures.aether.gold_dungeon=Gold Dungeon
 
 # Dimensions - Aether
 gui.structurescanner.dimension.aether=Aether
+
+# Loot containers - Aether
+gui.structurescanner.loot.aether.reward=Treasure Chest
 
 # Providers - Ice and Fire
 gui.structurescanner.provider.iceandfire=Ice and Fire
@@ -117,6 +128,11 @@ gui.structurescanner.providers.pillar=Pillar
 # Providers - Recurrent Complex
 gui.structurescanner.provider.recurrentcomplex=Recurrent Complex
 
+# Loot containers - Recurrent Complex
+gui.structurescanner.structures.reccomplex.generator=Loot Generator
+gui.structurescanner.structures.reccomplex.artifact=Artifact Generator
+gui.structurescanner.structures.reccomplex.book=Book Generator
+
 # Buttons
 gui.structurescanner.blocksButton=[Blocks]
 gui.structurescanner.lootButton=[Loot]
@@ -143,16 +159,14 @@ gui.structurescanner.blocks.fluidAmount=%,d mB total
 
 # Loot Window
 gui.structurescanner.loot.title=Loot in %s
-gui.structurescanner.loot.loading=Loading loot tables...
-gui.structurescanner.loot.noLoot=No loot tables found
-gui.structurescanner.loot.count=%d loot tables
+gui.structurescanner.loot.loading=Loading loot...
+gui.structurescanner.loot.noLoot=No loot found
+gui.structurescanner.loot.count=%d loot entries
 gui.structurescanner.loot.unknown=Items unknown
 gui.structurescanner.loot.rateTooltip=Drop rate: %s
-gui.structurescanner.loot.chest=Chest
-gui.structurescanner.loot.crate=Crate
-gui.structurescanner.loot.dispenser=Dispenser
-gui.structurescanner.loot.minecart_chest=Minecart with Chest
-gui.structurescanner.loot.aether.reward=Treasure Chest
+gui.structurescanner.loot.rateTooltipSimulated=Observed %d drops across %d simulations
+gui.structurescanner.loot.fixedInventory=Fixed inventory (%s)
+gui.structurescanner.loot.fixedCountTooltip=Fixed count: %d
 gui.structurescanner.loot.container=Container
 
 # Entities Window

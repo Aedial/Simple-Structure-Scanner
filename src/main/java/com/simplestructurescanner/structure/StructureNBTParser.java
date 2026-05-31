@@ -19,6 +19,9 @@ import com.google.common.base.Optional;
 import net.minecraft.block.Block;
 import net.minecraft.block.properties.IProperty;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityList;
+import net.minecraft.entity.EntityLiving;
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
 import net.minecraft.item.Item;
@@ -37,13 +40,14 @@ import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
+import com.simplestructurescanner.structure.StructureInfo.LootEntryKind;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 
 
 /**
  * Parses structure NBT files and exposes extension hooks for provider-specific metadata.
  * <p>
- * The default implementation handles block counts, layers, entities, spawners, and loot table tags.
+ * The default implementation handles block counts, layers, entities, spawners, and container loot metadata.
  * Providers such as Pillar can extend this parser to add extra metadata discovery while still reusing
  * the shared block walk, layer construction, and output assembly logic.
  */
@@ -80,7 +84,7 @@ public class StructureNBTParser {
 
         default void handleBlockEntity(ParsedStructureBuilder builder, NBTTagCompound blockEntry,
                 @Nullable IBlockState state, @Nullable Block block, NBTTagCompound nbtData) {
-            StructureNBTParser.handleDefaultBlockEntity(builder, block, nbtData);
+            StructureNBTParser.handleDefaultBlockEntity(builder, state, block, nbtData);
         }
 
         default void handleEntity(ParsedStructureBuilder builder, NBTTagCompound entityNbt) {
@@ -181,8 +185,19 @@ public class StructureNBTParser {
 
         public void addLootEntry(@Nullable LootEntry lootEntry) {
             if (lootEntry == null) return;
+            if (containsEquivalentLootEntry(lootEntry)) return;
 
             extraLootEntries.add(lootEntry);
+        }
+
+        private boolean containsEquivalentLootEntry(LootEntry candidate) {
+            String candidateKey = createLootEntryKey(candidate);
+
+            for (LootEntry existingEntry : extraLootEntries) {
+                if (createLootEntryKey(existingEntry).equals(candidateKey)) return true;
+            }
+
+            return false;
         }
 
         public ParsedStructure build() {
@@ -219,7 +234,7 @@ public class StructureNBTParser {
                 entities.add(new EntityEntry(entry.getKey().entityId, entry.getValue(), entry.getKey().spawner));
             }
 
-            // Loot tables discovered from NBT tags become regular loot entries, then extension-specific extras are appended.
+            // Loot tables discovered from NBT tags become regular loot entries, then fixed inventories and extension-specific extras are appended.
             List<LootEntry> lootTables = new ArrayList<>();
             for (ResourceLocation lootTableId : lootTableIds) {
                 lootTables.add(new LootEntry(lootTableId, new ArrayList<>(),
@@ -417,7 +432,13 @@ public class StructureNBTParser {
         return builder.build();
     }
 
-    public static void handleDefaultBlockEntity(ParsedStructureBuilder builder, @Nullable Block block, NBTTagCompound nbtData) {
+    public static void handleDefaultBlockEntity(ParsedStructureBuilder builder, @Nullable Block block,
+            NBTTagCompound nbtData) {
+        handleDefaultBlockEntity(builder, null, block, nbtData);
+    }
+
+    public static void handleDefaultBlockEntity(ParsedStructureBuilder builder, @Nullable IBlockState state,
+            @Nullable Block block, NBTTagCompound nbtData) {
         // Spawner and LootTable tags are widely used enough to belong in the shared default parser.
         if (block == Blocks.MOB_SPAWNER) parseSpawnerTileEntityNBT(builder, nbtData);
 
@@ -425,13 +446,32 @@ public class StructureNBTParser {
             String lootTable = nbtData.getString("LootTable");
             if (!lootTable.isEmpty()) builder.addLootTable(new ResourceLocation(lootTable));
         }
+
+        // Some manually-authored structures include both fixed items and a loot table tag.
+        // Surface both sources separately instead of assuming one should hide the other.
+        LootEntry fixedInventory = createFixedInventoryLootEntry(state, nbtData);
+        if (fixedInventory != null) builder.addLootEntry(fixedInventory);
     }
 
     public static void handleDefaultEntity(ParsedStructureBuilder builder, NBTTagCompound entityNbt) {
         String entityId = entityNbt.getString("id");
         if (entityId.isEmpty()) return;
 
-        builder.addEntity(new ResourceLocation(entityId), false);
+        ResourceLocation resolvedEntityId = new ResourceLocation(entityId);
+        if (!shouldIncludeStructureEntity(resolvedEntityId)) return;
+
+        builder.addEntity(resolvedEntityId, false);
+    }
+
+    public static boolean shouldIncludeStructureEntity(@Nullable ResourceLocation entityId) {
+        if (entityId == null) return false;
+
+        Class<? extends Entity> entityClass = EntityList.getClass(entityId);
+        if (entityClass == null) return true;
+
+        // The entities window is meant to show mob spawns, not decorative placed entities.
+        // Unknown ids are left visible so optional or late-bound entities are not hidden by mistake.
+        return EntityLiving.class.isAssignableFrom(entityClass);
     }
 
     public static void parseSpawnerTileEntityNBT(ParsedStructureBuilder builder, NBTTagCompound nbt) {
@@ -459,6 +499,110 @@ public class StructureNBTParser {
         for (String id : foundIds) {
             builder.addEntity(new ResourceLocation(id), true);
         }
+    }
+
+    @Nullable
+    private static LootEntry createFixedInventoryLootEntry(@Nullable IBlockState state, NBTTagCompound nbtData) {
+        List<ItemStack> fixedItems = extractFixedInventoryItems(nbtData);
+        if (fixedItems.isEmpty()) return null;
+
+        List<ItemStack> mergedItems = mergeItemStacks(fixedItems);
+        if (mergedItems.isEmpty()) return null;
+
+        return new LootEntry(
+            null,
+            mergedItems,
+            createFixedInventoryContainerType(state),
+            LootEntryKind.FIXED_ITEMS
+        );
+    }
+
+    private static LocalizedText createFixedInventoryContainerType(@Nullable IBlockState state) {
+        ItemStack displayStack = state != null ? createDisplayStack(state) : ItemStack.EMPTY;
+        if (!displayStack.isEmpty()) {
+            String translationKey = displayStack.getTranslationKey() + ".name";
+            return LocalizedText.translatableWithFallback(translationKey,
+                LocalizedText.literal(displayStack.getDisplayName()));
+        }
+
+        Block block = state != null ? state.getBlock() : null;
+        if (block != null) {
+            String translationKey = block.getTranslationKey() + ".name";
+            return LocalizedText.translatableWithFallback(translationKey,
+                LocalizedText.literal(block.getLocalizedName()));
+        }
+
+        return LocalizedText.translatable("gui.structurescanner.loot.container");
+    }
+
+    private static List<ItemStack> extractFixedInventoryItems(NBTTagCompound nbtData) {
+        List<ItemStack> items = new ArrayList<>();
+        if (!nbtData.hasKey("Items", Constants.NBT.TAG_LIST)) return items;
+
+        NBTTagList itemList = nbtData.getTagList("Items", Constants.NBT.TAG_COMPOUND);
+        for (int i = 0; i < itemList.tagCount(); i++) {
+            ItemStack stack = new ItemStack(itemList.getCompoundTagAt(i));
+            if (!stack.isEmpty()) items.add(stack);
+        }
+
+        return items;
+    }
+
+    private static List<ItemStack> mergeItemStacks(List<ItemStack> items) {
+        Map<String, ItemStack> mergedItems = new LinkedHashMap<>();
+
+        for (ItemStack stack : items) {
+            if (stack.isEmpty()) continue;
+
+            String itemKey = createItemStackKey(stack);
+            ItemStack existingStack = mergedItems.get(itemKey);
+
+            if (existingStack != null) {
+                existingStack.grow(stack.getCount());
+                continue;
+            }
+
+            mergedItems.put(itemKey, stack.copy());
+        }
+
+        List<ItemStack> result = new ArrayList<>(mergedItems.values());
+        result.sort((first, second) -> {
+            int countCompare = Integer.compare(second.getCount(), first.getCount());
+            if (countCompare != 0) return countCompare;
+
+            return createItemStackKey(first).compareTo(createItemStackKey(second));
+        });
+
+        return result;
+    }
+
+    private static String createLootEntryKey(LootEntry lootEntry) {
+        StringBuilder key = new StringBuilder();
+        key.append(lootEntry.lootTableId != null ? lootEntry.lootTableId.toString() : "<direct>");
+        key.append('|').append(lootEntry.kind.name());
+        key.append('|').append(lootEntry.containerType.isTranslatable()).append(':').append(lootEntry.containerType.getValue());
+
+        if (lootEntry.sourceName != null) {
+            key.append('|').append(lootEntry.sourceName.isTranslatable()).append(':').append(lootEntry.sourceName.getValue());
+        }
+
+        if (lootEntry.sourceStack != null) key.append('|').append(createItemStackKey(lootEntry.sourceStack));
+
+        if (lootEntry.possibleDrops == null) return key.toString();
+
+        for (ItemStack stack : lootEntry.possibleDrops) {
+            key.append('|').append(createItemStackKey(stack)).append('*').append(stack.getCount());
+        }
+
+        return key.toString();
+    }
+
+    private static String createItemStackKey(ItemStack stack) {
+        if (stack.isEmpty()) return "empty";
+
+        NBTTagCompound normalizedStack = stack.copy().writeToNBT(new NBTTagCompound());
+        normalizedStack.removeTag("Count");
+        return normalizedStack.toString();
     }
 
     public static boolean isInvisibleBlock(@Nullable Block block) {

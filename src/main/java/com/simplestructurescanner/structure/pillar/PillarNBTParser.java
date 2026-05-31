@@ -83,7 +83,7 @@ public class PillarNBTParser {
         @Override
         public void handleBlockEntity(StructureNBTParser.ParsedStructureBuilder builder, NBTTagCompound blockEntry,
                 @Nullable IBlockState state, @Nullable Block block, NBTTagCompound nbtData) {
-            StructureNBTParser.handleDefaultBlockEntity(builder, block, nbtData);
+            StructureNBTParser.handleDefaultBlockEntity(builder, state, block, nbtData);
 
             if (nbtData.hasKey("metadata")) {
                 parseDataBlockMetadata(nbtData.getString("metadata"), builder);
@@ -98,7 +98,7 @@ public class PillarNBTParser {
 
             List<ItemStack> mergedItems = mergeItemStacks(directContainerItems);
             builder.addLootEntry(new LootEntry(
-                new ResourceLocation("structurescanner", "direct_items"),
+                null,
                 mergedItems,
                 LocalizedText.translatable("gui.structurescanner.loot.container")
             ));

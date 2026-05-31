@@ -228,6 +228,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         addEntities("fortress", createEntityEntry("minecraft:wither_skeleton", 3));
     }
 
+    @SuppressWarnings("deprecation")
     private BlockEntry createBlockEntry(Block block, int meta, int count) {
         IBlockState state = block.getStateFromMeta(meta);
 
