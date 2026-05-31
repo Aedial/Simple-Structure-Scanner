@@ -68,6 +68,11 @@ gui.structurescanner.dimension.overworld=主世界
 gui.structurescanner.dimension.nether=下界
 gui.structurescanner.dimension.end=末地
 
+# Loot containers - Minecraft
+gui.structurescanner.loot.chest=箱子
+gui.structurescanner.loot.dispenser=发射器
+gui.structurescanner.loot.minecart_chest=运输矿车
+
 # Structures - AbyssalCraft
 gui.structurescanner.structures.abyssalcraft.aby_stronghold=深渊要塞
 gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft=恐惧之地矿井
@@ -83,6 +88,9 @@ gui.structurescanner.dimension.dreadlands=恐惧之地
 gui.structurescanner.dimension.omothol=奥穆索
 gui.structurescanner.dimension.dark_realm=黑暗领域
 
+# Loot containers - AbyssalCraft
+gui.structurescanner.loot.abyssalcraft.crate=板条箱
+
 # Structures - Aether
 gui.structurescanner.structures.aether.bronze_dungeon=青铜地牢
 gui.structurescanner.structures.aether.silver_dungeon=白银地牢
@@ -90,6 +98,9 @@ gui.structurescanner.structures.aether.gold_dungeon=黄金地牢
 
 # Dimensions - Aether
 gui.structurescanner.dimension.aether=天境
+
+# Loot containers - Aether
+gui.structurescanner.loot.aether.reward=藏宝箱
 
 # Providers - Ice and Fire
 gui.structurescanner.provider.iceandfire=冰火传说（Ice and Fire）
@@ -103,6 +114,8 @@ gui.structurescanner.structures.iceandfire.lightning_dragon_roost=电龙巢
 gui.structurescanner.structures.iceandfire.lightning_dragon_cave=电龙穴
 gui.structurescanner.structures.iceandfire.cyclops_cave=独眼巨人海湾
 gui.structurescanner.structures.iceandfire.gorgon_temple=蛇发女妖神庙
+gui.structurescanner.structures.iceandfire.mausoleum=悚陵
+gui.structurescanner.structures.iceandfire.hydra_lair=九头蛇巢穴
 gui.structurescanner.structures.iceandfire.myrmex_hive_desert=沙漠恐蚁巢穴
 gui.structurescanner.structures.iceandfire.myrmex_hive_jungle=丛林恐蚁巢穴
 
@@ -111,6 +124,14 @@ gui.structurescanner.loot.iceandfire.cocoon=蚁茧
 
 # Providers - Pillar
 gui.structurescanner.providers.pillar=Pillar
+
+# Providers - Recurrent Complex
+gui.structurescanner.provider.recurrentcomplex=Recurrent Complex
+
+# Loot containers - Recurrent Complex
+gui.structurescanner.structures.reccomplex.generator=战利品生成器
+gui.structurescanner.structures.reccomplex.artifact=神器生成器
+gui.structurescanner.structures.reccomplex.book=书生成器
 
 # Buttons
 gui.structurescanner.blocksButton=[方块]
@@ -138,16 +159,14 @@ gui.structurescanner.blocks.fluidAmount=总计%,d mB
 
 # Loot Window
 gui.structurescanner.loot.title=%s中的战利品
-gui.structurescanner.loot.loading=正在加载战利品表……
-gui.structurescanner.loot.noLoot=未找到战利品表
-gui.structurescanner.loot.count=%d个战利品表
+gui.structurescanner.loot.loading=正在加载战利品……
+gui.structurescanner.loot.noLoot=未找到战利品
+gui.structurescanner.loot.count=%d个战利品条目
 gui.structurescanner.loot.unknown=物品未知
 gui.structurescanner.loot.rateTooltip=掉落率：%s
-gui.structurescanner.loot.chest=箱子
-gui.structurescanner.loot.abyssalcraft.crate=板条箱
-gui.structurescanner.loot.dispenser=发射器
-gui.structurescanner.loot.minecart_chest=运输矿车
-gui.structurescanner.loot.aether.reward=藏宝箱
+gui.structurescanner.loot.rateTooltipSimulated=在%2$d次模拟中观察到%1$d次掉落
+gui.structurescanner.loot.fixedInventory=固定库存（%s）
+gui.structurescanner.loot.fixedCountTooltip=固定数量：%d
 gui.structurescanner.loot.container=容器
 
 # Entities Window
