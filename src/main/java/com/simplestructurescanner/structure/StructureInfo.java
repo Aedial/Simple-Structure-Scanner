@@ -9,6 +9,7 @@ import javax.annotation.Nullable;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.fluids.FluidStack;
@@ -224,6 +225,7 @@ public class StructureInfo {
         public final IBlockState[] blockStates;
         public final int xOffset;
         public final int zOffset;
+        private final NBTTagCompound[] blockEntityData;
 
         public StructureLayer(int y, int width, int depth, int xOffset, int zOffset) {
             this.y = y;
@@ -233,6 +235,7 @@ public class StructureInfo {
             this.xOffset = xOffset;
             this.zOffset = zOffset;
             this.blockStates = new IBlockState[width * depth];
+            this.blockEntityData = new NBTTagCompound[width * depth];
         }
 
         public StructureLayer(int y, int width, int depth) {
@@ -240,7 +243,15 @@ public class StructureInfo {
         }
 
         public void setBlockState(int x, int z, IBlockState state) {
-            if (x >= 0 && x < width && z >= 0 && z < depth) blockStates[x + z * width] = state;
+            setBlockState(x, z, state, null);
+        }
+
+        public void setBlockState(int x, int z, IBlockState state, @Nullable NBTTagCompound tileEntityData) {
+            if (x < 0 || x >= width || z < 0 || z >= depth) return;
+
+            int index = x + z * width;
+            blockStates[index] = state;
+            blockEntityData[index] = tileEntityData != null && !tileEntityData.isEmpty() ? tileEntityData.copy() : null;
         }
 
         @Nullable
@@ -248,6 +259,14 @@ public class StructureInfo {
             if (x < 0 || x >= width || z < 0 || z >= depth) return null;
 
             return blockStates[x + z * width];
+        }
+
+        @Nullable
+        public NBTTagCompound getBlockEntityData(int x, int z) {
+            if (x < 0 || x >= width || z < 0 || z >= depth) return null;
+
+            NBTTagCompound tileEntityData = blockEntityData[x + z * width];
+            return tileEntityData != null ? tileEntityData.copy() : null;
         }
     }
 
@@ -260,21 +279,29 @@ public class StructureInfo {
         public final ItemStack displayStack;
         @Nullable
         public final FluidStack displayFluid;
+        @Nullable
+        public final NBTTagCompound blockEntityData;
         public final int count;
 
         public BlockEntry(IBlockState blockState, @Nullable ItemStack displayStack, int count) {
-            this(blockState, displayStack, null, count);
+            this(blockState, displayStack, null, null, count);
         }
 
         public BlockEntry(IBlockState blockState, @Nullable ItemStack displayStack, @Nullable FluidStack displayFluid, int count) {
+            this(blockState, displayStack, displayFluid, null, count);
+        }
+
+        public BlockEntry(IBlockState blockState, @Nullable ItemStack displayStack, @Nullable FluidStack displayFluid,
+                @Nullable NBTTagCompound blockEntityData, int count) {
             this.blockState = blockState;
             this.displayStack = displayStack != null && !displayStack.isEmpty() ? displayStack.copy() : null;
             this.displayFluid = displayFluid != null ? displayFluid.copy() : null;
+            this.blockEntityData = blockEntityData != null && !blockEntityData.isEmpty() ? blockEntityData.copy() : null;
             this.count = count;
         }
 
         public BlockEntry withCount(int newCount) {
-            return new BlockEntry(blockState, displayStack, displayFluid, newCount);
+            return new BlockEntry(blockState, displayStack, displayFluid, blockEntityData, newCount);
         }
 
         public String formatCount() {

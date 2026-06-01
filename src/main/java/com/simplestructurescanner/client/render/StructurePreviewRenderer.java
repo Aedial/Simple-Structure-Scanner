@@ -3,7 +3,9 @@ package com.simplestructurescanner.client.render;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
@@ -18,13 +20,19 @@ import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
+import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.renderer.vertex.VertexBuffer;
 import net.minecraft.init.Blocks;
+import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.client.MinecraftForgeClient;
+import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
@@ -53,6 +61,8 @@ public class StructurePreviewRenderer {
     private final DummyWorld world;
     private final EnumMap<BlockRenderLayer, List<RenderBlockEntry>> layerEntries = new EnumMap<>(BlockRenderLayer.class);
     private final EnumMap<BlockRenderLayer, LayerBufferCache> layerBuffers = new EnumMap<>(BlockRenderLayer.class);
+    private final Map<BlockPos, NBTTagCompound> blockEntityData = new HashMap<>();
+    private final List<RenderTileEntityEntry> tileEntityEntries = new ArrayList<>();
 
     private LightingMode lightingMode = LightingMode.STRUCTURE;
     private float centerX = 0.5f;
@@ -73,7 +83,8 @@ public class StructurePreviewRenderer {
         WORLD
     }
 
-    // TODO: get the proper rendering from Machinery Assembler. Currently, TESR (chest, skull, etc) is broken
+    // TODO: Get the full Global TESR rendering from Machinery Assembler, if needed.
+    //       It is quite heavy, so will only be done if there is demand for it.
     public StructurePreviewRenderer() {
         this.world = new DummyWorld();
 
@@ -102,7 +113,16 @@ public class StructurePreviewRenderer {
                     IBlockState state = layer.getBlockState(x, z);
                     if (state == null || state.getBlock() == Blocks.AIR || state.getBlock() == Blocks.STRUCTURE_VOID) continue;
 
-                    renderer.getWorld().addBlock(new BlockPos(x + layer.xOffset, y, z + layer.zOffset), state);
+                    BlockPos pos = new BlockPos(x + layer.xOffset, y, z + layer.zOffset);
+                    renderer.getWorld().addBlock(pos, state);
+
+                    NBTTagCompound tileEntityData = layer.getBlockEntityData(x, z);
+                    if (tileEntityData == null) {
+                        renderer.blockEntityData.remove(pos);
+                        continue;
+                    }
+
+                    renderer.blockEntityData.put(pos, tileEntityData);
                 }
             }
         }
@@ -128,6 +148,9 @@ public class StructurePreviewRenderer {
 
     public void release() {
         deleteLayerBuffers();
+        tileEntityEntries.clear();
+        blockEntityData.clear();
+        world.clearTileEntities();
     }
 
     /**
@@ -182,6 +205,7 @@ public class StructurePreviewRenderer {
 
             GlStateManager.translate(-centerX, -centerY, -centerZ);
             renderBlocks();
+            renderTileEntities(mc.getRenderPartialTicks());
         } finally {
             GlStateManager.matrixMode(GL11.GL_MODELVIEW);
             GlStateManager.popMatrix();
@@ -218,6 +242,8 @@ public class StructurePreviewRenderer {
 
     private void rebuildRenderCache() {
         deleteLayerBuffers();
+        tileEntityEntries.clear();
+        world.clearTileEntities();
 
         for (List<RenderBlockEntry> entries : layerEntries.values()) {
             entries.clear();
@@ -248,6 +274,12 @@ public class StructurePreviewRenderer {
             IBlockState state = world.getBlockState(pos);
             if (state.getBlock() == Blocks.AIR) continue;
 
+            TileEntity tileEntity = createRenderTileEntity(pos, state, blockEntityData.get(pos));
+            if (tileEntity != null) {
+                world.setTileEntity(pos, tileEntity);
+                tileEntityEntries.add(new RenderTileEntityEntry(pos, tileEntity));
+            }
+
             try {
                 state = state.getActualState(world, pos);
             } catch (Exception ignored) {
@@ -259,6 +291,46 @@ public class StructurePreviewRenderer {
                 }
             }
         }
+    }
+
+    private TileEntity createRenderTileEntity(BlockPos pos, IBlockState state, NBTTagCompound blockEntityData) {
+        if (!state.getBlock().hasTileEntity(state)) return null;
+
+        try {
+            NBTTagCompound tileEntityTag = blockEntityData != null && !blockEntityData.isEmpty()
+                ? createTileEntityData(pos, blockEntityData)
+                : null;
+
+            TileEntity tileEntity = null;
+            if (tileEntityTag != null && blockEntityData.hasKey("id", Constants.NBT.TAG_STRING)) {
+                tileEntity = TileEntity.create(world, tileEntityTag);
+            }
+
+            if (tileEntity == null) tileEntity = state.getBlock().createTileEntity(world, state);
+            if (tileEntity == null) return null;
+
+            tileEntity.setWorld(world);
+            tileEntity.setPos(pos);
+
+            if (tileEntityTag != null) {
+                tileEntity.readFromNBT(tileEntityTag);
+                tileEntity.setWorld(world);
+                tileEntity.setPos(pos);
+            }
+
+            tileEntity.updateContainingBlockInfo();
+            return tileEntity;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private NBTTagCompound createTileEntityData(BlockPos pos, NBTTagCompound blockEntityData) {
+        NBTTagCompound tileEntityTag = blockEntityData.copy();
+        tileEntityTag.setInteger("x", pos.getX());
+        tileEntityTag.setInteger("y", pos.getY());
+        tileEntityTag.setInteger("z", pos.getZ());
+        return tileEntityTag;
     }
 
     /**
@@ -316,6 +388,62 @@ public class StructurePreviewRenderer {
             renderImmediateLayers(blockRenderer);
         } finally {
             ForgeHooksClient.setRenderLayer(oldLayer);
+        }
+    }
+
+    /**
+     * Render simple state-backed tile entities after the block pass.
+     * Global renderers are skipped because they depend on player-relative context.
+     */
+    private void renderTileEntities(float partialTicks) {
+        if (tileEntityEntries.isEmpty()) return;
+
+        TileEntityRendererDispatcher dispatcher = TileEntityRendererDispatcher.instance;
+        World previousWorld = dispatcher.world;
+        dispatcher.setWorld(world);
+
+        RenderHelper.enableStandardItemLighting();
+        GlStateManager.enableLighting();
+        GlStateManager.enableDepth();
+        GlStateManager.depthFunc(GL11.GL_LEQUAL);
+        GlStateManager.enableAlpha();
+        GlStateManager.enableTexture2D();
+        GlStateManager.disableBlend();
+        GlStateManager.depthMask(true);
+
+        try {
+            for (int pass = 0; pass <= 1; pass++) {
+                ForgeHooksClient.setRenderPass(pass);
+
+                for (RenderTileEntityEntry entry : tileEntityEntries) {
+                    TileEntity tileEntity = entry.tileEntity;
+                    if (tileEntity == null || tileEntity.isInvalid()) continue;
+                    if (!tileEntity.shouldRenderInPass(pass)) continue;
+
+                    TileEntitySpecialRenderer<TileEntity> renderer = dispatcher.getRenderer(tileEntity);
+                    if (renderer == null) continue;
+                    if (renderer.isGlobalRenderer(tileEntity)) continue;
+
+                    tileEntity.setWorld(world);
+                    tileEntity.setPos(entry.pos);
+
+                    try {
+                        int light = world.getCombinedLight(entry.pos, 0);
+                        int lightX = light % 65536;
+                        int lightY = light / 65536;
+                        OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, lightX, lightY);
+                        GlStateManager.color(1f, 1f, 1f, 1f);
+
+                        dispatcher.render(tileEntity, entry.pos.getX(), entry.pos.getY(), entry.pos.getZ(), partialTicks);
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        } finally {
+            dispatcher.setWorld(previousWorld);
+            ForgeHooksClient.setRenderPass(-1);
+            RenderHelper.disableStandardItemLighting();
+            GlStateManager.color(1f, 1f, 1f, 1f);
         }
     }
 
@@ -482,6 +610,16 @@ public class StructurePreviewRenderer {
         private RenderBlockEntry(BlockPos pos, IBlockState state) {
             this.pos = pos;
             this.state = state;
+        }
+    }
+
+    private static class RenderTileEntityEntry {
+        private final BlockPos pos;
+        private final TileEntity tileEntity;
+
+        private RenderTileEntityEntry(BlockPos pos, TileEntity tileEntity) {
+            this.pos = pos;
+            this.tileEntity = tileEntity;
         }
     }
 

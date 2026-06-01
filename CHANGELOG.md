@@ -14,6 +14,8 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 
 ### Fixed
 - Fix Structure Capture Ruler rounding the player position incorrectly, which could push captured corners onto the positive-adjacent block instead of the actual feet block.
+- Fix TESR rendering (chests, beds, etc.) in the structure preview. These blocks should now render properly. The full Global TESR rendering is not implemented, as it is quite heavy, but can be added later if there is demand for it.
+- Fix structure NBT previews dropping tile-entity display data, so End Ship dragon heads and mob spawners now render with their correct stored NBT instead of falling back to default skull and pig placeholders.
 
 
 ## [1.1.0] - 2026-05-30

@@ -391,7 +391,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             Block block = state != null ? state.getBlock() : null;
             if (!DEFAULT_PARSE_EXTENSION.shouldCountBlock(state, block)) continue;
 
-            builder.addBlockCount(DEFAULT_PARSE_EXTENSION.getBlockCountKey(state, block), state);
+            builder.addBlockCount(DEFAULT_PARSE_EXTENSION.getBlockCountKey(state, block, null), state);
         }
     }
 
