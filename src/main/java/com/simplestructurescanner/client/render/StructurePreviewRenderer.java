@@ -219,14 +219,25 @@ public class StructurePreviewRenderer {
     }
 
     private void restoreGuiState() {
+        // Some tile entity renderers leave texture transforms or the lightmap unit active.
+        // Reset both texture units before returning to 2D GUI drawing.
+        GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
+        GlStateManager.disableTexture2D();
         OpenGlHelper.setClientActiveTexture(OpenGlHelper.lightmapTexUnit);
         GlStateManager.glDisableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
+
+        GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
         OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit);
         GlStateManager.glDisableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
         GlStateManager.glDisableClientState(GL11.GL_COLOR_ARRAY);
         GlStateManager.glDisableClientState(GL11.GL_VERTEX_ARRAY);
 
         GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
         GlStateManager.enableTexture2D();
         GlStateManager.enableAlpha();
         GlStateManager.disableBlend();
@@ -237,6 +248,7 @@ public class StructurePreviewRenderer {
         GlStateManager.disableRescaleNormal();
         GlStateManager.depthMask(true);
         GlStateManager.color(1f, 1f, 1f, 1f);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
         RenderHelper.disableStandardItemLighting();
     }
 
@@ -402,14 +414,7 @@ public class StructurePreviewRenderer {
         World previousWorld = dispatcher.world;
         dispatcher.setWorld(world);
 
-        RenderHelper.enableStandardItemLighting();
-        GlStateManager.enableLighting();
-        GlStateManager.enableDepth();
-        GlStateManager.depthFunc(GL11.GL_LEQUAL);
-        GlStateManager.enableAlpha();
-        GlStateManager.enableTexture2D();
-        GlStateManager.disableBlend();
-        GlStateManager.depthMask(true);
+        restoreTileEntityRenderState();
 
         try {
             for (int pass = 0; pass <= 1; pass++) {
@@ -434,8 +439,25 @@ public class StructurePreviewRenderer {
                         OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, lightX, lightY);
                         GlStateManager.color(1f, 1f, 1f, 1f);
 
-                        dispatcher.render(tileEntity, entry.pos.getX(), entry.pos.getY(), entry.pos.getZ(), partialTicks);
-                    } catch (Exception ignored) {
+                        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+                        GlStateManager.matrixMode(GL11.GL_PROJECTION);
+                        GlStateManager.pushMatrix();
+                        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+                        GlStateManager.pushMatrix();
+
+                        try {
+                            dispatcher.render(tileEntity, entry.pos.getX(), entry.pos.getY(), entry.pos.getZ(), partialTicks);
+                        } finally {
+                            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+                            GlStateManager.popMatrix();
+                            GlStateManager.matrixMode(GL11.GL_PROJECTION);
+                            GlStateManager.popMatrix();
+                            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+                            GL11.glPopAttrib();
+                            restoreTileEntityRenderState();
+                        }
+                    } catch (Throwable ignored) {
+                        restoreTileEntityRenderState();
                     }
                 }
             }
@@ -445,6 +467,33 @@ public class StructurePreviewRenderer {
             RenderHelper.disableStandardItemLighting();
             GlStateManager.color(1f, 1f, 1f, 1f);
         }
+    }
+
+    /**
+     * Re-establishes the preview TESR baseline after a renderer changes GL state.
+     * Some TESRs do not fully restore depth, blending, or active texture state when they fail or bail out early.
+     */
+    private void restoreTileEntityRenderState() {
+        RenderHelper.enableStandardItemLighting();
+        GlStateManager.enableLighting();
+        GlStateManager.enableDepth();
+        GlStateManager.depthFunc(GL11.GL_LEQUAL);
+        GlStateManager.enableAlpha();
+        GlStateManager.enableTexture2D();
+        GlStateManager.disableBlend();
+        GlStateManager.depthMask(true);
+
+        GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
+        GlStateManager.enableTexture2D();
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
+
+        GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+        GlStateManager.enableTexture2D();
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
+        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+        GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
     private void ensureLayerBuffersUploaded(BlockRendererDispatcher blockRenderer) {

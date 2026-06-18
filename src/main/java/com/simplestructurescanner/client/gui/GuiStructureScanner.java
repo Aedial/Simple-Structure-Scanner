@@ -22,6 +22,7 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.resources.I18n;
@@ -480,8 +481,15 @@ public class GuiStructureScanner extends GuiScreen {
 
         // Draw structure preview if layer data is available
         drawStructurePreview(textX, textY, panelW, panelH, textY);
+        resetPanelTextRenderState();
 
-        textY += previewSize + 10;
+        // Some TESRs can still spill pixels just below the preview even after state reset.
+        // Repaint the text region so the details panel always starts from a clean surface.
+        // Otherwise, some structures with TESRs (chests, etc) end up with no name.
+        int previewBottom = previewY + previewSize;
+        redrawPanelContentBackground(panelX, panelY, panelW, panelH, previewBottom + 1);
+
+        textY = previewBottom + 10;
 
         // Structure name (localized)
         String displayName = selectedInfo != null ? ClientTextResolver.resolve(selectedInfo.getDisplayName()) : selected.getPath();
@@ -808,6 +816,45 @@ public class GuiStructureScanner extends GuiScreen {
 
         previewRenderer.release();
         previewRenderer = null;
+    }
+
+    private void redrawPanelContentBackground(int panelX, int panelY, int panelW, int panelH, int contentStartY) {
+        int fillStartY = Math.max(panelY + 1, contentStartY);
+        int fillEndY = panelY + panelH - 1;
+
+        if (fillStartY >= fillEndY) return;
+
+        Gui.drawRect(panelX + 1, fillStartY, panelX + panelW - 1, fillEndY, 0x80000000);
+    }
+
+    /**
+     * Restores a plain 2D GUI text state after the 3D preview renderer.
+     * Some previews leave viewport, matrix, depth, or lightmap state behind.
+     */
+    private void resetPanelTextRenderState() {
+        Minecraft minecraft = Minecraft.getMinecraft();
+
+        GlStateManager.viewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
+        minecraft.entityRenderer.setupOverlayRendering();
+        GlStateManager.clear(GL11.GL_DEPTH_BUFFER_BIT);
+        GlStateManager.disableLighting();
+        GlStateManager.disableDepth();
+        GlStateManager.depthMask(false);
+        GlStateManager.disableBlend();
+        GlStateManager.enableTexture2D();
+        GlStateManager.enableAlpha();
+
+        GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
+        GlStateManager.disableTexture2D();
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
+
+        GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
+        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+        GlStateManager.depthMask(true);
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     private int getRarityColor(String rarity) {

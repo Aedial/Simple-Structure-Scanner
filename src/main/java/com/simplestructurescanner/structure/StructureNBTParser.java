@@ -22,6 +22,7 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityList;
 import net.minecraft.entity.EntityLiving;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
 import net.minecraft.item.Item;
@@ -29,14 +30,26 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
+import net.minecraft.profiler.Profiler;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.datafix.DataFixer;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.NonNullList;
-import net.minecraft.world.IBlockAccess;
+import net.minecraft.world.GameType;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldProvider;
+import net.minecraft.world.WorldProviderSurface;
+import net.minecraft.world.WorldSettings;
 import net.minecraft.world.WorldType;
-import net.minecraft.world.biome.Biome;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.chunk.IChunkProvider;
+import net.minecraft.world.chunk.storage.IChunkLoader;
+import net.minecraft.world.gen.structure.template.TemplateManager;
+import net.minecraft.world.storage.IPlayerFileData;
+import net.minecraft.world.storage.ISaveHandler;
+import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidRegistry;
@@ -63,6 +76,9 @@ public class StructureNBTParser {
     private static final String FLUID_BLOCK_KEY_PREFIX = "fluid:";
     private static final String ITEM_BLOCK_KEY_PREFIX = "item:";
     private static final String BLOCK_BLOCK_KEY_PREFIX = "block:";
+    private static final WorldSettings DISPLAY_WORLD_SETTINGS = new WorldSettings(
+        1L, GameType.CREATIVE, false, false, WorldType.FLAT
+    );
 
     /**
      * Extension point for custom structure parsers.
@@ -760,6 +776,7 @@ public class StructureNBTParser {
     }
 
     private static final Random RANDOM = new Random();
+    private static final DisplayBlockWorld DISPLAY_BLOCK_WORLD = new DisplayBlockWorld();
 
     /**
      * Create a display ItemStack for a block state.
@@ -813,7 +830,22 @@ public class StructureNBTParser {
         if (tileEntity == null) return ItemStack.EMPTY;
 
         NonNullList<ItemStack> drops = NonNullList.create();
-        state.getBlock().getDrops(drops, new SingleBlockAccess(state, tileEntity), BlockPos.ORIGIN, state, 0);
+
+        try {
+            synchronized (DISPLAY_BLOCK_WORLD) {
+                // Some modded drop helpers ignore the supplied IBlockAccess and reach
+                // back through tileEntity.getWorld(), so both views need the same block.
+                DISPLAY_BLOCK_WORLD.setDisplayBlock(state, tileEntity);
+
+                try {
+                    state.getBlock().getDrops(drops, DISPLAY_BLOCK_WORLD, BlockPos.ORIGIN, state, 0);
+                } finally {
+                    DISPLAY_BLOCK_WORLD.clearDisplayBlock();
+                }
+            }
+        } catch (Exception ignored) {
+            return ItemStack.EMPTY;
+        }
 
         for (ItemStack drop : drops) {
             if (!drop.isEmpty()) return drop;
@@ -849,39 +881,83 @@ public class StructureNBTParser {
         }
     }
 
-    private static final class SingleBlockAccess implements IBlockAccess {
-        private final IBlockState state;
-        private final TileEntity tileEntity;
+    private static final class DisplayBlockWorld extends World {
+        @Nullable
+        private IBlockState state;
 
-        private SingleBlockAccess(IBlockState state, TileEntity tileEntity) {
+        @Nullable
+        private TileEntity tileEntity;
+
+        private DisplayBlockWorld() {
+            super(
+                new DisplaySaveHandler(),
+                new WorldInfo(DISPLAY_WORLD_SETTINGS, "StructureDisplayWorld"),
+                new WorldProviderSurface(),
+                new Profiler(),
+                true
+            );
+
+            this.provider.setDimension(Integer.MAX_VALUE - 2048);
+            int providerDimension = this.provider.getDimension();
+            this.provider.setWorld(this);
+            this.provider.setDimension(providerDimension);
+            this.chunkProvider = createChunkProvider();
+            this.getWorldBorder().setSize(30000000);
+        }
+
+        @Override
+        protected void initCapabilities() {
+            // The parser only needs a world shell for drop queries.
+        }
+
+        private void setDisplayBlock(IBlockState state, @Nullable TileEntity tileEntity) {
             this.state = state;
             this.tileEntity = tileEntity;
+
+            if (tileEntity == null) return;
+
+            tileEntity.setWorld(this);
+            tileEntity.setPos(BlockPos.ORIGIN);
+        }
+
+        private void clearDisplayBlock() {
+            state = null;
+            tileEntity = null;
+        }
+
+        @Override
+        protected IChunkProvider createChunkProvider() {
+            return new DisplayChunkProvider(this);
+        }
+
+        @Override
+        protected boolean isChunkLoaded(int x, int z, boolean allowEmpty) {
+            return true;
         }
 
         @Nullable
         @Override
         public TileEntity getTileEntity(BlockPos pos) {
-            return BlockPos.ORIGIN.equals(pos) ? tileEntity : null;
+            if (!BlockPos.ORIGIN.equals(pos)) return null;
+
+            return tileEntity;
         }
 
         @Override
         public int getCombinedLight(BlockPos pos, int lightValue) {
-            return lightValue;
+            return 15 << 20 | 15 << 4;
         }
 
         @Override
         public IBlockState getBlockState(BlockPos pos) {
-            return BlockPos.ORIGIN.equals(pos) ? state : Blocks.AIR.getDefaultState();
+            if (!BlockPos.ORIGIN.equals(pos) || state == null) return Blocks.AIR.getDefaultState();
+
+            return state;
         }
 
         @Override
         public boolean isAirBlock(BlockPos pos) {
             return getBlockState(pos).getBlock() == Blocks.AIR;
-        }
-
-        @Override
-        public Biome getBiome(BlockPos pos) {
-            return null;
         }
 
         @Override
@@ -898,6 +974,125 @@ public class StructureNBTParser {
         public boolean isSideSolid(BlockPos pos, EnumFacing side, boolean _default) {
             IBlockState blockState = getBlockState(pos);
             return blockState.isSideSolid(this, pos, side);
+        }
+    }
+
+    private static final class DisplayChunkProvider implements IChunkProvider {
+        private final World world;
+
+        private DisplayChunkProvider(World world) {
+            this.world = world;
+        }
+
+        @Nullable
+        @Override
+        public Chunk getLoadedChunk(int x, int z) {
+            return provideChunk(x, z);
+        }
+
+        @Override
+        public Chunk provideChunk(int x, int z) {
+            return new Chunk(world, x, z);
+        }
+
+        @Override
+        public boolean tick() {
+            return false;
+        }
+
+        @Override
+        public String makeString() {
+            return "DisplayChunkProvider";
+        }
+
+        @Override
+        public boolean isChunkGeneratedAt(int x, int z) {
+            return true;
+        }
+    }
+
+    private static final class DisplaySaveHandler implements ISaveHandler, IPlayerFileData, IChunkLoader {
+
+        @Override
+        public WorldInfo loadWorldInfo() {
+            return null;
+        }
+
+        @Override
+        public void checkSessionLock() {
+        }
+
+        @Override
+        public IChunkLoader getChunkLoader(WorldProvider provider) {
+            return this;
+        }
+
+        @Override
+        public IPlayerFileData getPlayerNBTManager() {
+            return this;
+        }
+
+        @Override
+        public TemplateManager getStructureTemplateManager() {
+            return new TemplateManager("", new DataFixer(0));
+        }
+
+        @Override
+        public void saveWorldInfoWithPlayer(WorldInfo worldInformation, NBTTagCompound tagCompound) {
+        }
+
+        @Override
+        public void saveWorldInfo(WorldInfo worldInformation) {
+        }
+
+        @Override
+        public File getWorldDirectory() {
+            return null;
+        }
+
+        @Override
+        public File getMapFileFromName(String mapName) {
+            return null;
+        }
+
+        @Override
+        public Chunk loadChunk(World worldIn, int x, int z) {
+            return null;
+        }
+
+        @Override
+        public void saveChunk(World worldIn, Chunk chunkIn) {
+        }
+
+        @Override
+        public void saveExtraChunkData(World worldIn, Chunk chunkIn) {
+        }
+
+        @Override
+        public void chunkTick() {
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public boolean isChunkGeneratedAt(int x, int z) {
+            return false;
+        }
+
+        @Override
+        public void writePlayerData(EntityPlayer player) {
+        }
+
+        @Override
+        public NBTTagCompound readPlayerData(EntityPlayer player) {
+            return null;
+        }
+
+        @Override
+        public String[] getAvailablePlayerDat() {
+            return new String[0];
         }
     }
 }

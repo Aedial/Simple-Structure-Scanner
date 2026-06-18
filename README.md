@@ -68,3 +68,7 @@ Resulting jar will be under `build/libs/`.
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Credits
+- Chinese translation: @ZHAY10086
+- Structure Capture Ruler's texture: @NerdySpider
