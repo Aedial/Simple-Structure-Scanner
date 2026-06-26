@@ -296,10 +296,10 @@ gui.structurescanner.capture.loot.emptyContainer=无战利品元数据
 
 chat.structurescanner.capture.firstCorner=第一个捕获顶点已设置在%s, %s, %s。
 chat.structurescanner.capture.secondCorner=第二个捕获顶点已设置在%s, %s, %s。
-chat.structurescanner.capture.reset=捕获边界、排除项和缓存的捕获内容已清除。
+chat.structurescanner.capture.reset=已清除捕获边界、排除项和缓存的捕获内容。
 chat.structurescanner.capture.loading=正在构建捕获预览……
 chat.structurescanner.capture.previewFailed=无法打开捕获预览。
 chat.structurescanner.capture.empty=该捕获区域内未找到任何方块或实体。
-chat.structurescanner.capture.emptyAfterExclusions=在当前排除项下将不存在剩余内容。
+chat.structurescanner.capture.emptyAfterExclusions=在当前排除项下，将不存在剩余内容。
 chat.structurescanner.capture.saved=捕获已保存至%s
 chat.structurescanner.capture.saveFailed=保存结构捕获失败。
