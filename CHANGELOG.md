@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
+## [1.2.1] - 2026-06-27
+### Fixed
+- Fix Entity Preview window not enabling depth, causing entities to render incorrectly (all layers overlapping).
+
+
 ## [1.2.0] - 2026-06-15
 ### Added
 - Add Recurrent Complex structure provider, supporting all RC structures with their configured loot tables and entity spawners. The search is not yet implemented, because it is substantially more complex than Pillar's.

@@ -11,6 +11,7 @@ import javax.annotation.Nullable;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.GL11;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
@@ -529,6 +530,12 @@ abstract class AbstractEntityBrowserWindow<T> {
         int centerX = x + size / 2;
         int centerY = y + size / 2;
 
+        // The parent GUI renders most 2D content with depth disabled.
+        // Reset the depth buffer for the preview so entity layers occlude correctly.
+        GlStateManager.enableDepth();
+        GlStateManager.depthMask(true);
+        GlStateManager.clear(GL11.GL_DEPTH_BUFFER_BIT);
+
         GlStateManager.pushMatrix();
         GlStateManager.color(1.0F, 1.0F, 1.0F);
         GlStateManager.enableRescaleNormal();
@@ -564,7 +571,7 @@ abstract class AbstractEntityBrowserWindow<T> {
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         GlStateManager.disableLighting();
         GlStateManager.popMatrix();
-        GlStateManager.enableDepth();
+        GlStateManager.disableDepth();
         GlStateManager.disableColorMaterial();
         GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
         GlStateManager.disableTexture2D();
