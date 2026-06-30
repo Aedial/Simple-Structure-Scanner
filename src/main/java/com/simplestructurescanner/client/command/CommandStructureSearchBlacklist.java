@@ -147,6 +147,8 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
             throws CommandException {
         switch (token.toLowerCase(Locale.ROOT)) {
             case "hidden":
+            case "visibility":
+            case "visible":
                 return StructureSearchOverrides.BlacklistType.HIDDEN;
             case "search":
             case "searchable":
