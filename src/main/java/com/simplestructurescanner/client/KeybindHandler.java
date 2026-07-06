@@ -13,6 +13,7 @@ import net.minecraftforge.fml.common.network.FMLNetworkEvent;
 import com.simplestructurescanner.Tags;
 import com.simplestructurescanner.client.capture.StructureCaptureClientController;
 import com.simplestructurescanner.client.gui.GuiStructureScanner;
+import com.simplestructurescanner.structure.StructureSearchOverrides;
 
 
 public class KeybindHandler {
@@ -44,5 +45,6 @@ public class KeybindHandler {
     public void onClientDisconnect(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
         // Capture selections are world-scoped and must not carry into the next world.
         StructureCaptureClientController.clearCaptureData();
+        StructureSearchOverrides.clearActiveStageSnapshot();
     }
 }

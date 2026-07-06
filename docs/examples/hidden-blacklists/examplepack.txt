@@ -1,8 +1,17 @@
 # Hide a structure everywhere for this provider
 structure examplepack:ruined_tower
 
+# Hide a structure once the player has unlocked a GameStage
+stage progression:ancient_map structure examplepack:sky_keep
+
+# Hide a structure until the player unlocks a GameStage
+nostage progression:ancient_map structure examplepack:training_grounds
+
 # Hide all structures from this provider in dimension 7
 dimension 7
 
 # Hide one structure only in one dimension
 dimension examplepack:sunken_library -1
+
+# Hide one structure in one dimension while the player is still missing a GameStage
+nostage progression:deep_access dimension examplepack:sunken_library -1

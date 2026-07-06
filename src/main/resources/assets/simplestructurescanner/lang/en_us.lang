@@ -195,8 +195,16 @@ commands.structurescanner.blacklist.removedDimension=Removed the %3$s dimension 
 commands.structurescanner.blacklist.notFoundDimension=No %3$s dimension blacklist entry for %2$s was found in provider %1$s.
 commands.structurescanner.blacklist.removedStructureDimension=Removed the %4$s blacklist entry for %2$s in dimension %3$s from provider %1$s.
 commands.structurescanner.blacklist.notFoundStructureDimension=No %4$s blacklist entry for %2$s in dimension %3$s was found in provider %1$s.
+commands.structurescanner.blacklist.removedStructureConditional=Removed the %3$s blacklist entry for %2$s from provider %1$s (%4$s).
+commands.structurescanner.blacklist.notFoundStructureConditional=No %3$s blacklist entry for %2$s was found in provider %1$s (%4$s).
+commands.structurescanner.blacklist.removedDimensionConditional=Removed the %3$s dimension blacklist entry for %2$s from provider %1$s (%4$s).
+commands.structurescanner.blacklist.notFoundDimensionConditional=No %3$s dimension blacklist entry for %2$s was found in provider %1$s (%4$s).
+commands.structurescanner.blacklist.removedStructureDimensionConditional=Removed the %4$s blacklist entry for %2$s in dimension %3$s from provider %1$s (%5$s).
+commands.structurescanner.blacklist.notFoundStructureDimensionConditional=No %4$s blacklist entry for %2$s in dimension %3$s was found in provider %1$s (%5$s).
 commands.structurescanner.blacklist.type.hidden=hidden
 commands.structurescanner.blacklist.type.search=search
+commands.structurescanner.blacklist.condition.stage=when stage %1$s is present
+commands.structurescanner.blacklist.condition.nostage=when stage %1$s is missing
 
 # Config descriptions
 config.structurescanner.client.enableSearch.desc=Enable or disable structure searching globally

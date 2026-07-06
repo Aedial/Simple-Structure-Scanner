@@ -6,12 +6,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import javax.annotation.Nullable;
@@ -31,6 +34,10 @@ public final class StructureSearchOverrides {
 
     private static final Map<String, ProviderRules> HIDDEN_RULES = new LinkedHashMap<>();
     private static final Map<String, ProviderRules> SEARCH_RULES = new LinkedHashMap<>();
+
+    // Stage-qualified blacklist entries are only evaluated after the GUI captures a client snapshot.
+    @Nullable
+    private static Set<String> ACTIVE_STAGE_SNAPSHOT = null;
 
     public enum BlacklistType {
         HIDDEN("hidden-blacklists"),
@@ -53,10 +60,81 @@ public final class StructureSearchOverrides {
         STRUCTURE_DIMENSION
     }
 
-    private static final class ProviderRules {
+    public enum StageConditionType {
+        PRESENT("stage"),
+        MISSING("nostage");
+
+        private final String token;
+
+        StageConditionType(String token) {
+            this.token = token;
+        }
+
+        public String getToken() {
+            return token;
+        }
+
+        @Nullable
+        public static StageConditionType fromToken(String token) {
+            switch (token.toLowerCase(Locale.ROOT)) {
+                case "stage":
+                case "gamestage":
+                    return PRESENT;
+                case "nostage":
+                case "missingstage":
+                    return MISSING;
+                default:
+                    return null;
+            }
+        }
+    }
+
+    public static final class StageCondition {
+        private final StageConditionType type;
+        private final String stageName;
+
+        private StageCondition(StageConditionType type, String stageName) {
+            this.type = type;
+            this.stageName = stageName;
+        }
+
+        public static StageCondition of(StageConditionType type, String stageName) {
+            return new StageCondition(type, normalizeStageName(stageName));
+        }
+
+        public StageConditionType getType() {
+            return type;
+        }
+
+        public String getStageName() {
+            return stageName;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other) return true;
+            if (!(other instanceof StageCondition)) return false;
+
+            StageCondition that = (StageCondition) other;
+            return type == that.type && stageName.equals(that.stageName);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(type, stageName);
+        }
+    }
+
+    private static final class RuleEntries {
         private final Set<ResourceLocation> structures = new HashSet<>();
         private final Set<Integer> dimensions = new HashSet<>();
         private final Map<ResourceLocation, Set<Integer>> structureDimensions = new HashMap<>();
+    }
+
+    private static final class ProviderRules {
+        private final RuleEntries always = new RuleEntries();
+        private final Map<String, RuleEntries> whenStagePresent = new HashMap<>();
+        private final Map<String, RuleEntries> whenStageMissing = new HashMap<>();
     }
 
     private static final class ParsedEntry {
@@ -65,15 +143,41 @@ public final class StructureSearchOverrides {
         private final ResourceLocation structureId;
         @Nullable
         private final Integer dimensionId;
+        @Nullable
+        private final StageCondition stageCondition;
 
-        private ParsedEntry(EntryType type, @Nullable ResourceLocation structureId, @Nullable Integer dimensionId) {
+        private ParsedEntry(EntryType type, @Nullable ResourceLocation structureId, @Nullable Integer dimensionId,
+                @Nullable StageCondition stageCondition) {
             this.type = type;
             this.structureId = structureId;
             this.dimensionId = dimensionId;
+            this.stageCondition = stageCondition;
         }
     }
 
     private StructureSearchOverrides() {
+    }
+
+    public static void setActiveStageSnapshot(@Nullable Set<String> stages) {
+        if (stages == null) {
+            ACTIVE_STAGE_SNAPSHOT = null;
+            return;
+        }
+
+        Set<String> normalizedStages = new HashSet<>();
+
+        for (String stage : stages) {
+            if (stage == null) continue;
+
+            String normalizedStage = stage.trim().toLowerCase(Locale.ROOT);
+            if (!normalizedStage.isEmpty()) normalizedStages.add(normalizedStage);
+        }
+
+        ACTIVE_STAGE_SNAPSHOT = Collections.unmodifiableSet(normalizedStages);
+    }
+
+    public static void clearActiveStageSnapshot() {
+        ACTIVE_STAGE_SNAPSHOT = null;
     }
 
     public static void load() {
@@ -110,7 +214,8 @@ public final class StructureSearchOverrides {
     }
 
     public static boolean removeEntry(BlacklistType blacklistType, String providerId, EntryType entryType,
-            @Nullable ResourceLocation structureId, @Nullable Integer dimensionId) {
+            @Nullable ResourceLocation structureId, @Nullable Integer dimensionId,
+            @Nullable StageCondition stageCondition) {
         File file = getBlacklistFile(blacklistType, providerId);
         if (file == null || !file.exists()) return false;
 
@@ -121,7 +226,7 @@ public final class StructureSearchOverrides {
 
             for (String line : lines) {
                 ParsedEntry parsed = parseEntry(blacklistType, providerId, line, file.getName(), -1, false);
-                if (!removed && matches(entryType, structureId, dimensionId, parsed)) {
+                if (!removed && matches(entryType, structureId, dimensionId, stageCondition, parsed)) {
                     removed = true;
                     continue;
                 }
@@ -198,6 +303,22 @@ public final class StructureSearchOverrides {
     }
 
     private static void applyEntry(ProviderRules rules, ParsedEntry entry) {
+        RuleEntries target = getRuleEntries(rules, entry.stageCondition);
+
+        applyEntry(target, entry);
+    }
+
+    private static RuleEntries getRuleEntries(ProviderRules rules, @Nullable StageCondition stageCondition) {
+        if (stageCondition == null) return rules.always;
+
+        Map<String, RuleEntries> stageRules = stageCondition.getType() == StageConditionType.PRESENT
+            ? rules.whenStagePresent
+            : rules.whenStageMissing;
+
+        return stageRules.computeIfAbsent(stageCondition.getStageName(), key -> new RuleEntries());
+    }
+
+    private static void applyEntry(RuleEntries rules, ParsedEntry entry) {
         switch (entry.type) {
             case STRUCTURE:
                 rules.structures.add(entry.structureId);
@@ -215,8 +336,9 @@ public final class StructureSearchOverrides {
     }
 
     private static boolean matches(EntryType entryType, @Nullable ResourceLocation structureId,
-            @Nullable Integer dimensionId, @Nullable ParsedEntry parsed) {
+            @Nullable Integer dimensionId, @Nullable StageCondition stageCondition, @Nullable ParsedEntry parsed) {
         if (parsed == null) return false;
+        if (!Objects.equals(parsed.stageCondition, stageCondition)) return false;
         if (parsed.type != entryType) return false;
 
         switch (entryType) {
@@ -237,20 +359,49 @@ public final class StructureSearchOverrides {
         ProviderRules rules = rulesByProvider.get(providerId);
         if (rules == null) return false;
 
-        return rules.structures.contains(structureId);
+        if (isBlacklisted(rules.always, structureId, null)) return true;
+
+        return matchesConditionalRules(rules, structureId, null);
     }
 
     private static boolean isStructureBlacklistedInDimension(Map<String, ProviderRules> rulesByProvider,
             String providerId, ResourceLocation structureId, int dimensionId) {
         ProviderRules rules = rulesByProvider.get(providerId);
         if (rules == null) return false;
+
+        if (isBlacklisted(rules.always, structureId, dimensionId)) return true;
+
+        return matchesConditionalRules(rules, structureId, dimensionId);
+    }
+
+    private static boolean isBlacklisted(RuleEntries rules, ResourceLocation structureId, @Nullable Integer dimensionId) {
         if (rules.structures.contains(structureId)) return true;
+        if (dimensionId == null) return false;
         if (rules.dimensions.contains(dimensionId)) return true;
 
         Set<Integer> structureDimensions = rules.structureDimensions.get(structureId);
         if (structureDimensions == null) return false;
 
         return structureDimensions.contains(dimensionId);
+    }
+
+    // Stage-qualified entries only participate after a GUI-open snapshot is available.
+    private static boolean matchesConditionalRules(ProviderRules rules, ResourceLocation structureId,
+            @Nullable Integer dimensionId) {
+        Set<String> activeStages = ACTIVE_STAGE_SNAPSHOT;
+        if (activeStages == null) return false;
+
+        for (String activeStage : activeStages) {
+            RuleEntries stageRules = rules.whenStagePresent.get(activeStage);
+            if (stageRules != null && isBlacklisted(stageRules, structureId, dimensionId)) return true;
+        }
+
+        for (Map.Entry<String, RuleEntries> entry : rules.whenStageMissing.entrySet()) {
+            if (activeStages.contains(entry.getKey())) continue;
+            if (isBlacklisted(entry.getValue(), structureId, dimensionId)) return true;
+        }
+
+        return false;
     }
 
     @Nullable
@@ -263,26 +414,45 @@ public final class StructureSearchOverrides {
         if (parts.length == 0) return null;
 
         try {
-            if ("structure".equalsIgnoreCase(parts[0])) {
-                if (parts.length != 2) return invalidEntry(blacklistType, sourceName, lineNumber, trimmed, logErrors);
+            int entryIndex = 0;
+            StageCondition stageCondition = null;
 
-                return new ParsedEntry(EntryType.STRUCTURE, parseStructureId(providerId, parts[1]), null);
+            StageConditionType stageConditionType = StageConditionType.fromToken(parts[0]);
+            if (stageConditionType != null) {
+                if (parts.length < 4) return invalidEntry(blacklistType, sourceName, lineNumber, trimmed, logErrors);
+
+                stageCondition = StageCondition.of(stageConditionType, parts[1]);
+                entryIndex = 2;
             }
 
-            if (!"dimension".equalsIgnoreCase(parts[0])) {
+            if ("structure".equalsIgnoreCase(parts[entryIndex])) {
+                if (parts.length != entryIndex + 2) {
+                    return invalidEntry(blacklistType, sourceName, lineNumber, trimmed, logErrors);
+                }
+
+                return new ParsedEntry(EntryType.STRUCTURE,
+                    parseStructureId(providerId, parts[entryIndex + 1]), null, stageCondition);
+            }
+
+            if (!"dimension".equalsIgnoreCase(parts[entryIndex])) {
                 return invalidEntry(blacklistType, sourceName, lineNumber, trimmed, logErrors);
             }
-            if (parts.length == 2) {
-                return new ParsedEntry(EntryType.DIMENSION, null, Integer.valueOf(parts[1]));
+            if (parts.length == entryIndex + 2) {
+                return new ParsedEntry(EntryType.DIMENSION, null, Integer.valueOf(parts[entryIndex + 1]),
+                    stageCondition);
             }
 
-            if (parts.length != 3) return invalidEntry(blacklistType, sourceName, lineNumber, trimmed, logErrors);
-            if ("*".equals(parts[1]) || "all".equalsIgnoreCase(parts[1])) {
-                return new ParsedEntry(EntryType.DIMENSION, null, Integer.valueOf(parts[2]));
+            if (parts.length != entryIndex + 3) {
+                return invalidEntry(blacklistType, sourceName, lineNumber, trimmed, logErrors);
+            }
+            if ("*".equals(parts[entryIndex + 1]) || "all".equalsIgnoreCase(parts[entryIndex + 1])) {
+                return new ParsedEntry(EntryType.DIMENSION, null, Integer.valueOf(parts[entryIndex + 2]),
+                    stageCondition);
             }
 
             return new ParsedEntry(EntryType.STRUCTURE_DIMENSION,
-                parseStructureId(providerId, parts[1]), Integer.valueOf(parts[2]));
+                parseStructureId(providerId, parts[entryIndex + 1]), Integer.valueOf(parts[entryIndex + 2]),
+                stageCondition);
         } catch (IllegalArgumentException e) {
             if (logErrors) {
                 SimpleStructureScanner.LOGGER.warn("Invalid {} entry in {}:{} -> {}",
@@ -302,6 +472,13 @@ public final class StructureSearchOverrides {
         }
 
         return null;
+    }
+
+    private static String normalizeStageName(String token) {
+        String normalized = token == null ? "" : token.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isEmpty()) throw new IllegalArgumentException("Stage name cannot be empty");
+
+        return normalized;
     }
 
     private static ResourceLocation parseStructureId(String providerId, String token) {

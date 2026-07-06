@@ -45,6 +45,9 @@ dependencies {
     // ---- Required dependencies ----
 
 
+    // ---- Optional: GameStages ----
+    devOnlyNonPublishable rfg.deobf("curse.maven:game-stages-268655:2951840")
+
     // ---- Optional: JEI ----
     devOnlyNonPublishable rfg.deobf("curse.maven:jei-238222:3043174")
 }

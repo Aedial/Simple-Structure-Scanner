@@ -32,6 +32,7 @@ import net.minecraft.world.biome.Biome;
 
 import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.client.ClientSettings;
+import com.simplestructurescanner.client.integration.GameStagesIntegration;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.config.ModConfig;
 import com.simplestructurescanner.network.NetworkHandler;
@@ -42,6 +43,7 @@ import com.simplestructurescanner.util.WorldUtils;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
+import com.simplestructurescanner.structure.StructureSearchOverrides;
 import com.simplestructurescanner.searching.StructureSearchManager;
 
 
@@ -104,6 +106,10 @@ public class GuiStructureScanner extends GuiScreen {
     private int previewX, previewY, previewSize;
     private StructurePreviewRenderer previewRenderer = null;
     private ResourceLocation lastRenderedStructure = null;
+
+    public GuiStructureScanner() {
+        StructureSearchOverrides.setActiveStageSnapshot(GameStagesIntegration.captureClientStages());
+    }
 
     private String getI18nButtonString() {
         return ClientSettings.i18nNames ? I18n.format("gui.structurescanner.i18nIDs.on") : I18n.format("gui.structurescanner.i18nIDs.off");

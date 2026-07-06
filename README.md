@@ -28,11 +28,26 @@ These blacklist are per provider, the id of the provider being matched by file n
 - **Visibility blacklist file example:** [docs/examples/hidden-blacklists/examplepack.txt](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/examples/hidden-blacklists/examplepack.txt) -> minecraft/config/simplestructurescanner/hidden-blacklists/examplepack.txt
 - **Search blacklist file example:** [docs/examples/search-blacklists/examplepack.txt](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/examples/search-blacklists/examplepack.txt) -> minecraft/config/simplestructurescanner/search-blacklists/examplepack.txt
 
+Blacklist lines can be unconditional or gated by GameStages:
+- `structure <structure_id>` applies everywhere for that provider.
+- `dimension <dimension_id>` applies to every structure from that provider in one dimension.
+- `dimension <structure_id> <dimension_id>` applies to one structure in one dimension.
+- `stage <stage_name> ...` only applies if the player has that stage when the Structure Scanner GUI is opened.
+- `nostage <stage_name> ...` only applies if the player does not have that stage when the Structure Scanner GUI is opened.
+
+For example:
+- `stage progression:ancient_map structure examplepack:sky_keep`
+- `nostage progression:deep_access dimension examplepack:sunken_library -1`
+
 **Do note** these lists are client-side, because only the search process itself is server-side. Everything else is client-side, meaning *any* user can modify their own blacklists, if determined enough. However, such user would have have no qualm cheating, in the first place, so this is a best-effort protection.
 
 `/sssblacklist` can be used to remove entries from these blacklists directly, for example using an item or finishing a quest that allows showing or searching for a specific structure or in a specific dimension.
 
 `/sssblacklist hidden` handles the vibility blacklist, while `/sssblacklist search` handles the search blacklist. The provider to pass as argument is the same provider mentioned above, the id that is used for the blacklist file name.
+
+To remove a stage-qualified entry, use the same prefix as the file syntax, for example:
+- `/sssblacklist hidden remove examplepack stage progression:ancient_map structure examplepack:sky_keep`
+- `/sssblacklist search remove examplepack nostage progression:deep_access dimension examplepack:sunken_library -1`
 
 
 ### Configs:

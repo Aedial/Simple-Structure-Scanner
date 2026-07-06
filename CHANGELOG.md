@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
+## [1.3.0] - 2026-07-30
+### Added
+- Add optional GameStages-aware blacklist entries for structure visibility and searching. The player's stages are snapshotted when the Structure Scanner GUI opens, so `stage` and `nostage` rules can gate what that session may view or search.
+
+
 ## [1.2.1] - 2026-06-27
 ### Fixed
 - Fix Entity Preview window not enabling depth, causing entities to render incorrectly (all layers overlapping).
