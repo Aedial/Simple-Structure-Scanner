@@ -12,6 +12,9 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Added
 - Add optional GameStages-aware blacklist entries for structure visibility and searching. The player's stages are snapshotted when the Structure Scanner GUI opens, so `stage` and `nostage` rules can gate what that session may view or search.
 
+### Fixed
+- Fix tracked structure overlays and guiding arrows ignoring the hidden-HUD toggle, which could leave the tracker visible and darken the screen after pressing F1.
+
 
 ## [1.2.1] - 2026-06-27
 ### Fixed
