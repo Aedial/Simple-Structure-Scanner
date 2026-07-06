@@ -141,6 +141,9 @@ gui.structurescanner.prevButton=<
 gui.structurescanner.nextButton=>
 gui.structurescanner.refreshButton=Refresh
 gui.structurescanner.teleportButton=TP
+gui.structurescanner.mapWaypointButton=M
+gui.structurescanner.mapWaypointTooltip=Create a map waypoint here
+gui.structurescanner.mapWaypointError=Failed to create a map waypoint
 gui.structurescanner.ok=OK
 gui.structurescanner.cancel=Cancel
 
