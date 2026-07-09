@@ -3,6 +3,7 @@ package com.simplestructurescanner.client.render;
 import java.io.File;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -35,6 +36,8 @@ import net.minecraft.world.storage.ISaveHandler;
 import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
+
+import com.simplestructurescanner.structure.StructureInfo.PreviewBlockEntry;
 
 
 /**
@@ -81,6 +84,21 @@ public class DummyWorld extends World {
         setBlockState(pos, state, 0);
     }
 
+    public void addBlocks(List<PreviewBlockEntry> blocks, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        if (blocks == null || blocks.isEmpty()) return;
+
+        minPos.set(minX, minY, minZ);
+        maxPos.set(maxX, maxY, maxZ);
+
+        for (PreviewBlockEntry entry : blocks) {
+            if (Thread.currentThread().isInterrupted()) return;
+
+            renderedBlocks.add(entry.pos);
+            Chunk chunk = chunkProvider.provideChunk(entry.pos.getX() >> 4, entry.pos.getZ() >> 4);
+            chunk.setBlockState(entry.pos, entry.state);
+        }
+    }
+
     public void addBlock(BlockPos pos, IBlockState state, TileEntity tileEntity) {
         addBlock(pos, state);
         if (tileEntity == null) return;
@@ -91,6 +109,7 @@ public class DummyWorld extends World {
     public void clear() {
         renderedBlocks.clear();
         clearTileEntities();
+        if (chunkProvider instanceof DummyChunkProvider) ((DummyChunkProvider) chunkProvider).clear();
         minPos.set(Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
         maxPos.set(Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE);
     }

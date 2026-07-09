@@ -56,7 +56,6 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     private static final String ANCHOR_VIEW_TAG = "SSSJeiView";
 
     private static final int PANEL_PADDING = 7;
-    private static final int TAB_Y = 22;
     private static final int BUTTON_SIZE = 12;
     private static final int BUTTON_GAP = 1;
     private static final int CONTENT_X = PANEL_PADDING;
@@ -83,9 +82,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     private static final int PANEL_LIGHT_BORDER_COLOR = 0xFFF5F5F5;
     private static final int PANEL_DARK_BORDER_COLOR = 0xFF8A8A8A;
     private static final int CONTENT_BACKGROUND_COLOR = 0xFFC8C8C8;
-    private static final int CONTENT_BORDER_COLOR = 0xFF9A9A9A;
     private static final int PREVIEW_BACKGROUND_COLOR = 0xFF1A1A1A;
-    private static final int PREVIEW_BORDER_COLOR = 0xFF303030;
     private static final int PRIMARY_TEXT_COLOR = 0xFF000000;
     private static final int SECONDARY_TEXT_COLOR = 0xFF505050;
     private static final int EMPTY_TEXT_COLOR = 0xFF707070;
@@ -880,7 +877,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
      */
     @Nullable
     private StructurePreviewRenderer getPreviewRenderer(StructureInfo structureInfo) {
-        if (!structureInfo.hasLayerData()) {
+        if (structureInfo.getPreviewSnapshot().isEmpty()) {
             clearPreviewRenderer();
             return null;
         }
@@ -889,9 +886,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
 
         clearPreviewRenderer();
 
-        if (structureInfo.getLayers() == null || structureInfo.getLayers().isEmpty()) return null;
-
-        previewRenderer = StructurePreviewRenderer.createFromLayers(structureInfo.getLayers());
+        previewRenderer = StructurePreviewRenderer.createFromStructureInfo(structureInfo);
         cachedPreviewInfo = structureInfo;
 
         return previewRenderer;
@@ -1196,13 +1191,6 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         int textY = y + (height - 8) / 2;
         int textColor = !enabled ? 0x888888 : active ? 0xFFFFCC : 0xFFFFFF;
         fontRenderer.drawStringWithShadow(label, textX, textY, textColor);
-    }
-
-    private static void drawCenteredText(Minecraft minecraft, String text, int y, int color) {
-        FontRenderer fontRenderer = minecraft.fontRenderer;
-        int textWidth = fontRenderer.getStringWidth(text);
-        int x = (StructureJeiCategory.WIDTH - textWidth) / 2;
-        fontRenderer.drawString(text, x, y, color);
     }
 
     private void drawCenteredFrameText(Minecraft minecraft, String text, int y, int color) {

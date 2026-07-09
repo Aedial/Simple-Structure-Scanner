@@ -17,6 +17,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Add native providers for Unseen's Dungeon Additions and Chocolate Quest Repoured, with structure search and CQR custom dungeon handling.
 
 ### Fixed
+- Fix large structure previews freezing the GUI while opening by precomputing flattened preview block snapshots during structure registration and moving preview world assembly off the GUI thread. It should now at most take a second.
 - Fix tracked structure overlays and guiding arrows ignoring the hidden-HUD toggle, which could leave the tracker visible and darken the screen after pressing F1.
 - Revert some of the TESR fixes of fab37568eed6814f8f3d275c1337567ffef11105 (1.2.0), as they caused many of the TESRs in preview window to be broken.
 - Fix structure preview window inheriting broken GL/lightmap state from earlier GUI draws, which could make some TESR such as chests render dark or partially obscured.

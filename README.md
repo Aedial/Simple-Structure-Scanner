@@ -91,9 +91,6 @@ The filter box matches both localized and unlocalized structure names. This mean
 ### The structure wasn't there.
 Due to how complex the process is, structures from a mod may prevent or overlap with other structures from another mod. In this case, you should try searching for another structure of the same type. Use the arrows in the right panel to cycle through multiple results.
 
-### The GUI freezes for a few seconds when I open a structure.
-Some structures are incredibly large (in the 100k+ blocks), which takes some time to build the preview for (to ensure smooth framerate even at such large sizes). This can cause the GUI to freeze for a few seconds while the preview is being built. Some structures (from Chocolate Quest Repoured, for example) may even reach 1M+ blocks, which can look like the client crashed.
-
 ### Some structure previews seem broken, looking like scattered rooms.
 Some structures are generated procedurally (e.g., Recurrent Complex, Unseen's Dungeon Additions, and Chocolate Quest Repoured), which means the structure is not a single static layout. In these cases, the preview may be dynamically generated from possible static rooms and corridors, stitched together in a way that may not match an actual generated structure. Of course, it is still possible that the stitching process itself has issues with specific structures (although it is a minor inconvenience, as the preview is still technically correct).
 

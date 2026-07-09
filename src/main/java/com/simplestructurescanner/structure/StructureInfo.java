@@ -1,5 +1,6 @@
 package com.simplestructurescanner.structure;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -8,9 +9,11 @@ import javax.annotation.Nullable;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.resources.I18n;
+import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.fluids.FluidStack;
 
@@ -36,8 +39,7 @@ public class StructureInfo {
     private Set<DimensionInfo> validDimensions;
     private LocalizedText rarity;
 
-    // Layer data for structure viewer (Y-level indexed)
-    private List<StructureLayer> layers;
+    private PreviewSnapshot previewSnapshot;
 
     public StructureInfo(ResourceLocation id, LocalizedText displayName, String providerId, int sizeX, int sizeY, int sizeZ) {
         this.id = id;
@@ -52,7 +54,7 @@ public class StructureInfo {
         this.validBiomes = null;
         this.validDimensions = null;
         this.rarity = null;
-        this.layers = null;
+        this.previewSnapshot = PreviewSnapshot.empty();
     }
 
     public ResourceLocation getId() {
@@ -160,58 +162,155 @@ public class StructureInfo {
             LocalizedText.translatable(rarityKey));
     }
 
-    @Nullable
-    public List<StructureLayer> getLayers() {
-        return layers;
+    public PreviewSnapshot getPreviewSnapshot() {
+        return previewSnapshot;
     }
 
     /**
      * Set the layer data for the structure viewer.
-     * Automatically calculates sizeX, sizeY, and sizeZ based on the layers.
+     * Converts them into a flattened preview snapshot and derives the structure bounds.
      *
      * @param layers List of structure layers (Y-level indexed)
      */
     public void setLayers(List<StructureLayer> layers) {
-        this.layers = layers;
+        this.previewSnapshot = createPreviewSnapshot(layers);
 
-        if (layers == null || layers.isEmpty()) return;
+        if (previewSnapshot.isEmpty()) return;
 
-        int minY = Integer.MAX_VALUE;
-        int maxY = Integer.MIN_VALUE;
-        int minX = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        int maxZ = Integer.MIN_VALUE;
-
-        for (StructureLayer layer : layers) {
-            if (layer == null) continue;
-
-            if (layer.y < minY) minY = layer.y;
-            if (layer.y > maxY) maxY = layer.y;
-
-            if (layer.width <= 0 || layer.depth <= 0) continue;
-
-            if (layer.xOffset < minX) minX = layer.xOffset;
-            if (layer.zOffset < minZ) minZ = layer.zOffset;
-
-            int layerMaxX = layer.xOffset + layer.width - 1;
-            int layerMaxZ = layer.zOffset + layer.depth - 1;
-            if (layerMaxX > maxX) maxX = layerMaxX;
-            if (layerMaxZ > maxZ) maxZ = layerMaxZ;
-        }
-
-        if (minY == Integer.MAX_VALUE || maxY == Integer.MIN_VALUE) return;
-
-        this.sizeY = maxY - minY + 1;
-        this.sizeX = minX <= maxX ? maxX - minX + 1 : 0;
-        this.sizeZ = minZ <= maxZ ? maxZ - minZ + 1 : 0;
+        this.sizeX = previewSnapshot.getMaxX() - previewSnapshot.getMinX() + 1;
+        this.sizeY = previewSnapshot.getMaxY() - previewSnapshot.getMinY() + 1;
+        this.sizeZ = previewSnapshot.getMaxZ() - previewSnapshot.getMinZ() + 1;
     }
 
     /**
-     * Check if this structure has layer data for the structure viewer.
+     * Check if this structure has previewable block data for the structure viewer.
      */
     public boolean hasLayerData() {
-        return layers != null && !layers.isEmpty();
+        return !previewSnapshot.isEmpty();
+    }
+
+    public static PreviewSnapshot createPreviewSnapshot(@Nullable List<StructureLayer> layers) {
+        if (layers == null || layers.isEmpty()) return PreviewSnapshot.empty();
+
+        // Compute flattened preview blocks and their bounding box
+        int minLayerY = Integer.MAX_VALUE;
+        int maxLayerY = Integer.MIN_VALUE;
+
+        for (StructureLayer layer : layers) {
+            if (layer == null || layer.width <= 0 || layer.depth <= 0) continue;
+
+            if (layer.y < minLayerY) minLayerY = layer.y;
+            if (layer.y > maxLayerY) maxLayerY = layer.y;
+        }
+
+        if (minLayerY == Integer.MAX_VALUE) return PreviewSnapshot.empty();
+
+        int yOffset = minLayerY < 0 ? -minLayerY : 0;
+        List<PreviewBlockEntry> blocks = new ArrayList<>();
+        int minX = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+
+        // Use the pre-computed layer data as the canonical vertical bounds
+        // yOffset is applied to ensure all blocks are non-negative in Y for rendering purposes
+        int minY = minLayerY + yOffset;
+        int maxY = maxLayerY + yOffset;
+
+        for (StructureLayer layer : layers) {
+            if (layer == null || layer.width <= 0 || layer.depth <= 0) continue;
+
+            for (int index = 0; index < layer.blockStates.length; index++) {
+                IBlockState state = layer.blockStates[index];
+                if (state == null || state.getBlock() == Blocks.AIR || state.getBlock() == Blocks.STRUCTURE_VOID) continue;
+
+                int x = index % layer.width + layer.xOffset;
+                int z = index / layer.width + layer.zOffset;
+                int y = layer.y + yOffset;
+
+                minX = Math.min(minX, x);
+                minZ = Math.min(minZ, z);
+                maxX = Math.max(maxX, x);
+                maxZ = Math.max(maxZ, z);
+
+                blocks.add(new PreviewBlockEntry(new BlockPos(x, y, z), state, layer.blockEntityData[index]));
+            }
+        }
+
+        if (blocks.isEmpty()) return PreviewSnapshot.empty();
+
+        return new PreviewSnapshot(blocks, minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    public static class PreviewSnapshot {
+        private static final PreviewSnapshot EMPTY = new PreviewSnapshot(Collections.emptyList(), 0, 0, 0, 0, 0, 0);
+
+        private final List<PreviewBlockEntry> blocks;
+        private final int minX;
+        private final int minY;
+        private final int minZ;
+        private final int maxX;
+        private final int maxY;
+        private final int maxZ;
+
+        private PreviewSnapshot(List<PreviewBlockEntry> blocks, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+            this.blocks = Collections.unmodifiableList(blocks);
+            this.minX = minX;
+            this.minY = minY;
+            this.minZ = minZ;
+            this.maxX = maxX;
+            this.maxY = maxY;
+            this.maxZ = maxZ;
+        }
+
+        public static PreviewSnapshot empty() {
+            return EMPTY;
+        }
+
+        public List<PreviewBlockEntry> getBlocks() {
+            return blocks;
+        }
+
+        public boolean isEmpty() {
+            return blocks.isEmpty();
+        }
+
+        public int getMinX() {
+            return minX;
+        }
+
+        public int getMinY() {
+            return minY;
+        }
+
+        public int getMinZ() {
+            return minZ;
+        }
+
+        public int getMaxX() {
+            return maxX;
+        }
+
+        public int getMaxY() {
+            return maxY;
+        }
+
+        public int getMaxZ() {
+            return maxZ;
+        }
+    }
+
+    public static class PreviewBlockEntry {
+        public final BlockPos pos;
+        public final IBlockState state;
+        @Nullable
+        public final NBTTagCompound blockEntityData;
+
+        private PreviewBlockEntry(BlockPos pos, IBlockState state, @Nullable NBTTagCompound blockEntityData) {
+            this.pos = pos;
+            this.state = state;
+            this.blockEntityData = blockEntityData != null && !blockEntityData.isEmpty() ? blockEntityData.copy() : null;
+        }
     }
 
     /**

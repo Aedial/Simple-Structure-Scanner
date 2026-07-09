@@ -43,7 +43,6 @@ import com.simplestructurescanner.network.PacketRequestSafeTeleport;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.util.WorldUtils;
-import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureSearchOverrides;
@@ -843,18 +842,8 @@ public class GuiStructureScanner extends GuiScreen {
         Gui.drawRect(previewX - 1, previewY - 1, previewX + previewSize + 1, previewY + previewSize + 1, 0xFF333333);
         Gui.drawRect(previewX, previewY, previewX + previewSize, previewY + previewSize, 0xFF1A1A1A);
 
-        // Keep empty preview if no layer data - clear stale renderer
-        if (selectedInfo == null || !selectedInfo.hasLayerData()) {
-            if (lastRenderedStructure == null || !lastRenderedStructure.equals(selected)) {
-                clearPreviewRenderer();
-                lastRenderedStructure = selected;
-            }
-
-            return;
-        }
-
-        List<StructureLayer> layers = selectedInfo.getLayers();
-        if (layers == null || layers.isEmpty()) {
+        // Keep empty preview if no cached preview data - clear stale renderer
+        if (selectedInfo == null || selectedInfo.getPreviewSnapshot().isEmpty()) {
             if (lastRenderedStructure == null || !lastRenderedStructure.equals(selected)) {
                 clearPreviewRenderer();
                 lastRenderedStructure = selected;
@@ -869,10 +858,11 @@ public class GuiStructureScanner extends GuiScreen {
             (!lastRenderedStructure.equals(selected));
 
         if (needsRebuild) {
-            buildPreviewRenderer(layers);
+            buildPreviewRenderer(selectedInfo);
             lastRenderedStructure = selected;
         }
 
+        // TODO: if we have no preview data at all, show a placeholder image or text instead of a blank box
         if (previewRenderer == null || previewRenderer.getWorld().renderedBlocks.isEmpty()) return;
 
         // Render the structure (rotation and camera handled internally)
@@ -883,9 +873,9 @@ public class GuiStructureScanner extends GuiScreen {
     /**
      * Builds the preview renderer with blocks from the structure layers.
      */
-    private void buildPreviewRenderer(List<StructureLayer> layers) {
+    private void buildPreviewRenderer(StructureInfo structureInfo) {
         clearPreviewRenderer();
-        previewRenderer = StructurePreviewRenderer.createFromLayers(layers);
+        previewRenderer = StructurePreviewRenderer.createFromStructureInfo(structureInfo);
     }
 
     private void clearPreviewRenderer() {
@@ -1164,7 +1154,7 @@ public class GuiStructureScanner extends GuiScreen {
         // Skip tooltip if preview modal is open
         if (previewWindow != null && previewWindow.isVisible()) return;
 
-        if (selectedInfo == null || !selectedInfo.hasLayerData()) return;
+        if (selectedInfo == null || selectedInfo.getPreviewSnapshot().isEmpty()) return;
         if (mouseX < previewX || mouseX > previewX + previewSize) return;
         if (mouseY < previewY || mouseY > previewY + previewSize) return;
 
