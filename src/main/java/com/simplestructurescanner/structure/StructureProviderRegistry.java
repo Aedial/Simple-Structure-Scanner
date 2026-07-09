@@ -218,6 +218,13 @@ public class StructureProviderRegistry {
             provider.getProviderId(), structureId, dimensionId);
     }
 
+    public static boolean isStructureHidden(ResourceLocation structureId) {
+        StructureProvider provider = getProviderForStructure(structureId);
+        if (provider == null) return false;
+
+        return StructureSearchOverrides.isStructureHidden(provider.getProviderId(), structureId);
+    }
+
     /**
      * Find the nearest structure of a given type.
      */

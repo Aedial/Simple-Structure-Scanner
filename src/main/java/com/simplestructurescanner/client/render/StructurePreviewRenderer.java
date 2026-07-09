@@ -12,6 +12,7 @@ import org.lwjgl.opengl.GL11;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.BlockRendererDispatcher;
 import net.minecraft.client.renderer.BufferBuilder;
@@ -20,15 +21,18 @@ import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.renderer.vertex.VertexBuffer;
+import net.minecraft.entity.Entity;
 import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.world.World;
 import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.client.MinecraftForgeClient;
@@ -85,6 +89,11 @@ public class StructurePreviewRenderer {
 
     // TODO: Get the full Global TESR rendering from Machinery Assembler, if needed.
     //       It is quite heavy, so will only be done if there is demand for it.
+    // TODO: We do not create a full world with all the block states and tile entities,
+    //       so some TESRs may not render correctly. This should not be necessary with
+    //       structures (do you put machines in your structures?), and will only be
+    //       implemented if there is demand for it. See Machinery Assembler for example.
+    //       The most common case would probably be something like Botania's Mana Pylons.
     public StructurePreviewRenderer() {
         this.world = new DummyWorld();
 
@@ -171,9 +180,6 @@ public class StructurePreviewRenderer {
         float aspect = guiHeight <= 0.0f ? 1.0f : guiWidth / guiHeight;
         float orthoSize = maxDimension * ZOOM_FACTOR;
 
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
-
         GlStateManager.matrixMode(GL11.GL_PROJECTION);
         GlStateManager.pushMatrix();
         GlStateManager.loadIdentity();
@@ -183,6 +189,7 @@ public class StructurePreviewRenderer {
         GlStateManager.loadIdentity();
 
         try {
+            prepareLightmap(mc);
             GlStateManager.viewport(screenX, screenY, screenW, screenH);
             GL11.glEnable(GL11.GL_SCISSOR_TEST);
             GL11.glScissor(screenX, screenY, screenW, screenH);
@@ -212,33 +219,45 @@ public class StructurePreviewRenderer {
             GlStateManager.matrixMode(GL11.GL_PROJECTION);
             GlStateManager.popMatrix();
             GlStateManager.matrixMode(GL11.GL_MODELVIEW);
-            GL11.glPopClientAttrib();
-            GL11.glPopAttrib();
             restoreGuiState();
         }
     }
 
+    private void prepareLightmap(Minecraft minecraft) {
+        // Some GUI paths disable the lightmap unit after 2D drawing.
+        // Use the vanilla setup so the preview samples Minecraft's actual lightmap texture.
+        minecraft.entityRenderer.enableLightmap();
+        GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+    }
+
     private void restoreGuiState() {
+        Minecraft mc = Minecraft.getMinecraft();
+
+        GlStateManager.viewport(0, 0, mc.displayWidth, mc.displayHeight);
+        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+
         // Some tile entity renderers leave texture transforms or the lightmap unit active.
         // Reset both texture units before returning to 2D GUI drawing.
-        GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
-        GlStateManager.matrixMode(GL11.GL_TEXTURE);
-        GlStateManager.loadIdentity();
-        GlStateManager.disableTexture2D();
         OpenGlHelper.setClientActiveTexture(OpenGlHelper.lightmapTexUnit);
         GlStateManager.glDisableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
-
-        GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
-        GlStateManager.matrixMode(GL11.GL_TEXTURE);
-        GlStateManager.loadIdentity();
         OpenGlHelper.setClientActiveTexture(OpenGlHelper.defaultTexUnit);
         GlStateManager.glDisableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
         GlStateManager.glDisableClientState(GL11.GL_COLOR_ARRAY);
         GlStateManager.glDisableClientState(GL11.GL_VERTEX_ARRAY);
 
+        mc.entityRenderer.disableLightmap();
+
+        GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
+        GlStateManager.disableTexture2D();
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
+
         GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
-        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
         GlStateManager.enableTexture2D();
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
+        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
         GlStateManager.enableAlpha();
         GlStateManager.disableBlend();
         GlStateManager.disableCull();
@@ -248,7 +267,6 @@ public class StructurePreviewRenderer {
         GlStateManager.disableRescaleNormal();
         GlStateManager.depthMask(true);
         GlStateManager.color(1f, 1f, 1f, 1f);
-        GL11.glDisable(GL11.GL_SCISSOR_TEST);
         RenderHelper.disableStandardItemLighting();
     }
 
@@ -414,7 +432,15 @@ public class StructurePreviewRenderer {
         World previousWorld = dispatcher.world;
         dispatcher.setWorld(world);
 
-        restoreTileEntityRenderState();
+        RenderHelper.enableStandardItemLighting();
+        GlStateManager.enableLighting();
+        GlStateManager.enableDepth();
+        GlStateManager.depthFunc(GL11.GL_LEQUAL);
+        GlStateManager.enableAlpha();
+        GlStateManager.enableTexture2D();
+        GlStateManager.disableCull();
+        GlStateManager.disableBlend();
+        GlStateManager.depthMask(true);
 
         try {
             for (int pass = 0; pass <= 1; pass++) {
@@ -439,25 +465,8 @@ public class StructurePreviewRenderer {
                         OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, lightX, lightY);
                         GlStateManager.color(1f, 1f, 1f, 1f);
 
-                        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-                        GlStateManager.matrixMode(GL11.GL_PROJECTION);
-                        GlStateManager.pushMatrix();
-                        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
-                        GlStateManager.pushMatrix();
-
-                        try {
-                            dispatcher.render(tileEntity, entry.pos.getX(), entry.pos.getY(), entry.pos.getZ(), partialTicks);
-                        } finally {
-                            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
-                            GlStateManager.popMatrix();
-                            GlStateManager.matrixMode(GL11.GL_PROJECTION);
-                            GlStateManager.popMatrix();
-                            GlStateManager.matrixMode(GL11.GL_MODELVIEW);
-                            GL11.glPopAttrib();
-                            restoreTileEntityRenderState();
-                        }
+                        dispatcher.render(tileEntity, entry.pos.getX(), entry.pos.getY(), entry.pos.getZ(), partialTicks);
                     } catch (Throwable ignored) {
-                        restoreTileEntityRenderState();
                     }
                 }
             }
@@ -467,33 +476,6 @@ public class StructurePreviewRenderer {
             RenderHelper.disableStandardItemLighting();
             GlStateManager.color(1f, 1f, 1f, 1f);
         }
-    }
-
-    /**
-     * Re-establishes the preview TESR baseline after a renderer changes GL state.
-     * Some TESRs do not fully restore depth, blending, or active texture state when they fail or bail out early.
-     */
-    private void restoreTileEntityRenderState() {
-        RenderHelper.enableStandardItemLighting();
-        GlStateManager.enableLighting();
-        GlStateManager.enableDepth();
-        GlStateManager.depthFunc(GL11.GL_LEQUAL);
-        GlStateManager.enableAlpha();
-        GlStateManager.enableTexture2D();
-        GlStateManager.disableBlend();
-        GlStateManager.depthMask(true);
-
-        GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
-        GlStateManager.enableTexture2D();
-        GlStateManager.matrixMode(GL11.GL_TEXTURE);
-        GlStateManager.loadIdentity();
-
-        GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
-        GlStateManager.enableTexture2D();
-        GlStateManager.matrixMode(GL11.GL_TEXTURE);
-        GlStateManager.loadIdentity();
-        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
-        GlStateManager.color(1f, 1f, 1f, 1f);
     }
 
     private void ensureLayerBuffersUploaded(BlockRendererDispatcher blockRenderer) {

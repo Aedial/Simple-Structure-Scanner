@@ -2,6 +2,9 @@
 key.categories.simplestructurescanner=Simple Structure Scanner
 key.simplestructurescanner.open_gui=Open Structure Scanner
 
+# Items
+item.simplestructurescanner.jei_anchor=JEI Structure Anchor
+
 # GUI Main
 gui.structurescanner.title=Structure Scanner
 gui.structurescanner.noSelection=Select a structure from the list
@@ -186,6 +189,25 @@ gui.structurescanner.entities.entityName=Name: %s
 gui.structurescanner.entities.entityId=ID: %s
 gui.structurescanner.entities.spawner=§a[Spawner]
 
+# JEI Structure Categories
+jei.category.simplestructurescanner.structure_preview=Structure Preview
+jei.category.simplestructurescanner.structure_blocks=Structure Blocks
+jei.category.simplestructurescanner.structure_loot=Structure Loot
+jei.structurescanner.hidden=This structure is currently hidden.
+jei.structurescanner.disabledByConfig=This JEI category is disabled in config.
+jei.structurescanner.blocks.empty=No blocks available
+jei.structurescanner.loot.empty=No loot available
+jei.structurescanner.loot.uniqueCount=%d unique items
+jei.structurescanner.loot.sources=Appears in %d loot sources
+jei.structurescanner.page=%d/%d
+jei.structurescanner.button.preview=Show preview
+jei.structurescanner.button.blocks=Show blocks
+jei.structurescanner.button.loot=Show loot
+jei.structurescanner.button.scanner=Open in Structure Scanner
+jei.structurescanner.button.prevPage=Previous page
+jei.structurescanner.button.nextPage=Next page
+jei.structurescanner.button.disabled=Disabled by config
+
 # Location
 gui.structurescanner.locate.searching=Searching...
 gui.structurescanner.locate.xz=X: %s, Z: %s
@@ -222,6 +244,10 @@ config.structurescanner.client.structureBlacklist.desc=Blacklist of structure ID
 config.structurescanner.client.showBlocks.desc=Show blocks that are part of the structure in the details panel
 config.structurescanner.client.showEntities.desc=Show entities that are part of the structure in the details panel
 config.structurescanner.client.showLootTables.desc=Show loot tables that are part of the structure in the details panel
+config.structurescanner.client.enableJeiCategories.desc=Enable the Structure Scanner JEI categories. Disabling this is equivalent to disabling each category below individually.
+config.structurescanner.client.enableJeiPreview.desc=Enable the Structure Scanner JEI preview category.
+config.structurescanner.client.enableJeiBlocks.desc=Enable the Structure Scanner JEI blocks category.
+config.structurescanner.client.enableJeiLoot.desc=Enable the Structure Scanner JEI loot category.
 config.structurescanner.client.hudEnabled.desc=Enable or disable the HUD overlay showing searched structures
 config.structurescanner.client.hudPaddingExternal.desc=Padding from screen edge for HUD overlay
 config.structurescanner.client.hudPaddingInternal.desc=Padding inside the HUD box

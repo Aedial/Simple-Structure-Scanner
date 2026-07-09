@@ -112,7 +112,26 @@ public class GuiStructureScanner extends GuiScreen {
     private StructurePreviewRenderer previewRenderer = null;
     private ResourceLocation lastRenderedStructure = null;
 
+    @Nullable
+    private final GuiScreen returnScreen;
+
+    @Nullable
+    private final ResourceLocation initialSelectedStructure;
+    private final boolean rememberInitialSelection;
+
     public GuiStructureScanner() {
+        this(null, null, true);
+    }
+
+    public GuiStructureScanner(@Nullable ResourceLocation initialSelectedStructure, boolean rememberInitialSelection) {
+        this(null, initialSelectedStructure, rememberInitialSelection);
+    }
+
+    public GuiStructureScanner(@Nullable GuiScreen returnScreen, @Nullable ResourceLocation initialSelectedStructure,
+            boolean rememberInitialSelection) {
+        this.returnScreen = returnScreen;
+        this.initialSelectedStructure = initialSelectedStructure;
+        this.rememberInitialSelection = rememberInitialSelection;
         StructureSearchOverrides.setActiveStageSnapshot(GameStagesIntegration.captureClientStages());
     }
 
@@ -160,11 +179,15 @@ public class GuiStructureScanner extends GuiScreen {
         this.buttonList.add(new GuiButton(BUTTON_SHOW_NON_SEARCHABLE, 10, searchableButtonY, listWidth, 20,
             getNonSearchableButtonString()));
 
-        // Restore last selected structure
-        String lastStructure = ModConfig.getClientLastSelectedStructure();
-        if (lastStructure != null && !lastStructure.isEmpty()) {
-            ResourceLocation id = new ResourceLocation(lastStructure);
-            if (StructureProviderRegistry.getStructureInfo(id) != null) selectStructure(id);
+        if (initialSelectedStructure != null && StructureProviderRegistry.getStructureInfo(initialSelectedStructure) != null) {
+            selectStructure(initialSelectedStructure, rememberInitialSelection);
+        } else {
+            // Restore last selected structure
+            String lastStructure = ModConfig.getClientLastSelectedStructure();
+            if (lastStructure != null && !lastStructure.isEmpty()) {
+                ResourceLocation id = new ResourceLocation(lastStructure);
+                if (StructureProviderRegistry.getStructureInfo(id) != null) selectStructure(id);
+            }
         }
 
         // Restore modal windows if they were hidden for navigation
@@ -181,10 +204,19 @@ public class GuiStructureScanner extends GuiScreen {
         previewWindow = null;
     }
 
-    public void selectStructure(ResourceLocation id) {
+    private void closeScreen() {
+        mc.displayGuiScreen(this.returnScreen);
+    }
+
+    public void selectStructure(@Nullable ResourceLocation id) {
+        selectStructure(id, true);
+    }
+
+    public void selectStructure(@Nullable ResourceLocation id, boolean rememberSelection) {
         this.selected = id;
         this.selectedInfo = id != null ? StructureProviderRegistry.getStructureInfo(id) : null;
-        ModConfig.setClientLastSelectedStructure(id != null ? id.toString() : "");
+
+        if (rememberSelection) ModConfig.setClientLastSelectedStructure(id != null ? id.toString() : "");
     }
 
     public ResourceLocation getSelectedStructure() {
@@ -254,6 +286,11 @@ public class GuiStructureScanner extends GuiScreen {
         if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.handleKey(keyCode)) return;
         if (lootWindow != null && lootWindow.isVisible() && lootWindow.handleKey(keyCode)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.handleKey(keyCode)) return;
+
+        if (keyCode == Keyboard.KEY_ESCAPE) {
+            closeScreen();
+            return;
+        }
 
         if (filterField.textboxKeyTyped(typedChar, keyCode)) return;
         if (listWidget.handleKey(keyCode)) return;
