@@ -22,9 +22,15 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.Mirror;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.Rotation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraft.world.gen.structure.StructureComponent;
+import net.minecraft.world.gen.structure.template.PlacementSettings;
+import net.minecraft.world.gen.structure.template.TemplateManager;
 import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.fml.common.Loader;
 import net.minecraftforge.fml.common.ModContainer;
@@ -41,6 +47,7 @@ import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionException;
+import com.simplestructurescanner.structure.util.PreviewGenerationWorld;
 import com.simplestructurescanner.structure.util.StructureContentAccumulator;
 import com.simplestructurescanner.structure.util.StructurePreviewStitcher;
 import com.simplestructurescanner.structure.util.StructureTranslationKeys;
@@ -55,6 +62,7 @@ public class BomdStructureProvider extends AbstractStructureProvider {
     private static final String COMMAND_LOCATE_MOD_CLASS = "com.dungeon_additions.da.util.commands.CommandLocateMod";
     private static final String WORLD_CONFIG_CLASS = "com.dungeon_additions.da.config.WorldConfig";
     private static final String MOD_CONFIG_CLASS = "com.dungeon_additions.da.config.ModConfig";
+    private static final String MOD_STRUCTURE_TEMPLATE_CLASS = "com.dungeon_additions.da.world.ModStructureTemplate";
 
     private static final int CHUNK_COORDINATE_SHIFT = 4;
     private static final int MIN_SEARCH_RADIUS_CHUNKS = 64;
@@ -62,6 +70,7 @@ public class BomdStructureProvider extends AbstractStructureProvider {
     private static final int PREVIEW_COLUMNS = 4;
     private static final int PREVIEW_SPACING = 2;
     private static final long MAX_SCAN_TIME_MS = 10000L;
+    private static final int GENERATED_PREVIEW_BASE_Y = 64;
 
     private static final ResourceLocation ENTITY_VOID_BLOSSOM = new ResourceLocation(MOD_ID, "void_blossom");
     private static final ResourceLocation ENTITY_ANCIENT_FALLEN = new ResourceLocation(MOD_ID, "ancient_fallen");
@@ -98,6 +107,7 @@ public class BomdStructureProvider extends AbstractStructureProvider {
     private static final ResourceLocation ENTITY_HIGH_KING = new ResourceLocation(MOD_ID, "high_king");
     private static final ResourceLocation ENTITY_DARK_ORB = new ResourceLocation(MOD_ID, "dark_orb");
     private static final ResourceLocation ENTITY_SKY_TORNADO = new ResourceLocation(MOD_ID, "sky_tornado");
+    private static final PreviewGenerationWorld PREVIEW_WORLD = new PreviewGenerationWorld(1L, GENERATED_PREVIEW_BASE_Y);
 
     private static final List<StructureDefinition> STRUCTURES = Arrays.asList(
         new StructureDefinition("blossom_cave", "IsBlossomCaveAtPos",
@@ -223,6 +233,7 @@ public class BomdStructureProvider extends AbstractStructureProvider {
         StructureContentAccumulator contents = new StructureContentAccumulator();
         StructurePreviewStitcher preview = new StructurePreviewStitcher();
         List<String> templatePaths = collectTemplatePaths(definition.templateRoots);
+        List<StructureInfo.StructureLayer> generatedPreviewLayers = buildGeneratedPreviewLayers(definition);
 
         int previewColumn = 0;
         int previewX = 0;
@@ -235,7 +246,9 @@ public class BomdStructureProvider extends AbstractStructureProvider {
             if (parsed == null) continue;
 
             contents.add(parsed);
-            preview.addParsedStructure(parsed, new BlockPos(previewX, 0, previewZ));
+            if (generatedPreviewLayers == null) {
+                preview.addParsedStructure(parsed, new BlockPos(previewX, 0, previewZ));
+            }
 
             int width = Math.max(parsed.sizeX, 1);
             int depth = Math.max(parsed.sizeZ, 1);
@@ -258,8 +271,124 @@ public class BomdStructureProvider extends AbstractStructureProvider {
 
         contents.applyTo(info);
 
-        List<StructureInfo.StructureLayer> layers = preview.buildLayers();
+        List<StructureInfo.StructureLayer> layers = generatedPreviewLayers != null
+            ? generatedPreviewLayers
+            : preview.buildLayers();
         if (!layers.isEmpty()) info.setLayers(layers);
+    }
+
+    /**
+     * Builds a stitched preview of the structure by generating it in a temporary world
+     * and capturing the resulting blocks. This ensures that the preview accurately reflects
+     * the generated layout, without heavy placement logic. Structures that are not handled
+     * or fail to generate will use the generic "gallery" preview instead.
+     */
+    @Nullable
+    private List<StructureInfo.StructureLayer> buildGeneratedPreviewLayers(StructureDefinition definition) {
+        BomdPreviewSpec previewSpec = getPreviewSpec(definition);
+        if (previewSpec == null) return null;
+
+        try {
+            StructurePreviewStitcher preview = new StructurePreviewStitcher();
+            List<StructureComponent> components = new ArrayList<>();
+            BlockPos previewOrigin = new BlockPos(0, GENERATED_PREVIEW_BASE_Y, 0);
+
+            synchronized (PREVIEW_WORLD) {
+                TemplateManager templateManager = PREVIEW_WORLD.getSaveHandler().getStructureTemplateManager();
+                Object generator = previewSpec.createGenerator(PREVIEW_WORLD, templateManager, components);
+                previewSpec.startGenerator(generator, previewOrigin, definition);
+            }
+
+            populateGeneratedPreviewBlocks(preview, definition, components, previewOrigin);
+
+            List<StructureInfo.StructureLayer> layers = preview.buildLayers();
+            return layers.isEmpty() ? null : layers;
+        } catch (ReflectionException e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Falling back to gallery preview for BOMD structure {}",
+                definition.path,
+                e
+            );
+            return null;
+        }
+    }
+
+    private void populateGeneratedPreviewBlocks(StructurePreviewStitcher preview, StructureDefinition definition,
+            List<StructureComponent> components, BlockPos previewOrigin) throws ReflectionException {
+        Class<?> modStructureTemplateClass = ReflectionHelper.loadClassRequired(MOD_STRUCTURE_TEMPLATE_CLASS);
+
+        for (StructureComponent component : components) {
+            if (component == null || !modStructureTemplateClass.isInstance(component)) continue;
+
+            String pieceName = (String) ReflectionHelper.getField(component, modStructureTemplateClass, "pieceName");
+            String templateLocation = (String) ReflectionHelper.invokeRequired(component, "templateLocation");
+            BlockPos templatePos = (BlockPos) ReflectionHelper.invokeRequired(component, "getTemplatePosition");
+            PlacementSettings placementSettings = (PlacementSettings) ReflectionHelper.invokeRequired(component,
+                "getPlacementSettings");
+            Mirror mirror = placementSettings.getMirror() != null ? placementSettings.getMirror() : Mirror.NONE;
+            Rotation rotation = placementSettings.getRotation() != null ? placementSettings.getRotation() : Rotation.NONE;
+
+            StructureNBTParser.ParsedStructure parsed = StructureNBTParser.parseBundledStructure(
+                MOD_ID,
+                templateLocation + "/" + pieceName,
+                new BomdTemplateExtension(definition)
+            );
+            if (parsed == null) continue;
+
+            BlockPos relativePos = new BlockPos(
+                templatePos.getX() - previewOrigin.getX(),
+                templatePos.getY() - previewOrigin.getY(),
+                templatePos.getZ() - previewOrigin.getZ()
+            );
+            preview.addParsedStructure(parsed, relativePos, mirror, rotation);
+        }
+    }
+
+    // TODO: Use a map of structure path -> preview spec instead of a big switch statement
+    @Nullable
+    private BomdPreviewSpec getPreviewSpec(StructureDefinition definition) {
+        String prefix = "com.dungeon_additions.da.world.";
+
+        switch (definition.path) {
+            case "blossom_cave":
+                return new BomdPreviewSpec(prefix + "blossom.BlossomCave", "startVault");
+
+            case "rotten_hold":
+                return new BomdPreviewSpec(prefix + "rot_hold.RottenHold", "startHold");
+
+            case "night_lich_tower":
+                return new BomdPreviewSpec(prefix + "lich_tower.LichTowerBase", "startTower");
+
+            case "burning_flame_arena":
+                return new BomdPreviewSpec(prefix + "nether_arena.NetherArena", "startVault");
+
+            case "frozen_castle":
+                return new BomdPreviewSpec(prefix + "frozen_castle.FrozenCastle", "startCastle");
+
+            case "high_court_city":
+                return new BomdPreviewSpec(prefix + "high_city.HighCityDungeon", "startHighCity");
+
+            case "forgotten_temple":
+                return new BomdPreviewSpec(prefix + "forgotten_temple.ForgottenTemple", "startDungeon");
+
+            case "obsidilith_arena":
+                return new BomdPreviewSpec(prefix + "obsidilith_arena.ObsidilithArena", "startArena");
+
+            case "gaelon_sanctuary":
+                return new BomdPreviewSpec(prefix + "gaelon_sanctuary.GaelonSanctuary", "startHold");
+
+            case "trader_post":
+                return new BomdPreviewSpec(prefix + "mysterious_trader.MysteriousTraderPostGeneric", "startBuilding", true);
+
+            case "dark_ruins":
+                return new BomdPreviewSpec(prefix + "dauntless.DauntlessArena", "startBuilding", true);
+
+            case "end_outpost":
+                return new BomdPreviewSpec(prefix + "outposts.OutpostGeneric", "startBuilding", true);
+
+            default:
+                return null;
+        }
     }
 
     private ScanOutcome scanCandidates(World world, StructureDefinition definition, BlockPos origin, int maxResults) {
@@ -640,6 +769,48 @@ public class BomdStructureProvider extends AbstractStructureProvider {
             }
 
             return "";
+        }
+    }
+
+    private static final class BomdPreviewSpec {
+        private final String className;
+        private final String startMethod;
+        private final boolean needsTemplateName;
+
+        private BomdPreviewSpec(String className, String startMethod) {
+            this(className, startMethod, false);
+        }
+
+        private BomdPreviewSpec(String className, String startMethod, boolean needsTemplateName) {
+            this.className = className;
+            this.startMethod = startMethod;
+            this.needsTemplateName = needsTemplateName;
+        }
+
+        private Object createGenerator(World world, TemplateManager templateManager,
+                List<StructureComponent> components) throws ReflectionException {
+            try {
+                Class<?> generatorClass = ReflectionHelper.loadClassRequired(className);
+                return generatorClass.getDeclaredConstructor(World.class, TemplateManager.class, List.class)
+                    .newInstance(world, templateManager, components);
+            } catch (ReflectionException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ReflectionException("Failed to instantiate BOMD preview generator " + className, e);
+            }
+        }
+
+        private void startGenerator(Object generator, BlockPos origin, StructureDefinition definition)
+                throws ReflectionException {
+            if (!needsTemplateName) {
+                ReflectionHelper.invokeRequired(generator, startMethod,
+                    new Class<?>[]{BlockPos.class, Rotation.class}, origin, Rotation.NONE);
+                return;
+            }
+
+            String templateName = definition.templateRoots.isEmpty() ? definition.path : definition.templateRoots.get(0);
+            ReflectionHelper.invokeRequired(generator, startMethod,
+                new Class<?>[]{BlockPos.class, Rotation.class, String.class}, origin, Rotation.NONE, templateName);
         }
     }
 

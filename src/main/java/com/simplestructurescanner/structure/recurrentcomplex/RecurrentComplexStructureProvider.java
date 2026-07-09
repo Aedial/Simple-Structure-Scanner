@@ -702,11 +702,58 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     }
 
     private List<Object> getMazeStructures(Object registry, String mazeId) throws ReflectionException {
+        List<Object> exactMatches = getMazeStructuresExact(registry, mazeId);
+        if (!exactMatches.isEmpty()) return exactMatches;
+
+        return getMazeStructuresCaseInsensitive(registry, mazeId);
+    }
+
+    private List<Object> getMazeStructuresExact(Object registry, String mazeId) throws ReflectionException {
         Class<?> registryClass = ReflectionHelper.loadClassRequired(STRUCTURE_REGISTRY_CLASS);
         Class<?> mazeGenerationClass = ReflectionHelper.loadClassRequired(MAZE_GENERATION_CLASS);
         Object stream = invokeStaticRequired(mazeGenerationClass, "structures",
             new Class<?>[]{registryClass, String.class}, registry, mazeId);
         return getStructuresFromPairStream(stream);
+    }
+
+    private List<Object> getMazeStructuresCaseInsensitive(Object registry, String mazeId) throws ReflectionException {
+        List<String> activeStructureIds = new ArrayList<>(getActiveStructureIds(registry));
+        activeStructureIds.sort(String.CASE_INSENSITIVE_ORDER);
+
+        List<Object> matches = new ArrayList<>();
+        for (String rawId : activeStructureIds) {
+            Object structure = getActiveStructure(registry, rawId);
+            if (structure == null) continue;
+
+            List<?> generationTypes = getGenerationTypes(structure);
+            if (generationTypes == null || generationTypes.isEmpty()) continue;
+
+            for (Object generationType : generationTypes) {
+                if (!MAZE_GENERATION_CLASS.equals(generationType.getClass().getName())) continue;
+
+                String candidateMazeId = (String) ReflectionHelper.getField(generationType,
+                    generationType.getClass(), "mazeID");
+                if (candidateMazeId == null || !mazeId.equalsIgnoreCase(candidateMazeId)) continue;
+
+                Object mazeComponent = ReflectionHelper.getField(generationType,
+                    generationType.getClass(), "mazeComponent");
+                if (mazeComponent != null && !invokeBooleanRequired(mazeComponent, "isValid", new Class<?>[0])) {
+                    continue;
+                }
+
+                matches.add(structure);
+                break;
+            }
+        }
+
+        if (!matches.isEmpty()) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Resolved Recurrent Complex maze '{}' via case-insensitive component lookup ({} match(es))",
+                mazeId, matches.size()
+            );
+        }
+
+        return matches;
     }
 
     private List<Object> getStructuresFromPairStream(Object streamObject) throws ReflectionException {

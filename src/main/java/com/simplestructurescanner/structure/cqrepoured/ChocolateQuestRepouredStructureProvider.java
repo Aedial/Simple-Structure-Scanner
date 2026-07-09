@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Random;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -22,6 +23,7 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
@@ -46,6 +48,7 @@ import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionException;
 import com.simplestructurescanner.structure.util.StructureContentAccumulator;
+import com.simplestructurescanner.structure.util.PreviewGenerationWorld;
 import com.simplestructurescanner.structure.util.StructurePreviewStitcher;
 import com.simplestructurescanner.structure.util.StructureTranslationKeys;
 
@@ -61,6 +64,10 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     private static final String WORLD_DUNGEON_GENERATOR_CLASS = "team.cqr.cqrepoured.world.structure.generation.WorldDungeonGenerator";
     private static final String CQ_STRUCTURE_CLASS = "team.cqr.cqrepoured.world.structure.generation.structurefile.CQStructure";
     private static final String CQR_BLOCKS_CLASS = "team.cqr.cqrepoured.init.CQRBlocks";
+    private static final String CQR_DUNGEON_GENERATOR_ENUM_CLASS = "team.cqr.cqrepoured.world.structure.generation.EDungeonGenerator";
+    private static final String CQR_DUNGEON_SPAWN_TYPE_CLASS = "team.cqr.cqrepoured.world.structure.generation.DungeonDataManager$DungeonSpawnType";
+    private static final String CQR_BLOCK_DUNGEON_PART_CLASS = "team.cqr.cqrepoured.world.structure.generation.generation.part.BlockDungeonPart";
+    private static final String CQR_GENERATABLE_BLOCK_INFO_CLASS = "team.cqr.cqrepoured.world.structure.generation.generation.generatable.GeneratableBlockInfo";
 
     private static final int CHUNK_COORDINATE_SHIFT = 4;
     private static final int DEFAULT_SEARCH_RADIUS_CHUNKS = 192;
@@ -68,9 +75,11 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     private static final long MAX_SCAN_TIME_MS = 10000L;
     private static final int PREVIEW_COLUMNS = 3;
     private static final int PREVIEW_SPACING = 2;
+    private static final int GENERATED_PREVIEW_BASE_Y = 64;
 
     private static final ResourceLocation CQR_DUMMY_ENTITY = new ResourceLocation(MOD_ID, "dummy");
     private static final ResourceLocation CQR_DUMMY_BOSS_ENTITY = new ResourceLocation(MOD_ID, "dummy_boss");
+    private static final PreviewGenerationWorld PREVIEW_WORLD = new PreviewGenerationWorld(1L, GENERATED_PREVIEW_BASE_Y);
 
     private final Map<ResourceLocation, DungeonDefinition> dungeonsById = new LinkedHashMap<>();
     private final Map<String, InhabitantDefinition> inhabitantsByName = new LinkedHashMap<>();
@@ -297,6 +306,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         StructureContentAccumulator contents = new StructureContentAccumulator();
         StructurePreviewStitcher preview = new StructurePreviewStitcher();
         InhabitantDefinition inhabitant = resolveInhabitant(dungeon.dungeonMob);
+        List<StructureInfo.StructureLayer> generatedPreviewLayers = buildGeneratedPreviewLayers(dungeon);
 
         if (!dungeon.structureFiles.isEmpty()) {
             int previewColumn = 0;
@@ -309,7 +319,9 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
                 if (parsed == null) continue;
 
                 contents.add(parsed);
-                preview.addParsedStructure(parsed, new BlockPos(previewX, 0, previewZ));
+                if (generatedPreviewLayers == null) {
+                    preview.addParsedStructure(parsed, new BlockPos(previewX, 0, previewZ));
+                }
 
                 int width = Math.max(parsed.sizeX, 1);
                 int depth = Math.max(parsed.sizeZ, 1);
@@ -327,15 +339,135 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
             }
         }
 
-        if ("randomized_castle".equals(dungeon.generatorType)) {
+        if (generatedPreviewLayers == null && "randomized_castle".equals(dungeon.generatorType)) {
             applyRandomizedCastleApproximation(dungeon, inhabitant, contents, preview);
         }
 
         info.setBlocks(contents.buildBlocks());
         info.setEntities(rewriteDummyEntities(contents.buildEntities(), inhabitant));
         info.setLootTables(contents.buildLootEntries());
-        List<StructureInfo.StructureLayer> layers = preview.buildLayers();
+        List<StructureInfo.StructureLayer> layers = generatedPreviewLayers != null
+            ? generatedPreviewLayers
+            : preview.buildLayers();
         if (!layers.isEmpty()) info.setLayers(layers);
+    }
+
+    /**
+     * Builds a stitched preview of the structure by generating it in a temporary world
+     * and capturing the resulting blocks. This ensures that the preview accurately reflects
+     * the generated layout, without heavy placement logic. Structures that are not handled
+     * or fail to generate will use the generic "gallery" preview instead.
+     */
+    @Nullable
+    private List<StructureInfo.StructureLayer> buildGeneratedPreviewLayers(DungeonDefinition dungeon) {
+        try {
+            Object generatableDungeon = createGeneratedPreviewDungeon(dungeon);
+            if (generatableDungeon == null) return null;
+
+            StructurePreviewStitcher preview = new StructurePreviewStitcher();
+            populateGeneratedPreviewBlocks(preview, generatableDungeon);
+
+            List<StructureInfo.StructureLayer> layers = preview.buildLayers();
+            return layers.isEmpty() ? null : layers;
+        } catch (ReflectionException e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Falling back to gallery preview for CQR dungeon {} ({})",
+                dungeon.rawName, dungeon.generatorType, e
+            );
+            return null;
+        }
+    }
+
+    @Nullable
+    private Object createGeneratedPreviewDungeon(DungeonDefinition dungeon) throws ReflectionException {
+        Object generatorType = resolveDungeonGeneratorType(dungeon.generatorType);
+        if (generatorType == null) return null;
+
+        Object dungeonSpawnType = resolveDungeonSpawnType();
+        if (dungeonSpawnType == null) return null;
+
+        Object dungeonInstance = ReflectionHelper.invokeRequired(generatorType, "createDungeon",
+            new Class<?>[]{String.class, Properties.class}, dungeon.rawName, dungeon.properties);
+        if (dungeonInstance == null) return null;
+
+        synchronized (PREVIEW_WORLD) {
+            Object generator = ReflectionHelper.invokeRequired(dungeonInstance, "createDungeonGenerator",
+                new Class<?>[]{World.class, int.class, int.class, int.class, Random.class, dungeonSpawnType.getClass()},
+                PREVIEW_WORLD,
+                0,
+                GENERATED_PREVIEW_BASE_Y,
+                0,
+                new Random(dungeon.id.toString().hashCode()),
+                dungeonSpawnType
+            );
+            return generator != null ? ReflectionHelper.invokeRequired(generator, "get") : null;
+        }
+    }
+
+    private void populateGeneratedPreviewBlocks(StructurePreviewStitcher preview, Object generatableDungeon)
+            throws ReflectionException {
+        Class<?> blockDungeonPartClass = ReflectionHelper.loadClassRequired(CQR_BLOCK_DUNGEON_PART_CLASS);
+        Class<?> generatableBlockInfoClass = ReflectionHelper.loadClassRequired(CQR_GENERATABLE_BLOCK_INFO_CLASS);
+        List<?> parts = ReflectionHelper.getListField(generatableDungeon, generatableDungeon.getClass(), "parts");
+
+        for (Object part : parts) {
+            if (part == null || !blockDungeonPartClass.isInstance(part)) continue;
+
+            Object chunksObject = ReflectionHelper.invokeRequired(part, "getChunks");
+            if (!(chunksObject instanceof Iterable)) continue;
+
+            for (Object chunkInfo : (Iterable<?>) chunksObject) {
+                List<?> blocks = ReflectionHelper.getListField(chunkInfo, chunkInfo.getClass(), "blocks");
+                for (Object blockInfo : blocks) {
+                    if (blockInfo == null || !generatableBlockInfoClass.isInstance(blockInfo)) continue;
+
+                    int x = (Integer) ReflectionHelper.invokeRequired(blockInfo, "getX");
+                    int y = (Integer) ReflectionHelper.invokeRequired(blockInfo, "getY");
+                    int z = (Integer) ReflectionHelper.invokeRequired(blockInfo, "getZ");
+                    IBlockState state = (IBlockState) ReflectionHelper.invokeRequired(blockInfo, "getState");
+                    if (state == null || StructureNBTParser.isInvisibleBlock(state.getBlock())) continue;
+
+                    TileEntity tileEntity = (TileEntity) ReflectionHelper.invokeRequired(blockInfo, "getTileEntity");
+                    preview.setBlock(new BlockPos(x, y - GENERATED_PREVIEW_BASE_Y, z), state,
+                        createPreviewTileEntityData(tileEntity));
+                }
+            }
+        }
+    }
+
+    @Nullable
+    private NBTTagCompound createPreviewTileEntityData(@Nullable TileEntity tileEntity) {
+        if (tileEntity == null) return null;
+
+        NBTTagCompound tileEntityData = tileEntity.writeToNBT(new NBTTagCompound());
+        tileEntityData.removeTag("x");
+        tileEntityData.removeTag("y");
+        tileEntityData.removeTag("z");
+        return tileEntityData.isEmpty() ? null : tileEntityData;
+    }
+
+    @Nullable
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private Object resolveDungeonGeneratorType(String generatorType) throws ReflectionException {
+        Class<?> enumClass = ReflectionHelper.loadClassRequired(CQR_DUNGEON_GENERATOR_ENUM_CLASS);
+
+        try {
+            return Enum.valueOf((Class<Enum>) enumClass, generatorType.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    @Nullable
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private Object resolveDungeonSpawnType() throws ReflectionException {
+        Class<?> enumClass = ReflectionHelper.loadClassRequired(CQR_DUNGEON_SPAWN_TYPE_CLASS);
+
+        try {
+            return Enum.valueOf((Class<Enum>) enumClass, "DUNGEON_GENERATION");
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private List<EntityEntry> rewriteDummyEntities(List<EntityEntry> entities,

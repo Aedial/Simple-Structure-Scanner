@@ -11,6 +11,8 @@ import javax.annotation.Nullable;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.Mirror;
+import net.minecraft.util.Rotation;
 import net.minecraft.util.math.BlockPos;
 
 import com.simplestructurescanner.structure.StructureInfo;
@@ -37,6 +39,11 @@ public class StructurePreviewStitcher {
     }
 
     public void addParsedStructure(StructureNBTParser.ParsedStructure parsed, BlockPos origin) {
+        addParsedStructure(parsed, origin, Mirror.NONE, Rotation.NONE);
+    }
+
+    public void addParsedStructure(StructureNBTParser.ParsedStructure parsed, BlockPos origin,
+            Mirror mirror, Rotation rotation) {
         if (parsed == null || parsed.layers == null) return;
 
         for (StructureInfo.StructureLayer layer : parsed.layers) {
@@ -47,10 +54,45 @@ public class StructurePreviewStitcher {
                     IBlockState state = layer.getBlockState(x, z);
                     if (state == null) continue;
 
-                    BlockPos pos = origin.add(layer.xOffset + x, layer.y, layer.zOffset + z);
+                    BlockPos pos = transformParsedPosition(parsed,
+                        new BlockPos(layer.xOffset + x, layer.y, layer.zOffset + z), origin, mirror, rotation);
                     setBlock(pos, state, layer.getBlockEntityData(x, z));
                 }
             }
+        }
+    }
+
+    private BlockPos transformParsedPosition(StructureNBTParser.ParsedStructure parsed, BlockPos localPos,
+            BlockPos origin, Mirror mirror, Rotation rotation) {
+        int x = localPos.getX();
+        int y = localPos.getY();
+        int z = localPos.getZ();
+
+        switch (mirror) {
+            case LEFT_RIGHT:
+                z = parsed.sizeZ - 1 - z;
+                break;
+
+            case FRONT_BACK:
+                x = parsed.sizeX - 1 - x;
+                break;
+
+            default:
+                break;
+        }
+
+        switch (rotation) {
+            case COUNTERCLOCKWISE_90:
+                return origin.add(z, y, parsed.sizeX - 1 - x);
+
+            case CLOCKWISE_90:
+                return origin.add(parsed.sizeZ - 1 - z, y, x);
+
+            case CLOCKWISE_180:
+                return origin.add(parsed.sizeX - 1 - x, y, parsed.sizeZ - 1 - z);
+
+            default:
+                return origin.add(x, y, z);
         }
     }
 
