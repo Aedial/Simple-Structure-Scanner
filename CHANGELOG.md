@@ -14,11 +14,13 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Add an optional Map button beside located structure coordinates, opening JourneyMap's waypoint editor when available and otherwise adding an equivalent Xaero's Minimap waypoint.
 - Add JEI structure preview, blocks, and loot categories with in-panel buttons to switch views for the same structure or open that structure directly in the scanner.
 - Add client config toggles to disable all Structure Scanner JEI categories at once or disable the preview, blocks, and loot categories individually.
+- Add native providers for Unseen's Dungeon Additions and Chocolate Quest Repoured, with structure search and CQR custom dungeon handling.
 
 ### Fixed
 - Fix tracked structure overlays and guiding arrows ignoring the hidden-HUD toggle, which could leave the tracker visible and darken the screen after pressing F1.
 - Revert some of the TESR fixes of fab37568eed6814f8f3d275c1337567ffef11105 (1.2.0), as they caused many of the TESRs in preview window to be broken.
 - Fix structure preview window inheriting broken GL/lightmap state from earlier GUI draws, which could make some TESR such as chests render dark or partially obscured.
+- Fix Recurrent Complex provider not exposing localization keys for the structure names (instead, it was using the structure file name as the display name).
 
 
 ## [1.2.1] - 2026-06-27

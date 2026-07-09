@@ -185,8 +185,11 @@ private void addStructure(String path, String displayNameKey, int sizeX, int siz
 }
 ```
 
-`StructureInfo` now stores unresolved text descriptors.
+`StructureInfo` stores unresolved text descriptors.
 The GUI resolves those descriptors on the client, so providers should pass translation keys for user-facing text instead of calling localization APIs during registration.
+This rule is strictly enforced for user-authored structures loaded from configs or external data folders: they must have user-provided translation keys.
+If a translation is missing, it is their responsibility to provide the localization entry in their resource pack or mod. Any missing keys will remain visible in the GUI so the author can fix their localization and notice any missing translations.
+When generating default keys in Java, reuse `StructureTranslationKeys.structureNameKey(...)` or `StructureTranslationKeys.normalizedStructureNameKey(...)` instead of building the prefix manually.
 
 **Parameters:**
 - `id`: Unique identifier (e.g., `yourmod:tower`)
@@ -300,6 +303,8 @@ Standard rarity keys provided by the mod:
 
 External provider JSON files define lightweight metadata and reference NBT files for structure contents.
 All user-visible text in this format should be translation keys.
+That requirement is especially important for user-made structures: they must provide user-authored translation keys.
+Generated default keys should come from the shared `StructureTranslationKeys` helpers so every provider follows the same naming scheme.
 Each JSON file defines one provider object with a `providerId`, a `modName` or `modNameKey`, and a `structures` array.
 
 ```json
@@ -338,6 +343,9 @@ If `nbtPath` is missing, only the JSON metadata is available.
 If `modNameKey` or `displayNameKey` are omitted, the loader falls back to generated keys:
 - `gui.structurescanner.provider.<providerId>`
 - `gui.structurescanner.structures.<namespace>.<path>`
+
+These fallbacks are still translation keys, not human-readable titles.
+If a user-made provider relies on them, the author is expected to add matching localization entries.
 
 External providers remain non-searchable unless a Java provider supplies custom location logic.
 

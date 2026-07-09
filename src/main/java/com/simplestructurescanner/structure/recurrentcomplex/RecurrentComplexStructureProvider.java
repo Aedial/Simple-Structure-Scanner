@@ -6,14 +6,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.function.Predicate;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import javax.annotation.Nullable;
@@ -43,6 +39,9 @@ import com.simplestructurescanner.structure.StructureSearchOverrides;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionException;
+import com.simplestructurescanner.structure.util.StructureContentAccumulator;
+import com.simplestructurescanner.structure.util.StructurePreviewStitcher;
+import com.simplestructurescanner.structure.util.StructureTranslationKeys;
 
 
 /**
@@ -79,7 +78,6 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private static final ResourceLocation GENERIC_SPACE_BLOCK_ID = new ResourceLocation(MOD_ID, "generic_space");
     private static final ResourceLocation GENERIC_SOLID_BLOCK_ID = new ResourceLocation(MOD_ID, "generic_solid");
 
-    private static final Pattern CAMEL_CASE_BOUNDARY = Pattern.compile("(?<=[A-Za-z])(?=[A-Z][a-z])|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Za-z])(?=[0-9])");
     private static final StructureNBTParser.StructureParseExtension DEFAULT_PARSE_EXTENSION = new StructureNBTParser.StructureParseExtension() {
         @Override
         public boolean shouldCountBlock(@Nullable IBlockState state, @Nullable Block block) {
@@ -194,7 +192,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private StructureInfo createStructureInfo(ResourceLocation structureId, String rawId, int[] size) {
         return new StructureInfo(
             structureId,
-            LocalizedText.literal(formatStructureName(rawId)),
+            LocalizedText.translatable(StructureTranslationKeys.normalizedStructureNameKey(MOD_ID, rawId)),
             PROVIDER_ID,
             size.length > 0 ? size[0] : 0,
             size.length > 1 ? size[1] : 0,
@@ -203,24 +201,20 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     }
 
     private void populateStructureContents(StructureInfo info, Object registry, Object structure) throws ReflectionException {
-        StructureNBTParser.ParsedStructureBuilder builder = new StructureNBTParser.ParsedStructureBuilder(0, 0, 0);
-        mergeStructureContents(builder, registry, structure, new LinkedHashSet<>());
-
-        StructureNBTParser.ParsedStructure parsed = builder.build();
-        if (!parsed.blocks.isEmpty()) info.setBlocks(parsed.blocks);
-        if (!parsed.entities.isEmpty()) info.setEntities(parsed.entities);
-        if (!parsed.lootTables.isEmpty()) info.setLootTables(parsed.lootTables);
+        StructureContentAccumulator contents = new StructureContentAccumulator();
+        mergeStructureContents(contents, registry, structure, new LinkedHashSet<>());
+        contents.applyTo(info);
     }
 
     private void populateStructurePreview(StructureInfo info, Object registry, Object structure) throws ReflectionException {
-        PreviewAssembler preview = new PreviewAssembler();
+        StructurePreviewStitcher preview = new StructurePreviewStitcher();
         mergeStructurePreview(preview, registry, structure, BlockPos.ORIGIN, PreviewTransform.identity(), new LinkedHashSet<>());
 
         List<StructureInfo.StructureLayer> layers = preview.buildLayers();
         if (!layers.isEmpty()) info.setLayers(layers);
     }
 
-    private void mergeStructurePreview(PreviewAssembler preview, Object registry, Object structure,
+    private void mergeStructurePreview(StructurePreviewStitcher preview, Object registry, Object structure,
             BlockPos origin, PreviewTransform transform, Set<String> recursionStack) throws ReflectionException {
         String structureKey = getStructureKey(registry, structure);
         if (!recursionStack.add(structureKey)) {
@@ -238,7 +232,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         }
     }
 
-    private void mergeStructureContents(StructureNBTParser.ParsedStructureBuilder builder, Object registry,
+    private void mergeStructureContents(StructureNBTParser.StructureContentSink contents, Object registry,
             Object structure, Set<String> recursionStack) throws ReflectionException {
         String structureKey = getStructureKey(registry, structure);
         if (!recursionStack.add(structureKey)) {
@@ -250,7 +244,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             Object worldData = getWorldData(structure);
             if (worldData == null) return;
 
-            mergeWorldData(builder, registry, worldData, recursionStack);
+            mergeWorldData(contents, registry, worldData, recursionStack);
         } finally {
             recursionStack.remove(structureKey);
         }
@@ -281,37 +275,37 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         }
     }
 
-    private void mergeWorldData(StructureNBTParser.ParsedStructureBuilder builder, Object registry,
+    private void mergeWorldData(StructureNBTParser.StructureContentSink contents, Object registry,
             Object worldData, Set<String> recursionStack) throws ReflectionException {
         Object blockCollection = ReflectionHelper.getField(worldData, worldData.getClass(), "blockCollection");
         List<NBTTagCompound> tileEntities = getCompoundListField(worldData, "tileEntities");
         List<NBTTagCompound> entities = getCompoundListField(worldData, "entities");
 
         Set<BlockPos> scriptPositions = collectScriptPositions(tileEntities);
-        mergeBlockCollection(builder, blockCollection, scriptPositions);
+        mergeBlockCollection(contents, blockCollection, scriptPositions);
 
         for (NBTTagCompound tileEntity : tileEntities) {
             if (tileEntity == null) continue;
 
             if (isScriptTileEntity(tileEntity)) {
-                mergeWorldScripts(builder, registry, tileEntity.getCompoundTag("script"), recursionStack);
+                mergeWorldScripts(contents, registry, tileEntity.getCompoundTag("script"), recursionStack);
                 continue;
             }
 
             IBlockState state = getBlockState(blockCollection, getTileEntityPos(tileEntity));
             NBTTagCompound sanitizedTileEntity = tileEntity.copy();
-            stripGeneratingItems(builder, state, sanitizedTileEntity);
+            stripGeneratingItems(contents, state, sanitizedTileEntity);
             Block block = state != null ? state.getBlock() : null;
-            StructureNBTParser.handleDefaultBlockEntity(builder, state, block, sanitizedTileEntity);
+            StructureNBTParser.handleDefaultBlockEntity(contents, state, block, sanitizedTileEntity);
         }
 
         for (NBTTagCompound entity : entities) {
             if (entity == null) continue;
-            StructureNBTParser.handleDefaultEntity(builder, entity);
+            StructureNBTParser.handleDefaultEntity(contents, entity);
         }
     }
 
-    private void stripGeneratingItems(StructureNBTParser.ParsedStructureBuilder builder,
+    private void stripGeneratingItems(StructureNBTParser.StructureContentSink contents,
             @Nullable IBlockState state, NBTTagCompound tileEntity) {
         if (!tileEntity.hasKey("Items", Constants.NBT.TAG_LIST)) return;
 
@@ -329,7 +323,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             }
 
             StructureInfo.LootEntry generatedLoot = RecurrentComplexLootResolver.createLootEntry(state, stack);
-            if (generatedLoot != null) builder.addLootEntry(generatedLoot);
+            if (generatedLoot != null) contents.addLootEntry(generatedLoot);
             removedGenerator = true;
         }
 
@@ -342,7 +336,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         tileEntity.removeTag("Items");
     }
 
-    private void mergeWorldDataPreview(PreviewAssembler preview, Object registry, Object worldData,
+    private void mergeWorldDataPreview(StructurePreviewStitcher preview, Object registry, Object worldData,
             int[] size, BlockPos origin, PreviewTransform transform, Set<String> recursionStack) throws ReflectionException {
         Object blockCollection = ReflectionHelper.getField(worldData, worldData.getClass(), "blockCollection");
         int[] worldDataSize = hasUsableSize(size) ? size : getBlockCollectionSize(blockCollection);
@@ -371,7 +365,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         return GENERIC_SPACE_BLOCK_ID.equals(blockId) || GENERIC_SOLID_BLOCK_ID.equals(blockId);
     }
 
-    private void mergeBlockCollection(StructureNBTParser.ParsedStructureBuilder builder, @Nullable Object blockCollection,
+    private void mergeBlockCollection(StructureNBTParser.StructureContentSink contents, @Nullable Object blockCollection,
             Set<BlockPos> scriptPositions) throws ReflectionException {
         if (blockCollection == null) return;
 
@@ -391,11 +385,11 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             Block block = state != null ? state.getBlock() : null;
             if (!DEFAULT_PARSE_EXTENSION.shouldCountBlock(state, block)) continue;
 
-            builder.addBlockCount(DEFAULT_PARSE_EXTENSION.getBlockCountKey(state, block, null), state);
+            contents.addBlockCount(DEFAULT_PARSE_EXTENSION.getBlockCountKey(state, block, null), state);
         }
     }
 
-    private void addPreviewBlockCollection(PreviewAssembler preview, @Nullable Object blockCollection,
+    private void addPreviewBlockCollection(StructurePreviewStitcher preview, @Nullable Object blockCollection,
             int[] size, BlockPos origin, PreviewTransform transform, Set<BlockPos> scriptPositions) throws ReflectionException {
         if (blockCollection == null) return;
 
@@ -458,7 +452,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         return new BlockPos(tileEntity.getInteger("x"), tileEntity.getInteger("y"), tileEntity.getInteger("z"));
     }
 
-    private void mergeWorldScriptsPreview(PreviewAssembler preview, Object registry,
+    private void mergeWorldScriptsPreview(StructurePreviewStitcher preview, Object registry,
             NBTTagCompound scriptData, BlockPos origin, PreviewTransform transform,
             Set<String> recursionStack) throws ReflectionException {
         if (!scriptData.hasKey("scripts", Constants.NBT.TAG_LIST)) return;
@@ -493,7 +487,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         }
     }
 
-    private void mergeWorldScripts(StructureNBTParser.ParsedStructureBuilder builder, Object registry,
+    private void mergeWorldScripts(StructureNBTParser.StructureContentSink contents, Object registry,
             NBTTagCompound scriptData, Set<String> recursionStack) throws ReflectionException {
         if (!scriptData.hasKey("scripts", Constants.NBT.TAG_LIST)) return;
 
@@ -508,27 +502,27 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             NBTTagCompound data = scriptTag.getCompoundTag("data");
 
             if (SCRIPT_ID_MULTI.equals(scriptId)) {
-                mergeWorldScripts(builder, registry, data, recursionStack);
+                mergeWorldScripts(contents, registry, data, recursionStack);
                 continue;
             }
 
             if (SCRIPT_ID_STRUCTURE_GENERATOR.equals(scriptId)) {
-                mergeStructureGeneratorScript(builder, registry, data, recursionStack);
+                mergeStructureGeneratorScript(contents, registry, data, recursionStack);
                 continue;
             }
 
             if (SCRIPT_ID_MAZE_GENERATOR.equals(scriptId)) {
-                mergeMazeScript(builder, registry, data, recursionStack);
+                mergeMazeScript(contents, registry, data, recursionStack);
                 continue;
             }
 
             if (SCRIPT_ID_HOLDER.equals(scriptId)) {
-                mergeHolderScript(builder, registry, data, recursionStack);
+                mergeHolderScript(contents, registry, data, recursionStack);
             }
         }
     }
 
-    private void mergeStructureGeneratorScript(StructureNBTParser.ParsedStructureBuilder builder, Object registry,
+    private void mergeStructureGeneratorScript(StructureNBTParser.StructureContentSink contents, Object registry,
             NBTTagCompound data, Set<String> recursionStack) throws ReflectionException {
         boolean simpleMode = !data.hasKey("simpleMode", Constants.NBT.TAG_BYTE) || data.getBoolean("simpleMode");
 
@@ -539,7 +533,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
                 if (structureName.isEmpty()) continue;
 
                 Object childStructure = getStructureById(registry, structureName);
-                if (childStructure != null) mergeStructureContents(builder, registry, childStructure, recursionStack);
+                if (childStructure != null) mergeStructureContents(contents, registry, childStructure, recursionStack);
             }
 
             return;
@@ -550,11 +544,11 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
         EnumFacing front = data.hasKey("front", Constants.NBT.TAG_STRING) ? EnumFacing.byName(data.getString("front")) : null;
         for (Object childStructure : getListStructures(registry, structureListId, front)) {
-            mergeStructureContents(builder, registry, childStructure, recursionStack);
+            mergeStructureContents(contents, registry, childStructure, recursionStack);
         }
     }
 
-    private void mergeStructureGeneratorPreview(PreviewAssembler preview, Object registry,
+    private void mergeStructureGeneratorPreview(StructurePreviewStitcher preview, Object registry,
             NBTTagCompound data, BlockPos origin, PreviewTransform transform,
             Set<String> recursionStack) throws ReflectionException {
         boolean simpleMode = !data.hasKey("simpleMode", Constants.NBT.TAG_BYTE) || data.getBoolean("simpleMode");
@@ -599,17 +593,17 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         }
     }
 
-    private void mergeMazeScript(StructureNBTParser.ParsedStructureBuilder builder, Object registry,
+    private void mergeMazeScript(StructureNBTParser.StructureContentSink contents, Object registry,
             NBTTagCompound data, Set<String> recursionStack) throws ReflectionException {
         String mazeId = data.getString("mazeID");
         if (mazeId.isEmpty()) return;
 
         for (Object childStructure : getMazeStructures(registry, mazeId)) {
-            mergeStructureContents(builder, registry, childStructure, recursionStack);
+            mergeStructureContents(contents, registry, childStructure, recursionStack);
         }
     }
 
-    private void mergeMazePreview(PreviewAssembler preview, Object registry,
+    private void mergeMazePreview(StructurePreviewStitcher preview, Object registry,
             NBTTagCompound data, BlockPos origin, PreviewTransform transform,
             Set<String> recursionStack) throws ReflectionException {
         String mazeId = data.getString("mazeID");
@@ -651,7 +645,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         }
     }
 
-    private void mergeHolderScript(StructureNBTParser.ParsedStructureBuilder builder, Object registry,
+    private void mergeHolderScript(StructureNBTParser.StructureContentSink contents, Object registry,
             NBTTagCompound data, Set<String> recursionStack) throws ReflectionException {
         if (!data.hasKey("worldData", Constants.NBT.TAG_COMPOUND)) return;
 
@@ -660,13 +654,13 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
         try {
             Object worldData = constructWorldData(data.getCompoundTag("worldData"));
-            mergeWorldData(builder, registry, worldData, recursionStack);
+            mergeWorldData(contents, registry, worldData, recursionStack);
         } finally {
             recursionStack.remove(holderKey);
         }
     }
 
-    private void mergeHolderPreview(PreviewAssembler preview, Object registry,
+    private void mergeHolderPreview(StructurePreviewStitcher preview, Object registry,
             NBTTagCompound data, BlockPos origin, PreviewTransform transform,
             Set<String> recursionStack) throws ReflectionException {
         if (!data.hasKey("worldData", Constants.NBT.TAG_COMPOUND)) return;
@@ -1025,15 +1019,6 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         return providers;
     }
 
-    private static String formatStructureName(String rawId) {
-        String normalized = rawId.replace('/', ' ').replace('_', ' ').replace('-', ' ');
-        normalized = CAMEL_CASE_BOUNDARY.matcher(normalized).replaceAll(" ");
-        normalized = normalized.trim().replaceAll("\\s+", " ");
-        if (normalized.isEmpty()) return rawId;
-
-        return normalized;
-    }
-
     private Object invokeRequired(Object target, String methodName) throws ReflectionException {
         return invokeRequired(target, methodName, new Class<?>[0]);
     }
@@ -1144,69 +1129,6 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         private EnumFacing applyFacing(EnumFacing facing) {
             BlockPos rotated = applyVector(new BlockPos(facing.getXOffset(), 0, facing.getZOffset()));
             return EnumFacing.getFacingFromVector(rotated.getX(), 0, rotated.getZ());
-        }
-    }
-
-    private static final class PreviewAssembler {
-        private final Map<BlockPos, IBlockState> blocks = new LinkedHashMap<>();
-
-        private void setBlock(BlockPos pos, @Nullable IBlockState state) {
-            if (state == null) return;
-
-            blocks.put(pos, state);
-        }
-
-        private List<StructureInfo.StructureLayer> buildLayers() {
-            if (blocks.isEmpty()) return Collections.emptyList();
-
-            Map<Integer, PreviewLayerAccumulator> layersByY = new TreeMap<>();
-            for (Map.Entry<BlockPos, IBlockState> entry : blocks.entrySet()) {
-                BlockPos pos = entry.getKey();
-                PreviewLayerAccumulator layer = layersByY.computeIfAbsent(pos.getY(), PreviewLayerAccumulator::new);
-                layer.add(pos, entry.getValue());
-            }
-
-            List<StructureInfo.StructureLayer> layers = new ArrayList<>();
-            for (PreviewLayerAccumulator accumulator : layersByY.values()) {
-                layers.add(accumulator.build());
-            }
-
-            return layers;
-        }
-    }
-
-    private static final class PreviewLayerAccumulator {
-        private final int y;
-        private int minX = Integer.MAX_VALUE;
-        private int maxX = Integer.MIN_VALUE;
-        private int minZ = Integer.MAX_VALUE;
-        private int maxZ = Integer.MIN_VALUE;
-        private final Map<BlockPos, IBlockState> blocks = new LinkedHashMap<>();
-
-        private PreviewLayerAccumulator(int y) {
-            this.y = y;
-        }
-
-        private void add(BlockPos pos, IBlockState state) {
-            blocks.put(pos, state);
-
-            if (pos.getX() < minX) minX = pos.getX();
-            if (pos.getX() > maxX) maxX = pos.getX();
-            if (pos.getZ() < minZ) minZ = pos.getZ();
-            if (pos.getZ() > maxZ) maxZ = pos.getZ();
-        }
-
-        private StructureInfo.StructureLayer build() {
-            int width = maxX - minX + 1;
-            int depth = maxZ - minZ + 1;
-            StructureInfo.StructureLayer layer = new StructureInfo.StructureLayer(y, width, depth, minX, minZ);
-
-            for (Map.Entry<BlockPos, IBlockState> entry : blocks.entrySet()) {
-                BlockPos pos = entry.getKey();
-                layer.setBlockState(pos.getX() - minX, pos.getZ() - minZ, entry.getValue());
-            }
-
-            return layer;
         }
     }
 

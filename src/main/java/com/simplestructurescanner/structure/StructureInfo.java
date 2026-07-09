@@ -21,7 +21,7 @@ import net.minecraftforge.fluids.FluidStack;
 public class StructureInfo {
     private final ResourceLocation id;
     private final LocalizedText displayName;
-    private final String modId;
+    private final String providerId;
     private int sizeX;
     private int sizeY;
     private int sizeZ;
@@ -39,10 +39,10 @@ public class StructureInfo {
     // Layer data for structure viewer (Y-level indexed)
     private List<StructureLayer> layers;
 
-    public StructureInfo(ResourceLocation id, LocalizedText displayName, String modId, int sizeX, int sizeY, int sizeZ) {
+    public StructureInfo(ResourceLocation id, LocalizedText displayName, String providerId, int sizeX, int sizeY, int sizeZ) {
         this.id = id;
         this.displayName = displayName;
-        this.modId = modId;
+        this.providerId = providerId;
         this.sizeX = sizeX;
         this.sizeY = sizeY;
         this.sizeZ = sizeZ;
@@ -64,7 +64,7 @@ public class StructureInfo {
     }
 
     public String getModId() {
-        return modId;
+        return providerId;
     }
 
     public int getSizeX() {
@@ -130,7 +130,7 @@ public class StructureInfo {
      * @return true if the structure can generate in this dimension
      */
     public boolean isValidForDimension(int dimensionId) {
-        if (StructureSearchOverrides.isStructureHiddenInDimension(modId, id, dimensionId)) return false;
+        if (StructureSearchOverrides.isStructureHiddenInDimension(providerId, id, dimensionId)) return false;
         if (validDimensions == null) return true;
         if (validDimensions.isEmpty()) return false;
 

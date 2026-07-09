@@ -524,6 +524,8 @@ abstract class AbstractEntityBrowserWindow<T> {
         Gui.drawRect(x - 1, y - 1, x + size + 1, y + size + 1, 0xFF404040);
         Gui.drawRect(x, y, x + size, y + size, 0xFF202020);
 
+        preparePreviewEntity(entity);
+
         float maxDimension = Math.max(1.0F, Math.max(entity.height, entity.width));
         float scale = size / maxDimension / 2.0F;
 
@@ -576,6 +578,24 @@ abstract class AbstractEntityBrowserWindow<T> {
         GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
         GlStateManager.disableTexture2D();
         GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+    }
+
+    // Some mod renderers apply world-space visibility or culling checks before drawing.
+    // Keep preview entities aligned with the active camera position so those checks do not
+    // incorrectly treat off-world preview instances at 0,0,0 as hidden.
+    private void preparePreviewEntity(Entity entity) {
+        if (entity == null) return;
+
+        Entity cameraEntity = Minecraft.getMinecraft().getRenderViewEntity();
+        if (cameraEntity == null) return;
+
+        entity.prevPosX = cameraEntity.prevPosX;
+        entity.prevPosY = cameraEntity.prevPosY;
+        entity.prevPosZ = cameraEntity.prevPosZ;
+        entity.lastTickPosX = cameraEntity.lastTickPosX;
+        entity.lastTickPosY = cameraEntity.lastTickPosY;
+        entity.lastTickPosZ = cameraEntity.lastTickPosZ;
+        entity.setPosition(cameraEntity.posX, cameraEntity.posY, cameraEntity.posZ);
     }
 
     private float getMaxScroll() {

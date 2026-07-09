@@ -17,6 +17,8 @@ import net.minecraft.world.World;
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.abyssalcraft.AbyssalCraftStructureProvider;
 import com.simplestructurescanner.structure.aether.AetherStructureProvider;
+import com.simplestructurescanner.structure.bomd.BomdStructureProvider;
+import com.simplestructurescanner.structure.cqrepoured.ChocolateQuestRepouredStructureProvider;
 import com.simplestructurescanner.structure.external.ExternalStructureProviderLoader;
 import com.simplestructurescanner.structure.iceandfire.IceAndFireStructureProvider;
 import com.simplestructurescanner.structure.pillar.PillarStructureProvider;
@@ -39,7 +41,9 @@ public class StructureProviderRegistry {
         AetherStructureProvider.class,
         IceAndFireStructureProvider.class,
         PillarStructureProvider.class,
-        RecurrentComplexStructureProvider.class
+        RecurrentComplexStructureProvider.class,
+        BomdStructureProvider.class,
+        ChocolateQuestRepouredStructureProvider.class
         // <b>IMPORTANT, DO NOT REMOVE:</b> Add other provider classes here
                                                                                                  );
 

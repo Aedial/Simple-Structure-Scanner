@@ -34,7 +34,6 @@ public class JEIIntegration implements IModPlugin {
 
     @Override
     public void register(IModRegistry registry) {
-        StructureProviderRegistry.discoverProviders();
         registry.addRecipeRegistryPlugin(new StructureJeiRegistryPlugin());
     }
 

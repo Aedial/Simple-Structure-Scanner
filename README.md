@@ -19,7 +19,11 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
   - Dungeons from the Aether mod.
   - Some specific structures from AbyssalCraft.
   - Ice and Fire's structures (none can be searched for, due to being non-determinstic).
+  - Unseen's Dungeon Additions structures.
   - Custom structures from the Pillar mod.
+  - Default and custom structures from Recurrent Complex.
+  - Default and custom structures from Chocolate Quest Repoured.
+
 
 ### Search/Visbility blacklist
 On top of the config blacklist/whitelist (see Config section), there exists a more controlable and fine-grained blacklist system for search and visibility. Visibility is whether the structure will show in the list at all (allowing preview, blocks, entities, loot), while Search is whether the structure will be searchable (arrow pointing to the nearest in-world). It is perfectly reasonable to just use Simple Structure Scanner for the metadata alone, leaving the search disabled. If you want to disable **ALL** search altogether, I would redirect you to the enableSearch config.
@@ -86,6 +90,13 @@ The filter box matches both localized and unlocalized structure names. This mean
 
 ### The structure wasn't there.
 Due to how complex the process is, structures from a mod may prevent or overlap with other structures from another mod. In this case, you should try searching for another structure of the same type. Use the arrows in the right panel to cycle through multiple results.
+
+### The GUI freezes for a few seconds when I open a structure.
+Some structures are incredibly large (in the 100k+ blocks), which takes some time to build the preview for (to ensure smooth framerate even at such large sizes). This can cause the GUI to freeze for a few seconds while the preview is being built. Some structures (from Chocolate Quest Repoured, for example) may even reach 1M+ blocks, which can look like the client crashed.
+
+### Some structure previews seem broken, looking like scattered rooms.
+Some structures are generated procedurally (e.g., Recurrent Complex, Unseen's Dungeon Additions, and Chocolate Quest Repoured), which means the structure is not a single static layout. In these cases, the preview will be dynamically generated from possible static rooms and corridors, stitched together in a way that may not match an actual generated structure. Of course, it is still possible that the stiching itself has issues (although it is a minor inconvenience, as the preview is still technically correct).
+
 
 ## Building
 Run:

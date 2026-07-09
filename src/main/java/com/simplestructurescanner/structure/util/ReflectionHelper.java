@@ -1,6 +1,7 @@
 package com.simplestructurescanner.structure.util;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
 
 import javax.annotation.Nullable;
@@ -15,6 +16,37 @@ import com.simplestructurescanner.SimpleStructureScanner;
 public final class ReflectionHelper {
 
     private ReflectionHelper() {
+    }
+
+    /**
+     * Safely load a class by name without throwing an exception.
+     *
+     * @param className the fully qualified class name
+     * @return the class, or null if not found
+     */
+    @Nullable
+    public static Class<?> loadClass(String className) {
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            SimpleStructureScanner.LOGGER.debug("Class not found: {}", className);
+            return null;
+        }
+    }
+
+    /**
+     * Load a class by name, throwing an exception if not found.
+     *
+     * @param className the fully qualified class name
+     * @return the class
+     * @throws ReflectionException if the class cannot be found
+     */
+    public static Class<?> loadClassRequired(String className) throws ReflectionException {
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            throw new ReflectionException("Class not found: " + className, e);
+        }
     }
 
     /**
@@ -47,6 +79,24 @@ public final class ReflectionHelper {
      */
     public static Object getStaticField(Class<?> clazz, String fieldName) throws ReflectionException {
         return getField(null, clazz, fieldName);
+    }
+
+    /**
+     * Get a static field value from a class, returning null on failure.
+     *
+     * @param clazz the class containing the field, or null
+     * @param fieldName the name of the field
+     * @return the field value, or null if it cannot be read
+     */
+    @Nullable
+    public static Object getStaticFieldOrNull(@Nullable Class<?> clazz, String fieldName) {
+        if (clazz == null) return null;
+
+        try {
+            return getStaticField(clazz, fieldName);
+        } catch (ReflectionException e) {
+            return null;
+        }
     }
 
     /**
@@ -126,6 +176,18 @@ public final class ReflectionHelper {
     }
 
     /**
+     * Get a static boolean field value from a class.
+     *
+     * @param clazz the class containing the field
+     * @param fieldName the name of the field
+     * @return the boolean value
+     * @throws ReflectionException if the field cannot be accessed
+     */
+    public static boolean getStaticBooleanField(Class<?> clazz, String fieldName) throws ReflectionException {
+        return getBooleanField(null, clazz, fieldName);
+    }
+
+    /**
      * Get a static float field value from a class.
      *
      * @param clazz the class containing the field
@@ -135,6 +197,46 @@ public final class ReflectionHelper {
      */
     public static float getStaticFloatField(Class<?> clazz, String fieldName) throws ReflectionException {
         return getFloatField(null, clazz, fieldName);
+    }
+
+    /**
+     * Read a static boolean field value from a class, falling back to a default when
+     * the class, field, or conversion is unavailable.
+     *
+     * @param ownerClass the class containing the field, or null
+     * @param fieldName the name of the field, or null
+     * @param defaultValue the fallback value to return on failure
+     * @return the field value, or {@code defaultValue} if it cannot be read
+     */
+    public static boolean readStaticBoolean(@Nullable Class<?> ownerClass, @Nullable String fieldName,
+            boolean defaultValue) {
+        if (ownerClass == null || fieldName == null) return defaultValue;
+
+        try {
+            return getStaticBooleanField(ownerClass, fieldName);
+        } catch (ReflectionException e) {
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Read a static int field value from a class, falling back to a default when
+     * the class, field, or conversion is unavailable.
+     *
+     * @param ownerClass the class containing the field, or null
+     * @param fieldName the name of the field, or null
+     * @param defaultValue the fallback value to return on failure
+     * @return the field value, or {@code defaultValue} if it cannot be read
+     */
+    public static int readStaticIntField(@Nullable Class<?> ownerClass, @Nullable String fieldName,
+            int defaultValue) {
+        if (ownerClass == null || fieldName == null) return defaultValue;
+
+        try {
+            return getStaticIntField(ownerClass, fieldName);
+        } catch (ReflectionException e) {
+            return defaultValue;
+        }
     }
 
     /**
@@ -154,34 +256,78 @@ public final class ReflectionHelper {
     }
 
     /**
-     * Safely load a class by name without throwing an exception.
+     * Invoke a public instance method with no parameters.
      *
-     * @param className the fully qualified class name
-     * @return the class, or null if not found
+     * @param target the target object
+     * @param methodName the method name
+     * @return the invoked method result
+     * @throws ReflectionException if the method cannot be invoked
      */
-    @Nullable
-    public static Class<?> loadClass(String className) {
+    public static Object invokeRequired(Object target, String methodName) throws ReflectionException {
+        return invokeRequired(target, methodName, new Class<?>[0]);
+    }
+
+    /**
+     * Invoke a public instance method using an explicit signature.
+     *
+     * @param target the target object
+     * @param methodName the method name
+     * @param parameterTypes the exact parameter signature to resolve
+     * @param args the method arguments
+     * @return the invoked method result
+     * @throws ReflectionException if the method cannot be invoked
+     */
+    public static Object invokeRequired(Object target, String methodName, Class<?>[] parameterTypes,
+            Object... args) throws ReflectionException {
         try {
-            return Class.forName(className);
-        } catch (ClassNotFoundException e) {
-            SimpleStructureScanner.LOGGER.debug("Class not found: {}", className);
-            return null;
+            Method method = target.getClass().getMethod(methodName, parameterTypes);
+            method.setAccessible(true);
+            return method.invoke(target, args);
+        } catch (Exception e) {
+            throw new ReflectionException(
+                "Failed to invoke method '" + methodName + "' on " + target.getClass().getName(), e);
         }
     }
 
     /**
-     * Load a class by name, throwing an exception if not found.
+     * Invoke a public static method using an explicit signature.
      *
-     * @param className the fully qualified class name
-     * @return the class
-     * @throws ReflectionException if the class cannot be found
+     * @param ownerClass the class declaring the static method
+     * @param methodName the method name
+     * @param parameterTypes the exact parameter signature to resolve
+     * @param args the method arguments
+     * @return the invoked method result
+     * @throws ReflectionException if the method cannot be invoked
      */
-    public static Class<?> loadClassRequired(String className) throws ReflectionException {
+    public static Object invokeStaticRequired(Class<?> ownerClass, String methodName,
+            Class<?>[] parameterTypes, Object... args) throws ReflectionException {
         try {
-            return Class.forName(className);
-        } catch (ClassNotFoundException e) {
-            throw new ReflectionException("Class not found: " + className, e);
+            Method method = ownerClass.getMethod(methodName, parameterTypes);
+            method.setAccessible(true);
+            return method.invoke(null, args);
+        } catch (Exception e) {
+            throw new ReflectionException(
+                "Failed to invoke static method '" + methodName + "' on " + ownerClass.getName(), e);
         }
+    }
+
+    /**
+     * Invoke an instance method and require a boolean result.
+     *
+     * @param target the target object
+     * @param methodName the method name
+     * @param parameterTypes the exact parameter signature to resolve
+     * @param args the method arguments
+     * @return the boolean result
+     * @throws ReflectionException if the method cannot be invoked or does not return a boolean
+     */
+    public static boolean invokeBooleanRequired(Object target, String methodName,
+            Class<?>[] parameterTypes, Object... args) throws ReflectionException {
+        Object value = invokeRequired(target, methodName, parameterTypes, args);
+
+        if (value instanceof Boolean) return (Boolean) value;
+
+        throw new ReflectionException("Unexpected boolean reflection payload from '" + methodName + "': " + value);
     }
 
     /**

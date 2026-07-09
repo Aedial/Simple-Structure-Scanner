@@ -119,6 +119,19 @@ public class StructureNBTParser {
         }
     }
 
+    public interface StructureContentSink {
+        void addBlockCount(@Nullable Object key, @Nullable IBlockState representativeState);
+
+        void addBlockCount(@Nullable Object key, @Nullable IBlockState representativeState,
+                @Nullable NBTTagCompound blockEntityData);
+
+        void addEntity(ResourceLocation entityId, boolean spawner);
+
+        void addLootTable(ResourceLocation lootTableId);
+
+        void addLootEntry(@Nullable LootEntry lootEntry);
+    }
+
     /**
      * Result of parsing a structure NBT file.
      */
@@ -149,7 +162,7 @@ public class StructureNBTParser {
     /**
      * Mutable builder used by parser extensions to add blocks, layers, entities, and loot.
      */
-    public static class ParsedStructureBuilder {
+    public static class ParsedStructureBuilder implements StructureContentSink {
         private final int sizeX;
         private final int sizeY;
         private final int sizeZ;
@@ -182,10 +195,12 @@ public class StructureNBTParser {
             return sizeZ;
         }
 
+        @Override
         public void addBlockCount(@Nullable Object key, @Nullable IBlockState representativeState) {
             addBlockCount(key, representativeState, null);
         }
 
+        @Override
         public void addBlockCount(@Nullable Object key, @Nullable IBlockState representativeState,
                 @Nullable NBTTagCompound blockEntityData) {
             if (key == null || representativeState == null) return;
@@ -212,17 +227,20 @@ public class StructureNBTParser {
             layerBlocks.get(y).setBlockState(x, z, state, blockEntityData);
         }
 
+        @Override
         public void addEntity(ResourceLocation entityId, boolean spawner) {
             EntityKey key = new EntityKey(entityId, spawner);
             entityCounts.merge(key, 1, Integer::sum);
         }
 
+        @Override
         public void addLootTable(ResourceLocation lootTableId) {
             if (lootTableId == null) return;
 
             lootTableIds.add(lootTableId);
         }
 
+        @Override
         public void addLootEntry(@Nullable LootEntry lootEntry) {
             if (lootEntry == null) return;
             if (containsEquivalentLootEntry(lootEntry)) return;
@@ -483,12 +501,12 @@ public class StructureNBTParser {
         return builder.build();
     }
 
-    public static void handleDefaultBlockEntity(ParsedStructureBuilder builder, @Nullable Block block,
+    public static void handleDefaultBlockEntity(StructureContentSink builder, @Nullable Block block,
             NBTTagCompound nbtData) {
         handleDefaultBlockEntity(builder, null, block, nbtData);
     }
 
-    public static void handleDefaultBlockEntity(ParsedStructureBuilder builder, @Nullable IBlockState state,
+    public static void handleDefaultBlockEntity(StructureContentSink builder, @Nullable IBlockState state,
             @Nullable Block block, NBTTagCompound nbtData) {
         // Spawner and LootTable tags are widely used enough to belong in the shared default parser.
         if (block == Blocks.MOB_SPAWNER) parseSpawnerTileEntityNBT(builder, nbtData);
@@ -504,7 +522,7 @@ public class StructureNBTParser {
         if (fixedInventory != null) builder.addLootEntry(fixedInventory);
     }
 
-    public static void handleDefaultEntity(ParsedStructureBuilder builder, NBTTagCompound entityNbt) {
+    public static void handleDefaultEntity(StructureContentSink builder, NBTTagCompound entityNbt) {
         String entityId = entityNbt.getString("id");
         if (entityId.isEmpty()) return;
 
@@ -525,7 +543,7 @@ public class StructureNBTParser {
         return EntityLiving.class.isAssignableFrom(entityClass);
     }
 
-    public static void parseSpawnerTileEntityNBT(ParsedStructureBuilder builder, NBTTagCompound nbt) {
+    public static void parseSpawnerTileEntityNBT(StructureContentSink builder, NBTTagCompound nbt) {
         Set<String> foundIds = new LinkedHashSet<>();
 
         // SpawnPotentials is preferred because it can expose every possible mob a spawner may create.

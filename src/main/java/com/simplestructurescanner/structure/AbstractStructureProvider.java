@@ -194,6 +194,10 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         info.setLootTables(mergedEntries);
     }
 
+    protected void addLoot(StructureNBTParser.ParsedStructureBuilder builder, ResourceLocation lootTableId) {
+        builder.addLootEntry(createLootEntry(lootTableId, "gui.structurescanner.loot.chest"));
+    }
+
     protected void setEntities(String path, EntityEntry... entityEntries) {
         setEntities(path, Arrays.asList(entityEntries));
     }
@@ -237,6 +241,10 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         }
 
         info.setEntities(mergedEntries);
+    }
+
+    protected void addEntity(StructureNBTParser.ParsedStructureBuilder builder, ResourceLocation entityId) {
+        builder.addEntity(entityId, false);
     }
 
     public static void apply(StructureInfo info, StructureNBTParser.ParsedStructure parsed) {
