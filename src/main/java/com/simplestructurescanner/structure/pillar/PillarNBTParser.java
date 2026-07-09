@@ -70,7 +70,8 @@ public class PillarNBTParser {
 
         @Nullable
         @Override
-        public Object getBlockCountKey(@Nullable IBlockState state, @Nullable Block block) {
+        public Object getBlockCountKey(@Nullable IBlockState state, @Nullable Block block,
+            @Nullable NBTTagCompound blockEntityData) {
             return block;
         }
 

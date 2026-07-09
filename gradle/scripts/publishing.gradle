@@ -84,6 +84,10 @@ if (propertyBool('publish_to_curseforge')) {
 
                 relations {
                     optionalDependency 'jei'
+                    optionalDependency 'journeymap'
+                    optionalDependency 'xaeros-minimap'
+                    // optionalDependency 'xaeros-world-map'
+                    optionalDependency 'game-stages'
                 }
             }
             options {

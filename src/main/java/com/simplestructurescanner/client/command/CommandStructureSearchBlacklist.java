@@ -1,5 +1,6 @@
 package com.simplestructurescanner.client.command;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -30,18 +31,21 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
 
     private static final List<String> BLACKLIST_TYPES = Arrays.asList("hidden", "search");
     private static final List<String> ACTIONS = Collections.singletonList("remove");
+    private static final List<String> STAGE_FILTER_TYPES = Arrays.asList("stage", "nostage");
     private static final List<String> ENTRY_TYPES = Arrays.asList("structure", "dimension", "structure_dimension");
 
     private static final class ParsedTarget {
         private final StructureSearchOverrides.EntryType entryType;
         private final ResourceLocation structureId;
         private final Integer dimensionId;
+        private final StructureSearchOverrides.StageCondition stageCondition;
 
         private ParsedTarget(StructureSearchOverrides.EntryType entryType, ResourceLocation structureId,
-                Integer dimensionId) {
+                Integer dimensionId, StructureSearchOverrides.StageCondition stageCondition) {
             this.entryType = entryType;
             this.structureId = structureId;
             this.dimensionId = dimensionId;
+            this.stageCondition = stageCondition;
         }
     }
 
@@ -57,7 +61,7 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
 
     @Override
     public String getUsage(ICommandSender sender) {
-        return "/sssblacklist <hidden|search> remove <provider> <structure|dimension|structure_dimension> <value...>";
+        return "/sssblacklist <hidden|search> remove <provider> [stage|nostage <stage>] <structure|dimension|structure_dimension> <value...>";
     }
 
     @Override
@@ -96,7 +100,8 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
                 .collect(Collectors.toList());
             return getListOfStringsMatchingLastWord(args, providerIds);
         }
-        if (args.length == 4) return getListOfStringsMatchingLastWord(args, ENTRY_TYPES);
+        if (args.length == 4) return getListOfStringsMatchingLastWord(args, combineSuggestions(STAGE_FILTER_TYPES, ENTRY_TYPES));
+        if (args.length == 6 && isStageFilterToken(args[3])) return getListOfStringsMatchingLastWord(args, ENTRY_TYPES);
 
         return Collections.emptyList();
     }
@@ -109,7 +114,7 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
     private void removeFileEntry(ICommandSender sender, StructureSearchOverrides.BlacklistType blacklistType,
             String providerId, ParsedTarget target) {
         boolean removed = StructureSearchOverrides.removeEntry(blacklistType, providerId,
-            target.entryType, target.structureId, target.dimensionId);
+            target.entryType, target.structureId, target.dimensionId, target.stageCondition);
 
         if (removed) {
             reloadProvider(providerId);
@@ -122,6 +127,30 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
 
     private ITextComponent createRemoveMessage(boolean removed, StructureSearchOverrides.BlacklistType blacklistType,
             String providerId, ParsedTarget target) {
+        if (target.stageCondition != null) {
+            ITextComponent condition = describeStageCondition(target.stageCondition);
+
+            switch (target.entryType) {
+                case STRUCTURE:
+                    return new TextComponentTranslation(
+                        removed ? "commands.structurescanner.blacklist.removedStructureConditional"
+                            : "commands.structurescanner.blacklist.notFoundStructureConditional",
+                        providerId, target.structureId, describeBlacklistType(blacklistType), condition);
+                case DIMENSION:
+                    return new TextComponentTranslation(
+                        removed ? "commands.structurescanner.blacklist.removedDimensionConditional"
+                            : "commands.structurescanner.blacklist.notFoundDimensionConditional",
+                        providerId, target.dimensionId, describeBlacklistType(blacklistType), condition);
+                case STRUCTURE_DIMENSION:
+                    return new TextComponentTranslation(
+                        removed ? "commands.structurescanner.blacklist.removedStructureDimensionConditional"
+                            : "commands.structurescanner.blacklist.notFoundStructureDimensionConditional",
+                        providerId, target.structureId, target.dimensionId, describeBlacklistType(blacklistType), condition);
+                default:
+                    return new TextComponentString(getUsage(null));
+            }
+        }
+
         switch (target.entryType) {
             case STRUCTURE:
                 return new TextComponentTranslation(
@@ -147,6 +176,8 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
             throws CommandException {
         switch (token.toLowerCase(Locale.ROOT)) {
             case "hidden":
+            case "visibility":
+            case "visible":
                 return StructureSearchOverrides.BlacklistType.HIDDEN;
             case "search":
             case "searchable":
@@ -158,27 +189,49 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
 
     private ParsedTarget parseTarget(ICommandSender sender, String providerId, String[] args,
             int typeIndex) throws CommandException {
+        StructureSearchOverrides.StageCondition stageCondition = null;
         String type = args[typeIndex].toLowerCase(Locale.ROOT);
+
+        StructureSearchOverrides.StageConditionType stageConditionType = StructureSearchOverrides.StageConditionType.fromToken(type);
+        if (stageConditionType != null) {
+            if (args.length <= typeIndex + 2) throw new WrongUsageException(getUsage(sender));
+
+            stageCondition = StructureSearchOverrides.StageCondition.of(stageConditionType, args[typeIndex + 1]);
+            typeIndex += 2;
+            type = args[typeIndex].toLowerCase(Locale.ROOT);
+        }
 
         switch (type) {
             case "structure":
                 if (args.length != typeIndex + 2) throw new WrongUsageException(getUsage(sender));
 
                 return new ParsedTarget(StructureSearchOverrides.EntryType.STRUCTURE,
-                    parseStructureId(providerId, args[typeIndex + 1]), null);
+                    parseStructureId(providerId, args[typeIndex + 1]), null, stageCondition);
             case "dimension":
                 if (args.length != typeIndex + 2) throw new WrongUsageException(getUsage(sender));
 
                 return new ParsedTarget(StructureSearchOverrides.EntryType.DIMENSION,
-                    null, parseInt(args[typeIndex + 1]));
+                    null, parseInt(args[typeIndex + 1]), stageCondition);
             case "structure_dimension":
                 if (args.length != typeIndex + 3) throw new WrongUsageException(getUsage(sender));
 
                 return new ParsedTarget(StructureSearchOverrides.EntryType.STRUCTURE_DIMENSION,
-                    parseStructureId(providerId, args[typeIndex + 1]), parseInt(args[typeIndex + 2]));
+                    parseStructureId(providerId, args[typeIndex + 1]), parseInt(args[typeIndex + 2]), stageCondition);
             default:
                 throw new WrongUsageException(getUsage(sender));
         }
+    }
+
+    private static boolean isStageFilterToken(String token) {
+        return StructureSearchOverrides.StageConditionType.fromToken(token) != null;
+    }
+
+    private static List<String> combineSuggestions(List<String> first, List<String> second) {
+        List<String> suggestions = new ArrayList<>(first.size() + second.size());
+        suggestions.addAll(first);
+        suggestions.addAll(second);
+
+        return suggestions;
     }
 
     private static ITextComponent describeBlacklistType(StructureSearchOverrides.BlacklistType blacklistType) {
@@ -187,6 +240,19 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
                 return new TextComponentTranslation("commands.structurescanner.blacklist.type.hidden");
             case SEARCH:
                 return new TextComponentTranslation("commands.structurescanner.blacklist.type.search");
+            default:
+                return new TextComponentString("");
+        }
+    }
+
+    private static ITextComponent describeStageCondition(StructureSearchOverrides.StageCondition stageCondition) {
+        switch (stageCondition.getType()) {
+            case PRESENT:
+                return new TextComponentTranslation("commands.structurescanner.blacklist.condition.stage",
+                    stageCondition.getStageName());
+            case MISSING:
+                return new TextComponentTranslation("commands.structurescanner.blacklist.condition.nostage",
+                    stageCondition.getStageName());
             default:
                 return new TextComponentString("");
         }

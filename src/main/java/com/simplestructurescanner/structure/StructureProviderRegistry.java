@@ -17,9 +17,12 @@ import net.minecraft.world.World;
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.abyssalcraft.AbyssalCraftStructureProvider;
 import com.simplestructurescanner.structure.aether.AetherStructureProvider;
+import com.simplestructurescanner.structure.bomd.BomdStructureProvider;
+import com.simplestructurescanner.structure.cqrepoured.ChocolateQuestRepouredStructureProvider;
 import com.simplestructurescanner.structure.external.ExternalStructureProviderLoader;
 import com.simplestructurescanner.structure.iceandfire.IceAndFireStructureProvider;
 import com.simplestructurescanner.structure.pillar.PillarStructureProvider;
+import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexStructureProvider;
 import com.simplestructurescanner.structure.vanilla.VanillaStructureProvider;
 
 
@@ -37,7 +40,10 @@ public class StructureProviderRegistry {
         AbyssalCraftStructureProvider.class,
         AetherStructureProvider.class,
         IceAndFireStructureProvider.class,
-        PillarStructureProvider.class
+        PillarStructureProvider.class,
+        RecurrentComplexStructureProvider.class,
+        BomdStructureProvider.class,
+        ChocolateQuestRepouredStructureProvider.class
         // <b>IMPORTANT, DO NOT REMOVE:</b> Add other provider classes here
                                                                                                  );
 
@@ -214,6 +220,13 @@ public class StructureProviderRegistry {
 
         return StructureSearchOverrides.isStructureHiddenInDimension(
             provider.getProviderId(), structureId, dimensionId);
+    }
+
+    public static boolean isStructureHidden(ResourceLocation structureId) {
+        StructureProvider provider = getProviderForStructure(structureId);
+        if (provider == null) return false;
+
+        return StructureSearchOverrides.isStructureHidden(provider.getProviderId(), structureId);
     }
 
     /**

@@ -1,7 +1,9 @@
 package com.simplestructurescanner.client.render;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import javax.annotation.Nonnull;
@@ -14,6 +16,7 @@ import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ITickable;
 import net.minecraft.util.datafix.DataFixer;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.EnumSkyBlock;
@@ -46,6 +49,7 @@ public class DummyWorld extends World {
     );
 
     public final Set<BlockPos> renderedBlocks = new HashSet<>();
+    private final Map<BlockPos, TileEntity> tileEntities = new HashMap<>();
     private final Vector3f minPos = new Vector3f(Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
     private final Vector3f maxPos = new Vector3f(Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE);
 
@@ -79,18 +83,23 @@ public class DummyWorld extends World {
 
     public void addBlock(BlockPos pos, IBlockState state, TileEntity tileEntity) {
         addBlock(pos, state);
-        if (tileEntity != null) {
-            try {
-                setTileEntity(pos, tileEntity);
-            } catch (Exception ignored) {
-            }
-        }
+        if (tileEntity == null) return;
+
+        setTileEntity(pos, tileEntity);
     }
 
     public void clear() {
         renderedBlocks.clear();
+        clearTileEntities();
         minPos.set(Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE);
         maxPos.set(Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE);
+    }
+
+    public void clearTileEntities() {
+        if (tileEntities.isEmpty()) return;
+
+        Set<BlockPos> positions = new HashSet<>(tileEntities.keySet());
+        for (BlockPos pos : positions) removeTileEntity(pos);
     }
 
     @Override
@@ -155,6 +164,34 @@ public class DummyWorld extends World {
     public int getCombinedLight(@Nonnull BlockPos pos, int lightValue) {
         // Full brightness for preview rendering
         return 15 << 20 | 15 << 4;
+    }
+
+    @Nullable
+    @Override
+    public TileEntity getTileEntity(@Nonnull BlockPos pos) {
+        return tileEntities.get(pos);
+    }
+
+    @Override
+    public void setTileEntity(BlockPos pos, @Nullable TileEntity tileEntityIn) {
+        removeTileEntity(pos);
+        if (tileEntityIn == null) return;
+
+        tileEntityIn.setWorld(this);
+        tileEntityIn.setPos(pos);
+        tileEntities.put(pos, tileEntityIn);
+        loadedTileEntityList.add(tileEntityIn);
+
+        if (tileEntityIn instanceof ITickable) tickableTileEntities.add(tileEntityIn);
+    }
+
+    @Override
+    public void removeTileEntity(BlockPos pos) {
+        TileEntity tileEntity = tileEntities.remove(pos);
+        if (tileEntity == null) return;
+
+        loadedTileEntityList.remove(tileEntity);
+        tickableTileEntities.remove(tileEntity);
     }
 
     @Override

@@ -34,6 +34,7 @@ import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.util.StructureTranslationKeys;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 
 
@@ -82,7 +83,7 @@ public final class ExternalStructureProviderLoader {
             JsonObject root = parsed.getAsJsonObject();
             String providerId = readRequiredString(root, "providerId", file);
             String modNameKey = readOptionalString(root, "modNameKey");
-            if (modNameKey == null || modNameKey.trim().isEmpty()) modNameKey = getDefaultProviderNameKey(providerId);
+            if (modNameKey == null || modNameKey.trim().isEmpty()) modNameKey = StructureTranslationKeys.providerNameKey(providerId);
 
             List<String> requiredMods = readStringList(root.get("requiredMods"));
             String nbtRoot = readOptionalString(root, "nbtRoot");
@@ -126,7 +127,7 @@ public final class ExternalStructureProviderLoader {
         String idText = readRequiredString(structureObject, "id", file);
         ResourceLocation id = new ResourceLocation(idText);
         String displayNameKey = readOptionalString(structureObject, "displayNameKey");
-        if (displayNameKey == null || displayNameKey.trim().isEmpty()) displayNameKey = getDefaultStructureNameKey(id);
+        if (displayNameKey == null || displayNameKey.trim().isEmpty()) displayNameKey = StructureTranslationKeys.structureNameKey(id);
 
         LocalizedText displayName = LocalizedText.translatable(displayNameKey);
 
@@ -333,13 +334,5 @@ public final class ExternalStructureProviderLoader {
         if (configRoot == null) return null;
 
         return new File(configRoot, DIRECTORY_NAME);
-    }
-
-    private static String getDefaultProviderNameKey(String providerId) {
-        return "gui.structurescanner.provider." + providerId;
-    }
-
-    private static String getDefaultStructureNameKey(ResourceLocation id) {
-        return "gui.structurescanner.structures." + id.getNamespace() + "." + id.getPath().replace('/', '.');
     }
 }

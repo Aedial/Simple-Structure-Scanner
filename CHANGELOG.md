@@ -8,12 +8,39 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
+## [1.3.0] - 2026-07-30
+### Added
+- Add optional GameStages-aware blacklist entries for structure visibility and searching. The player's stages are snapshotted when the Structure Scanner GUI opens, so `stage` and `nostage` rules can gate what that session may view or search.
+- Add an optional Map button beside located structure coordinates, opening JourneyMap's waypoint editor when available and otherwise adding an equivalent Xaero's Minimap waypoint.
+- Add JEI structure preview, blocks, and loot categories with in-panel buttons to switch views for the same structure or open that structure directly in the scanner.
+- Add client config toggles to disable all Structure Scanner JEI categories at once or disable the preview, blocks, and loot categories individually.
+- Add native providers for Unseen's Dungeon Additions and Chocolate Quest Repoured, with structure search and CQR custom dungeon handling.
+
+### Fixed
+- Fix tracked structure overlays and guiding arrows ignoring the hidden-HUD toggle, which could leave the tracker visible and darken the screen after pressing F1.
+- Revert some of the TESR fixes of fab37568eed6814f8f3d275c1337567ffef11105 (1.2.0), as they caused many of the TESRs in preview window to be broken.
+- Fix structure preview window inheriting broken GL/lightmap state from earlier GUI draws, which could make some TESR such as chests render dark or partially obscured.
+- Fix Recurrent Complex provider not exposing localization keys for the structure names (instead, it was using the structure file name as the display name).
+
+
+## [1.2.1] - 2026-06-27
+### Fixed
+- Fix Entity Preview window not enabling depth, causing entities to render incorrectly (all layers overlapping).
+
+
 ## [1.2.0] - 2026-06-15
 ### Added
-- Add Recurrent Complex structure provider, supporting all RC structures with their configured loot tables and entity spawners.
+- Add Recurrent Complex structure provider, supporting all RC structures with their configured loot tables and entity spawners. The search is not yet implemented, because it is substantially more complex than Pillar's.
+- Add the texture for the Structure Capture Ruler item.
+
+### Fixed
+- Fix Structure Capture Ruler rounding the player position incorrectly, which could push captured corners onto the positive-adjacent block instead of the actual feet block.
+- Fix TESR rendering (chests, beds, etc.) in the structure preview. These blocks should now render properly. The full Global TESR rendering is not implemented, as it is quite heavy, but can be added later if there is demand for it.
+- Fix structure NBT previews dropping tile-entity display data, so End Ship dragon heads and mob spawners now render with their correct stored NBT instead of falling back to default skull and pig placeholders.
+- Fix structure provider registration crashing on some modded tile entities.
 
 
-## [1.1.0] - 2026-05-29
+## [1.1.0] - 2026-05-30
 ### Added
 - Add the Structure Capture Ruler, a tool that allows you to select two corners in-world and save the structure as an NBT file, with options to review and exclude blocks/entities/loot entries before saving. Use it to easily save structure previews for providers (or other mods) without manually entering the full structure description in the provider.
 - Populate the structure preview with the captured structure data for all existing providers, allowing accurate preview and content display for these structures.

@@ -30,6 +30,10 @@ public class ModConfig {
     public static String clientFilterText = "";
     public static boolean clientShowNonSearchable = true;
     public static boolean clientShowCurrentDimensionOnly = false;
+    public static boolean clientEnableJeiCategories = true;
+    public static boolean clientEnableJeiPreview = true;
+    public static boolean clientEnableJeiBlocks = true;
+    public static boolean clientEnableJeiLoot = true;
     public static List<String> clientTrackedStructureIds = new ArrayList<>();
     public static List<String> clientStructureWhitelist = new ArrayList<>();
     public static List<String> clientStructureBlacklist = new ArrayList<>();
@@ -88,6 +92,22 @@ public class ModConfig {
         prop = config.get("client", "showLootTables", clientShowLootTables);
         prop.setLanguageKey("config.structurescanner.client.showLootTables");
         clientShowLootTables = prop.getBoolean();
+
+        prop = config.get("client", "enableJeiCategories", clientEnableJeiCategories);
+        prop.setLanguageKey("config.structurescanner.client.enableJeiCategories");
+        clientEnableJeiCategories = prop.getBoolean();
+
+        prop = config.get("client", "enableJeiPreview", clientEnableJeiPreview);
+        prop.setLanguageKey("config.structurescanner.client.enableJeiPreview");
+        clientEnableJeiPreview = prop.getBoolean();
+
+        prop = config.get("client", "enableJeiBlocks", clientEnableJeiBlocks);
+        prop.setLanguageKey("config.structurescanner.client.enableJeiBlocks");
+        clientEnableJeiBlocks = prop.getBoolean();
+
+        prop = config.get("client", "enableJeiLoot", clientEnableJeiLoot);
+        prop.setLanguageKey("config.structurescanner.client.enableJeiLoot");
+        clientEnableJeiLoot = prop.getBoolean();
 
         prop = config.get("client", "hudEnabled", clientHudEnabled);
         prop.setLanguageKey("config.structurescanner.client.hudEnabled");
@@ -406,6 +426,22 @@ public class ModConfig {
 
     public static boolean isClientHudEnabled() {
         return clientHudEnabled;
+    }
+
+    public static boolean isClientJeiCategoriesEnabled() {
+        return clientEnableJeiCategories;
+    }
+
+    public static boolean isClientJeiPreviewEnabled() {
+        return clientEnableJeiPreview;
+    }
+
+    public static boolean isClientJeiBlocksEnabled() {
+        return clientEnableJeiBlocks;
+    }
+
+    public static boolean isClientJeiLootEnabled() {
+        return clientEnableJeiLoot;
     }
 
     public static boolean isSearchEnabled() {

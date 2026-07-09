@@ -22,15 +22,20 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.renderer.BufferBuilder;
 import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.TextComponentString;
 import net.minecraft.world.biome.Biome;
 
 import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.client.ClientSettings;
+import com.simplestructurescanner.client.integration.GameStagesIntegration;
+import com.simplestructurescanner.client.integration.JourneyMapIntegration;
+import com.simplestructurescanner.client.integration.XaeroMinimapIntegration;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.config.ModConfig;
 import com.simplestructurescanner.network.NetworkHandler;
@@ -41,6 +46,7 @@ import com.simplestructurescanner.util.WorldUtils;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
+import com.simplestructurescanner.structure.StructureSearchOverrides;
 import com.simplestructurescanner.searching.StructureSearchManager;
 
 
@@ -80,6 +86,8 @@ public class GuiStructureScanner extends GuiScreen {
     private boolean blacklistButtonVisible = false;
     private int teleportButtonX, teleportButtonY, teleportButtonW, teleportButtonH;
     private boolean teleportButtonVisible = false;
+    private int mapButtonX, mapButtonY, mapButtonW, mapButtonH;
+    private boolean mapButtonVisible = false;
 
     // Modal windows
     private GuiBlocksWindow blocksWindow = null;
@@ -103,6 +111,33 @@ public class GuiStructureScanner extends GuiScreen {
     private int previewX, previewY, previewSize;
     private StructurePreviewRenderer previewRenderer = null;
     private ResourceLocation lastRenderedStructure = null;
+
+    @Nullable
+    private final GuiScreen returnScreen;
+
+    @Nullable
+    private final ResourceLocation initialSelectedStructure;
+    private final boolean rememberInitialSelection;
+
+    public GuiStructureScanner() {
+        this(null, null, true);
+    }
+
+    public GuiStructureScanner(@Nullable ResourceLocation initialSelectedStructure, boolean rememberInitialSelection) {
+        this(null, initialSelectedStructure, rememberInitialSelection);
+    }
+
+    public GuiStructureScanner(@Nullable GuiScreen returnScreen, @Nullable ResourceLocation initialSelectedStructure,
+            boolean rememberInitialSelection) {
+        this.returnScreen = returnScreen;
+        this.initialSelectedStructure = initialSelectedStructure;
+        this.rememberInitialSelection = rememberInitialSelection;
+        StructureSearchOverrides.setActiveStageSnapshot(GameStagesIntegration.captureClientStages());
+    }
+
+    private boolean hasMapWaypointSupport() {
+        return JourneyMapIntegration.isJourneyMapAvailable() || XaeroMinimapIntegration.isXaeroMinimapAvailable();
+    }
 
     private String getI18nButtonString() {
         return ClientSettings.i18nNames ? I18n.format("gui.structurescanner.i18nIDs.on") : I18n.format("gui.structurescanner.i18nIDs.off");
@@ -144,11 +179,15 @@ public class GuiStructureScanner extends GuiScreen {
         this.buttonList.add(new GuiButton(BUTTON_SHOW_NON_SEARCHABLE, 10, searchableButtonY, listWidth, 20,
             getNonSearchableButtonString()));
 
-        // Restore last selected structure
-        String lastStructure = ModConfig.getClientLastSelectedStructure();
-        if (lastStructure != null && !lastStructure.isEmpty()) {
-            ResourceLocation id = new ResourceLocation(lastStructure);
-            if (StructureProviderRegistry.getStructureInfo(id) != null) selectStructure(id);
+        if (initialSelectedStructure != null && StructureProviderRegistry.getStructureInfo(initialSelectedStructure) != null) {
+            selectStructure(initialSelectedStructure, rememberInitialSelection);
+        } else {
+            // Restore last selected structure
+            String lastStructure = ModConfig.getClientLastSelectedStructure();
+            if (lastStructure != null && !lastStructure.isEmpty()) {
+                ResourceLocation id = new ResourceLocation(lastStructure);
+                if (StructureProviderRegistry.getStructureInfo(id) != null) selectStructure(id);
+            }
         }
 
         // Restore modal windows if they were hidden for navigation
@@ -165,10 +204,19 @@ public class GuiStructureScanner extends GuiScreen {
         previewWindow = null;
     }
 
-    public void selectStructure(ResourceLocation id) {
+    private void closeScreen() {
+        mc.displayGuiScreen(this.returnScreen);
+    }
+
+    public void selectStructure(@Nullable ResourceLocation id) {
+        selectStructure(id, true);
+    }
+
+    public void selectStructure(@Nullable ResourceLocation id, boolean rememberSelection) {
         this.selected = id;
         this.selectedInfo = id != null ? StructureProviderRegistry.getStructureInfo(id) : null;
-        ModConfig.setClientLastSelectedStructure(id != null ? id.toString() : "");
+
+        if (rememberSelection) ModConfig.setClientLastSelectedStructure(id != null ? id.toString() : "");
     }
 
     public ResourceLocation getSelectedStructure() {
@@ -239,6 +287,11 @@ public class GuiStructureScanner extends GuiScreen {
         if (lootWindow != null && lootWindow.isVisible() && lootWindow.handleKey(keyCode)) return;
         if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.handleKey(keyCode)) return;
 
+        if (keyCode == Keyboard.KEY_ESCAPE) {
+            closeScreen();
+            return;
+        }
+
         if (filterField.textboxKeyTyped(typedChar, keyCode)) return;
         if (listWidget.handleKey(keyCode)) return;
 
@@ -304,6 +357,11 @@ public class GuiStructureScanner extends GuiScreen {
             }
             if (teleportButtonVisible && isInBounds(mouseX, mouseY, teleportButtonX, teleportButtonY, teleportButtonW, teleportButtonH)) {
                 teleportToLocation();
+
+                return;
+            }
+            if (mapButtonVisible && isInBounds(mouseX, mouseY, mapButtonX, mapButtonY, mapButtonW, mapButtonH)) {
+                openMapWaypoint();
 
                 return;
             }
@@ -438,6 +496,7 @@ public class GuiStructureScanner extends GuiScreen {
         if (!modalBlocking) {
             drawBiomeTooltip(mouseX, mouseY);
             drawDimensionTooltip(mouseX, mouseY);
+            drawMapTooltip(mouseX, mouseY);
             drawSmallPreviewTooltip(mouseX, mouseY);
         }
     }
@@ -459,6 +518,7 @@ public class GuiStructureScanner extends GuiScreen {
         nextButtonVisible = false;
         blacklistButtonVisible = false;
         teleportButtonVisible = false;
+        mapButtonVisible = false;
 
         // Clear tooltip data
         tooltipBiomes = null;
@@ -480,8 +540,15 @@ public class GuiStructureScanner extends GuiScreen {
 
         // Draw structure preview if layer data is available
         drawStructurePreview(textX, textY, panelW, panelH, textY);
+        resetPanelTextRenderState();
 
-        textY += previewSize + 10;
+        // Some TESRs can still spill pixels just below the preview even after state reset.
+        // Repaint the text region so the details panel always starts from a clean surface.
+        // Otherwise, some structures with TESRs (chests, etc) end up with no name.
+        int previewBottom = previewY + previewSize;
+        redrawPanelContentBackground(panelX, panelY, panelW, panelH, previewBottom + 1);
+
+        textY = previewBottom + 10;
 
         // Structure name (localized)
         String displayName = selectedInfo != null ? ClientTextResolver.resolve(selectedInfo.getDisplayName()) : selected.getPath();
@@ -716,7 +783,7 @@ public class GuiStructureScanner extends GuiScreen {
 
                     boolean teleportHovered = isInBounds(mouseX, mouseY, teleportButtonX, teleportButtonY, teleportButtonW, teleportButtonH);
                     boolean canTeleport = canPlayerTeleport();
-                    drawTeleportButton(teleportButtonX, teleportButtonY, teleportButtonW, teleportButtonH, teleportText, teleportHovered, canTeleport);
+                    drawSmallButton(teleportButtonX, teleportButtonY, teleportButtonW, teleportButtonH, teleportText, teleportHovered, canTeleport);
                 }
             }
 
@@ -725,8 +792,26 @@ public class GuiStructureScanner extends GuiScreen {
             // Show coordinates if location is known
             if (location != null) {
                 BlockPos pos = location.getPosition();
-                String coordsStr = formatCoordinates(pos, location.isYAgnostic(), textW);
-                textY = drawElidedString(fontRenderer, coordsStr, textX, textY, 14, textW, 0xAAFFAA);
+                int coordsY = textY;
+                int coordsTextWidth = textW;
+
+                if (hasMapWaypointSupport()) {
+                    String mapButtonText = I18n.format("gui.structurescanner.mapWaypointButton");
+
+                    int buttonSpacingToCoords = 4;
+                    mapButtonW = fontRenderer.getStringWidth(mapButtonText) + 8;
+                    mapButtonH = 12;
+                    mapButtonX = panelX + panelW - 6 - mapButtonW;
+                    mapButtonY = coordsY;
+                    mapButtonVisible = true;
+                    coordsTextWidth = Math.max(60, mapButtonX - textX - buttonSpacingToCoords);
+
+                    boolean mapHovered = isInBounds(mouseX, mouseY, mapButtonX, mapButtonY, mapButtonW, mapButtonH);
+                    drawSmallButton(mapButtonX, mapButtonY, mapButtonW, mapButtonH, mapButtonText, mapHovered, true);
+                }
+
+                String coordsStr = formatCoordinates(pos, location.isYAgnostic(), coordsTextWidth);
+                textY = drawElidedString(fontRenderer, coordsStr, textX, textY, 14, coordsTextWidth, 0xAAFFAA);
             }
         }
     }
@@ -808,6 +893,45 @@ public class GuiStructureScanner extends GuiScreen {
 
         previewRenderer.release();
         previewRenderer = null;
+    }
+
+    private void redrawPanelContentBackground(int panelX, int panelY, int panelW, int panelH, int contentStartY) {
+        int fillStartY = Math.max(panelY + 1, contentStartY);
+        int fillEndY = panelY + panelH - 1;
+
+        if (fillStartY >= fillEndY) return;
+
+        Gui.drawRect(panelX + 1, fillStartY, panelX + panelW - 1, fillEndY, 0x80000000);
+    }
+
+    /**
+     * Restores a plain 2D GUI text state after the 3D preview renderer.
+     * Some previews leave viewport, matrix, depth, or lightmap state behind.
+     */
+    private void resetPanelTextRenderState() {
+        Minecraft minecraft = Minecraft.getMinecraft();
+
+        GlStateManager.viewport(0, 0, minecraft.displayWidth, minecraft.displayHeight);
+        minecraft.entityRenderer.setupOverlayRendering();
+        GlStateManager.clear(GL11.GL_DEPTH_BUFFER_BIT);
+        GlStateManager.disableLighting();
+        GlStateManager.disableDepth();
+        GlStateManager.depthMask(false);
+        GlStateManager.disableBlend();
+        GlStateManager.enableTexture2D();
+        GlStateManager.enableAlpha();
+
+        GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
+        GlStateManager.disableTexture2D();
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
+
+        GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+        GlStateManager.matrixMode(GL11.GL_TEXTURE);
+        GlStateManager.loadIdentity();
+        GlStateManager.matrixMode(GL11.GL_MODELVIEW);
+        GlStateManager.depthMask(true);
+        GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     private int getRarityColor(String rarity) {
@@ -903,7 +1027,7 @@ public class GuiStructureScanner extends GuiScreen {
         fontRenderer.drawString(text, x + 4, y + 1, textColor);
     }
 
-    private void drawTeleportButton(int x, int y, int w, int h, String text, boolean hovered, boolean enabled) {
+    private void drawSmallButton(int x, int y, int w, int h, String text, boolean hovered, boolean enabled) {
         int bgColor;
         int textColor;
 
@@ -978,6 +1102,37 @@ public class GuiStructureScanner extends GuiScreen {
         NetworkHandler.INSTANCE.sendToServer(new PacketRequestSafeTeleport(pos.getX(), pos.getZ(), startY));
     }
 
+    private void openMapWaypoint() {
+        if (selected == null || mc.world == null) return;
+
+        StructureLocation location = StructureSearchManager.getLastKnownLocation(selected);
+        if (location == null) return;
+
+        String waypointName = selectedInfo != null
+            ? ClientTextResolver.resolve(selectedInfo.getDisplayName())
+            : selected.getPath();
+
+        boolean opened = JourneyMapIntegration.openWaypointEditor(
+            waypointName,
+            location.getPosition(),
+            mc.world.provider.getDimension(),
+            StructureSearchManager.getColor(selected),
+            location.isYAgnostic());
+
+        if (!opened) {
+            opened = XaeroMinimapIntegration.addWaypoint(
+                waypointName,
+                location.getPosition(),
+                StructureSearchManager.getColor(selected),
+                location.isYAgnostic());
+        }
+
+        if (!opened) {
+            mc.player.sendMessage(new TextComponentString(
+                I18n.format("gui.structurescanner.mapWaypointError")));
+        }
+    }
+
     private int drawElidedString(FontRenderer renderer, String text, int x, int y, int lineHeight, int maxWidth, int color) {
         if (y + lineHeight > panelMaxY) return y;
 
@@ -1014,6 +1169,14 @@ public class GuiStructureScanner extends GuiScreen {
         if (mouseY < previewY || mouseY > previewY + previewSize) return;
 
         List<String> lines = Collections.singletonList(I18n.format("gui.structurescanner.previewTooltip"));
+        drawMultiColumnTooltip(mouseX, mouseY, lines);
+    }
+
+    private void drawMapTooltip(int mouseX, int mouseY) {
+        if (!mapButtonVisible) return;
+        if (!isInBounds(mouseX, mouseY, mapButtonX, mapButtonY, mapButtonW, mapButtonH)) return;
+
+        List<String> lines = Collections.singletonList(I18n.format("gui.structurescanner.mapWaypointTooltip"));
         drawMultiColumnTooltip(mouseX, mouseY, lines);
     }
 

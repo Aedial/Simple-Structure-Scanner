@@ -5,6 +5,7 @@ import javax.annotation.Nullable;
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.text.TextComponentTranslation;
 
 import com.simplestructurescanner.capture.StructureCaptureExclusions;
@@ -38,7 +39,7 @@ public final class StructureCaptureClientController {
             return;
         }
 
-        BlockPos feetPos = player.getPosition();
+        BlockPos feetPos = getFeetBlockPos(player);
         if (firstCorner == null) {
             firstCorner = feetPos;
             secondCorner = null;
@@ -49,7 +50,12 @@ public final class StructureCaptureClientController {
 
         if (secondCorner == null) {
             secondCorner = feetPos;
-            sendMessage("chat.structurescanner.capture.secondCorner", feetPos.getX(), feetPos.getY(), feetPos.getZ());
+            sendMessage(
+                "chat.structurescanner.capture.secondCorner",
+                secondCorner.getX(),
+                secondCorner.getY(),
+                secondCorner.getZ()
+            );
             return;
         }
 
@@ -116,7 +122,7 @@ public final class StructureCaptureClientController {
         if (secondCorner != null) return secondCorner;
         if (player == null) return null;
 
-        return player.getPosition();
+        return getFeetBlockPos(player);
     }
 
     public static boolean isPreviewRequestPending() {
@@ -125,6 +131,14 @@ public final class StructureCaptureClientController {
 
     public static StructureCaptureExclusions getExclusions() {
         return exclusions;
+    }
+
+    private static BlockPos getFeetBlockPos(EntityPlayer player) {
+        return new BlockPos(
+            MathHelper.floor(player.posX),
+            MathHelper.floor(player.posY),
+            MathHelper.floor(player.posZ)
+        );
     }
 
     private static void sendMessage(String translationKey, Object... args) {

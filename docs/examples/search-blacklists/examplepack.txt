@@ -1,8 +1,17 @@
 # Make a structure non-searchable everywhere for this provider
 structure examplepack:ruined_tower
 
+# Make a structure non-searchable after a GameStage is unlocked
+stage progression:ancient_map structure examplepack:sky_keep
+
+# Make a structure non-searchable until a GameStage is unlocked
+nostage progression:ancient_map structure examplepack:training_grounds
+
 # Make all structures from this provider non-searchable in dimension 7
 dimension 7
 
 # Make one structure non-searchable only in one dimension
 dimension examplepack:sunken_library -1
+
+# Make one structure non-searchable in one dimension while the player lacks a GameStage
+nostage progression:deep_access dimension examplepack:sunken_library -1

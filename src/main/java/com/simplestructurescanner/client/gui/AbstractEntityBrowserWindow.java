@@ -11,6 +11,7 @@ import javax.annotation.Nullable;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.GL11;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
@@ -523,11 +524,19 @@ abstract class AbstractEntityBrowserWindow<T> {
         Gui.drawRect(x - 1, y - 1, x + size + 1, y + size + 1, 0xFF404040);
         Gui.drawRect(x, y, x + size, y + size, 0xFF202020);
 
+        preparePreviewEntity(entity);
+
         float maxDimension = Math.max(1.0F, Math.max(entity.height, entity.width));
         float scale = size / maxDimension / 2.0F;
 
         int centerX = x + size / 2;
         int centerY = y + size / 2;
+
+        // The parent GUI renders most 2D content with depth disabled.
+        // Reset the depth buffer for the preview so entity layers occlude correctly.
+        GlStateManager.enableDepth();
+        GlStateManager.depthMask(true);
+        GlStateManager.clear(GL11.GL_DEPTH_BUFFER_BIT);
 
         GlStateManager.pushMatrix();
         GlStateManager.color(1.0F, 1.0F, 1.0F);
@@ -564,11 +573,29 @@ abstract class AbstractEntityBrowserWindow<T> {
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
         GlStateManager.disableLighting();
         GlStateManager.popMatrix();
-        GlStateManager.enableDepth();
+        GlStateManager.disableDepth();
         GlStateManager.disableColorMaterial();
         GlStateManager.setActiveTexture(OpenGlHelper.lightmapTexUnit);
         GlStateManager.disableTexture2D();
         GlStateManager.setActiveTexture(OpenGlHelper.defaultTexUnit);
+    }
+
+    // Some mod renderers apply world-space visibility or culling checks before drawing.
+    // Keep preview entities aligned with the active camera position so those checks do not
+    // incorrectly treat off-world preview instances at 0,0,0 as hidden.
+    private void preparePreviewEntity(Entity entity) {
+        if (entity == null) return;
+
+        Entity cameraEntity = Minecraft.getMinecraft().getRenderViewEntity();
+        if (cameraEntity == null) return;
+
+        entity.prevPosX = cameraEntity.prevPosX;
+        entity.prevPosY = cameraEntity.prevPosY;
+        entity.prevPosZ = cameraEntity.prevPosZ;
+        entity.lastTickPosX = cameraEntity.lastTickPosX;
+        entity.lastTickPosY = cameraEntity.lastTickPosY;
+        entity.lastTickPosZ = cameraEntity.lastTickPosZ;
+        entity.setPosition(cameraEntity.posX, cameraEntity.posY, cameraEntity.posZ);
     }
 
     private float getMaxScroll() {

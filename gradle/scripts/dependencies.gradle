@@ -45,6 +45,16 @@ dependencies {
     // ---- Required dependencies ----
 
 
+    // ---- Optional: GameStages ----
+    devOnlyNonPublishable rfg.deobf("curse.maven:game-stages-268655:2951840")
+
+    // ---- Optional: JourneyMap ----
+    devOnlyNonPublishable rfg.deobf("curse.maven:journeymap-32274:5172461")
+
+    // ---- Optional: Xaero ----
+    devOnlyNonPublishable rfg.deobf("curse.maven:xaeros-minimap-263420:8231176")
+    // devOnlyNonPublishable rfg.deobf("curse.maven:xaeros-world-map-317780:8298661")
+
     // ---- Optional: JEI ----
     devOnlyNonPublishable rfg.deobf("curse.maven:jei-238222:3043174")
 }

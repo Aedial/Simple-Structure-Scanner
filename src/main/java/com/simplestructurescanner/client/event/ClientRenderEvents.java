@@ -72,7 +72,7 @@ public class ClientRenderEvents {
 
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.player == null || mc.world == null) return;
-        if (mc.gameSettings.showDebugInfo) return;
+        if (!shouldRenderClientOverlays(mc)) return;
 
         Set<ResourceLocation> trackedIds = StructureSearchManager.getTrackedIds();
         if (trackedIds.isEmpty()) return;
@@ -210,6 +210,7 @@ public class ClientRenderEvents {
         Minecraft mc = Minecraft.getMinecraft();
         EntityPlayer player = mc.player;
         if (player == null || mc.world == null) return;
+        if (!shouldRenderClientOverlays(mc)) return;
 
         drawCaptureSelection(player, event.getPartialTicks());
 
@@ -284,6 +285,10 @@ public class ClientRenderEvents {
         GlStateManager.enableTexture2D();
         GlStateManager.disableBlend();
         GlStateManager.popMatrix();
+    }
+
+    private boolean shouldRenderClientOverlays(Minecraft mc) {
+        return !mc.gameSettings.hideGUI && !mc.gameSettings.showDebugInfo;
     }
 
     // ========== Arrow Rendering Constants ==========

@@ -19,12 +19,12 @@ import net.minecraftforge.fluids.FluidUtil;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 
 
-final class GuiBlockEntryRenderer {
+public final class GuiBlockEntryRenderer {
     private static final int ITEM_RENDER_SIZE = 16;
 
     private GuiBlockEntryRenderer() {}
 
-    static void render(Minecraft mc, BlockEntry entry, int itemX, int itemY) {
+    public static void render(Minecraft mc, BlockEntry entry, int itemX, int itemY) {
         if (entry.displayStack != null) {
             mc.getRenderItem().renderItemIntoGUI(entry.displayStack, itemX, itemY);
 
