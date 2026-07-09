@@ -344,7 +344,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         }
 
         info.setBlocks(contents.buildBlocks());
-        info.setEntities(rewriteDummyEntities(contents.buildEntities(), inhabitant));
+        info.setEntities(rewriteDummyEntities(dungeon.id.toString(), contents.buildEntities(), inhabitant));
         info.setLootTables(contents.buildLootEntries());
         List<StructureInfo.StructureLayer> layers = generatedPreviewLayers != null
             ? generatedPreviewLayers
@@ -470,8 +470,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         }
     }
 
-    private List<EntityEntry> rewriteDummyEntities(List<EntityEntry> entities,
-            @Nullable InhabitantDefinition inhabitant) {
+    private List<EntityEntry> rewriteDummyEntities(String dungeonId, List<EntityEntry> entities, @Nullable InhabitantDefinition inhabitant) {
         Map<String, EntityEntry> rewritten = new LinkedHashMap<>();
 
         for (EntityEntry entityEntry : entities) {
@@ -486,7 +485,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
             List<ResourceLocation> replacementIds = CQR_DUMMY_BOSS_ENTITY.equals(entityEntry.entityId)
                 ? getBossReplacementIds(inhabitant, entityEntry.spawner)
                 : getDummyReplacementIds(inhabitant, entityEntry.spawner);
-            distributeEntityEntries(rewritten, replacementIds, entityEntry.count, entityEntry.spawner);
+            distributeEntityEntries(rewritten, replacementIds, dungeonId, entityEntry.count, entityEntry.spawner);
         }
 
         List<EntityEntry> results = new ArrayList<>(rewritten.values());
@@ -517,21 +516,24 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     }
 
     // CQR selects one entry from each inhabitant pool, so placeholders should keep their total count.
-    // TODO: Use a standard distribution for a more natural spread of the placeholders across the pool,
-    //       instead of just splitting evenly.
+    // Distribute `totalCount` across the available replacements using randomized sampling
+    // (multinomial-style): simulate `totalCount` independent draws and count occurrences.
     private void distributeEntityEntries(Map<String, EntityEntry> target, List<ResourceLocation> replacementIds,
-            int totalCount, boolean spawner) {
+            String dungeonId, int totalCount, boolean spawner) {
         if (replacementIds.isEmpty() || totalCount <= 0) return;
 
-        int sharedCount = totalCount / replacementIds.size();
-        int remainder = totalCount % replacementIds.size();
+        int size = replacementIds.size();
+        int[] counts = new int[size];
 
-        for (int index = 0; index < replacementIds.size(); index++) {
-            int distributedCount = sharedCount;
-            if (index < remainder) distributedCount++;
-            if (distributedCount <= 0) continue;
 
-            mergeEntityEntry(target, replacementIds.get(index), distributedCount, spawner);
+        Random rnd = new Random(dungeonId.hashCode());
+        for (int i = 0; i < totalCount; i++) counts[rnd.nextInt(size)]++;
+
+        for (int i = 0; i < size; i++) {
+            int distributedCount = counts[i];
+            if (distributedCount == 0) continue;
+
+            mergeEntityEntry(target, replacementIds.get(i), distributedCount, spawner);
         }
     }
 
