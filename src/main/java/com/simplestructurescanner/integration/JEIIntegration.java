@@ -1,5 +1,7 @@
 package com.simplestructurescanner.integration;
 
+import javax.annotation.Nonnull;
+
 import mezz.jei.api.IJeiRuntime;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.IModRegistry;
@@ -9,7 +11,6 @@ import mezz.jei.api.recipe.IRecipeCategoryRegistration;
 import com.simplestructurescanner.integration.jei.StructureJeiCategory;
 import com.simplestructurescanner.integration.jei.StructureJeiRegistryPlugin;
 import com.simplestructurescanner.integration.jei.StructureJeiView;
-import com.simplestructurescanner.structure.StructureProviderRegistry;
 
 
 /**
@@ -38,7 +39,7 @@ public class JEIIntegration implements IModPlugin {
     }
 
     @Override
-    public void onRuntimeAvailable(IJeiRuntime jeiRuntime) {
+    public void onRuntimeAvailable(@Nonnull IJeiRuntime jeiRuntime) {
         runtime = jeiRuntime;
     }
 

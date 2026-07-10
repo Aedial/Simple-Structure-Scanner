@@ -2,6 +2,7 @@ package com.simplestructurescanner.structure.util;
 
 import java.io.File;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import net.minecraft.block.state.IBlockState;
@@ -64,6 +65,7 @@ public class PreviewGenerationWorld extends World {
         // Preview generation only needs a lightweight world shell.
     }
 
+    @Nonnull
     @Override
     protected IChunkProvider createChunkProvider() {
         return new PreviewChunkProvider(this, groundY);
@@ -76,35 +78,37 @@ public class PreviewGenerationWorld extends World {
 
     @Nullable
     @Override
-    public TileEntity getTileEntity(BlockPos pos) {
+    public TileEntity getTileEntity(@Nonnull BlockPos pos) {
         return null;
     }
 
     @Override
-    public int getCombinedLight(BlockPos pos, int lightValue) {
+    public int getCombinedLight(@Nonnull BlockPos pos, int lightValue) {
         return 15 << 20 | 15 << 4;
     }
 
     @Override
-    public int getStrongPower(BlockPos pos, EnumFacing direction) {
+    public int getStrongPower(@Nonnull BlockPos pos, @Nonnull EnumFacing direction) {
         return 0;
     }
 
+    @Nonnull
     @Override
     public WorldType getWorldType() {
         return WorldType.FLAT;
     }
 
     @Override
-    public boolean isSideSolid(BlockPos pos, EnumFacing side, boolean _default) {
+    public boolean isSideSolid(@Nonnull BlockPos pos, @Nonnull EnumFacing side, boolean _default) {
         return getBlockState(pos).isSideSolid(this, pos, side);
     }
 
     @Override
-    public boolean isAirBlock(BlockPos pos) {
+    public boolean isAirBlock(@Nonnull BlockPos pos) {
         return getBlockState(pos).getBlock() == Blocks.AIR;
     }
 
+    @Nonnull
     @Override
     public IBlockState getBlockState(BlockPos pos) {
         return getPreviewState(pos.getY(), groundY);
@@ -128,12 +132,12 @@ public class PreviewGenerationWorld extends World {
             this.groundY = groundY;
         }
 
-        @Nullable
         @Override
         public Chunk getLoadedChunk(int x, int z) {
             return provideChunk(x, z);
         }
 
+        @Nonnull
         @Override
         public Chunk provideChunk(int x, int z) {
             return new PreviewChunk(world, x, z, groundY);
@@ -144,6 +148,7 @@ public class PreviewGenerationWorld extends World {
             return false;
         }
 
+        @Nonnull
         @Override
         public String makeString() {
             return "PreviewChunkProvider";
@@ -163,6 +168,7 @@ public class PreviewGenerationWorld extends World {
             this.groundY = groundY;
         }
 
+        @Nonnull
         @Override
         public IBlockState getBlockState(BlockPos pos) {
             return getPreviewState(pos.getY(), groundY);
@@ -185,27 +191,30 @@ public class PreviewGenerationWorld extends World {
         public void checkSessionLock() {
         }
 
+        @Nonnull
         @Override
-        public IChunkLoader getChunkLoader(WorldProvider provider) {
+        public IChunkLoader getChunkLoader(@Nonnull WorldProvider provider) {
             return this;
         }
 
+        @Nonnull
         @Override
         public IPlayerFileData getPlayerNBTManager() {
             return this;
         }
 
+        @Nonnull
         @Override
         public TemplateManager getStructureTemplateManager() {
             return new TemplateManager("", new DataFixer(0));
         }
 
         @Override
-        public void saveWorldInfoWithPlayer(WorldInfo worldInformation, NBTTagCompound tagCompound) {
+        public void saveWorldInfoWithPlayer(@Nonnull WorldInfo worldInformation, @Nonnull NBTTagCompound tagCompound) {
         }
 
         @Override
-        public void saveWorldInfo(WorldInfo worldInformation) {
+        public void saveWorldInfo(@Nonnull WorldInfo worldInformation) {
         }
 
         @Override
@@ -214,21 +223,21 @@ public class PreviewGenerationWorld extends World {
         }
 
         @Override
-        public File getMapFileFromName(String mapName) {
+        public File getMapFileFromName(@Nonnull String mapName) {
             return null;
         }
 
         @Override
-        public Chunk loadChunk(World worldIn, int x, int z) {
+        public Chunk loadChunk(@Nonnull World worldIn, int x, int z) {
             return null;
         }
 
         @Override
-        public void saveChunk(World worldIn, Chunk chunkIn) {
+        public void saveChunk(@Nonnull World worldIn, @Nonnull Chunk chunkIn) {
         }
 
         @Override
-        public void saveExtraChunkData(World worldIn, Chunk chunkIn) {
+        public void saveExtraChunkData(@Nonnull World worldIn, @Nonnull Chunk chunkIn) {
         }
 
         @Override
@@ -245,14 +254,15 @@ public class PreviewGenerationWorld extends World {
         }
 
         @Override
-        public void writePlayerData(EntityPlayer player) {
+        public void writePlayerData(@Nonnull EntityPlayer player) {
         }
 
         @Override
-        public NBTTagCompound readPlayerData(EntityPlayer player) {
+        public NBTTagCompound readPlayerData(@Nonnull EntityPlayer player) {
             return null;
         }
 
+        @Nonnull
         @Override
         public String[] getAvailablePlayerDat() {
             return new String[0];

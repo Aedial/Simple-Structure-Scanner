@@ -6,6 +6,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import javax.annotation.Nonnull;
+
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.fluids.FluidStack;
@@ -23,9 +25,9 @@ public class StructureJeiRegistryPlugin implements IRecipeRegistryPlugin {
     /**
      * Resolves which structure categories currently have visible matches for one JEI focus.
      */
+    @Nonnull
     @Override
-    public <V> List<String> getRecipeCategoryUids(IFocus<V> focus) {
-        if (focus == null) return Collections.emptyList();
+    public <V> List<String> getRecipeCategoryUids(@Nonnull IFocus<V> focus) {
         if (!StructureJeiVisibility.isAnyCategoryEnabled()) return Collections.emptyList();
 
         StructureJeiVisibility.refreshStageSnapshot();
@@ -40,10 +42,10 @@ public class StructureJeiRegistryPlugin implements IRecipeRegistryPlugin {
     /**
      * Resolves the matching structure wrappers for one category and one JEI focus.
      */
+    @Nonnull
     @Override
-    public <T extends IRecipeWrapper, V> List<T> getRecipeWrappers(IRecipeCategory<T> recipeCategory, IFocus<V> focus) {
-        if (focus == null) return Collections.emptyList();
-
+    public <T extends IRecipeWrapper, V> List<T> getRecipeWrappers(@Nonnull IRecipeCategory<T> recipeCategory,
+                                                                   @Nonnull IFocus<V> focus) {
         StructureJeiView view = StructureJeiView.fromCategoryUid(recipeCategory.getUid());
         if (view == null) return Collections.emptyList();
         if (!StructureJeiVisibility.isCategoryEnabled(view)) return Collections.emptyList();
@@ -63,6 +65,7 @@ public class StructureJeiRegistryPlugin implements IRecipeRegistryPlugin {
     /**
      * Returns the full visible recipe set for one category when JEI opens that category directly.
      */
+    @Nonnull
     @Override
     public <T extends IRecipeWrapper> List<T> getRecipeWrappers(IRecipeCategory<T> recipeCategory) {
         StructureJeiView view = StructureJeiView.fromCategoryUid(recipeCategory.getUid());
@@ -72,7 +75,6 @@ public class StructureJeiRegistryPlugin implements IRecipeRegistryPlugin {
         StructureJeiVisibility.refreshStageSnapshot();
 
         List<T> visibleRecipes = new ArrayList<>();
-
         for (StructureJeiRecipe recipe : StructureJeiRecipes.getAllVisible(view)) visibleRecipes.add(castRecipe(recipe));
 
         return visibleRecipes;
@@ -126,7 +128,7 @@ public class StructureJeiRegistryPlugin implements IRecipeRegistryPlugin {
 
     private List<String> getFluidCategoryUids(IFocus<FluidStack> focus) {
         FluidStack stack = focus.getValue();
-        if (stack == null || stack.amount <= 0 || stack.getFluid() == null) return Collections.emptyList();
+        if (stack.amount <= 0 || stack.getFluid() == null) return Collections.emptyList();
         if (focus.getMode() != IFocus.Mode.OUTPUT) return Collections.emptyList();
         if (!StructureJeiVisibility.isCategoryEnabled(StructureJeiView.BLOCKS)) return Collections.emptyList();
 

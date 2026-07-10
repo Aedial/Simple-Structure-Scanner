@@ -13,6 +13,7 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
   - Use the "x" button to blacklist a found location (per structure, per world).
   - Teleport to the found structure (op only) using the TP button.
   - X/Y/Z coordinates are shown for the location, if found.
+  - A [M]ap button will create a waypoint at the structure's coordinates, if a map mod is installed (currently only JourneyMap and Xaero's Minimap are supported).
 
 ### List of supported structures :
   - Vanilla Minecraft structures.
@@ -57,9 +58,13 @@ To remove a stage-qualified entry, use the same prefix as the file syntax, for e
 ### Configs:
 - enableSearch: Globally disable search.
 - whitelist/blacklist: Configure which structures are allowed/disallowed for searching. Whitelist takes priority over blacklist. Partial matches are supported (e.g., `village` matches all structures with "village" in their ID or `minecraft` matches all structures from the Minecraft namespace). To avoid matching too broadly, keep the `:` separator for namespace matching (e.g., `pillar:`). Add `;radius` to make the entry local, which stops being enforced if the player is within a certain radius of the structure (e.g., `minecraft:;100` only blocks vanilla structures until within 100 blocks).
-- showBlocks: Show blocks that are part of the structure in the details panel.
-- showEntities: Show entities that are part of the structure in the details panel.
-- showLootTables: Show loot tables that are part of the structure in the details panel.
+- showBlocks: Show blocks that are part of the structure in the details panel of the main GUI.
+- showEntities: Show entities that are part of the structure in the details panel of the main GUI.
+- showLootTables: Show loot tables that are part of the structure in the details panel of the main GUI.
+- enableJeiBlocks: Enable the registration of structure blocks in JEI as coming from the structure. This allows you to see what structures a block is part of. Respects the visibility blacklist, so if a structure is hidden, its blocks will not be shown in JEI.
+- enableJeiLoot: Enable the registration of structure loot tables in JEI as coming from the structure. This allows you to see what loot can be found in a structure. Respects the visibility blacklist just like the blocks.
+- enableJeiPreview: Allow to see structure previews in JEI. It can only be accessed from the other 2 categories, as structures don't have "a recipe" or "uses" in the traditional sense.
+- enableJeiCategories: Master switch to enable/disable all JEI categories. If disabled, the other 3 JEI configs are ignored.
 
 
 ### Config-driven external providers:
@@ -86,13 +91,13 @@ To remove a stage-qualified entry, use the same prefix as the file syntax, for e
 If you wish the query structure locations, you will need to put the mod on the server as well. However, if you only want to view structure information, you can use it client-side, as long as the mods providing said structures are also installed client-side.
 
 ### How is the structures list filtered?
-The filter box matches both localized and unlocalized structure names. This means you can type the mod name, the name in your selected language, or the default English name. The localization structure is up to the individual providers, but it should generally be `gui.structurescanner.structures.<mod_id>.<structure_id>`.
+The filter box matches both localized and unlocalized structure names. This means you can type the mod name, the name in your selected language, or the default English name. The localization structure is up to the individual providers, but it should generally be `gui.structurescanner.structures.<provider_id>.<structure_id>`.
 
 ### The structure wasn't there.
 Due to how complex the process is, structures from a mod may prevent or overlap with other structures from another mod. In this case, you should try searching for another structure of the same type. Use the arrows in the right panel to cycle through multiple results.
 
 ### Some structure previews seem broken, looking like scattered rooms.
-Some structures are generated procedurally (e.g., Recurrent Complex, Unseen's Dungeon Additions, and Chocolate Quest Repoured), which means the structure is not a single static layout. In these cases, the preview may be dynamically generated from possible static rooms and corridors, stitched together in a way that may not match an actual generated structure. Of course, it is still possible that the stitching process itself has issues with specific structures (although it is a minor inconvenience, as the preview is still technically correct).
+Some structures are generated procedurally (e.g., Recurrent Complex, Unseen's Dungeon Additions, and Chocolate Quest Repoured), which means the structure is not a single static layout. In these cases, the preview may be dynamically generated from possible static templates, stitched together in a way that may not match an actual generated structure. Most structures from these mods should be generated using the real generation logic (stitching acting as a fallback), but underground structures may lack corridors or other hallways, as they use the surrounding terrain for this purpose, which can give the impression of a broken structure.
 
 
 ## Building

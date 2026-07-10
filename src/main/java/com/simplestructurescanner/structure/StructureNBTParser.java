@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import com.google.common.base.Optional;
@@ -847,7 +848,9 @@ public class StructureNBTParser {
         return createDisplayStack(state, null);
     }
 
-    public static ItemStack createDisplayStack(IBlockState state, @Nullable NBTTagCompound blockEntityData) {
+    public static ItemStack createDisplayStack(@Nullable IBlockState state, @Nullable NBTTagCompound blockEntityData) {
+        if (state == null) return ItemStack.EMPTY;
+
         Block block = state.getBlock();
         if (isInvisibleBlock(block) || isFluidBlock(state, block)) return ItemStack.EMPTY;
 
@@ -987,6 +990,7 @@ public class StructureNBTParser {
             tileEntity = null;
         }
 
+        @Nonnull
         @Override
         protected IChunkProvider createChunkProvider() {
             return new DisplayChunkProvider(this);
@@ -999,41 +1003,43 @@ public class StructureNBTParser {
 
         @Nullable
         @Override
-        public TileEntity getTileEntity(BlockPos pos) {
+        public TileEntity getTileEntity(@Nonnull BlockPos pos) {
             if (!BlockPos.ORIGIN.equals(pos)) return null;
 
             return tileEntity;
         }
 
         @Override
-        public int getCombinedLight(BlockPos pos, int lightValue) {
+        public int getCombinedLight(@Nonnull BlockPos pos, int lightValue) {
             return 15 << 20 | 15 << 4;
         }
 
+        @Nonnull
         @Override
-        public IBlockState getBlockState(BlockPos pos) {
+        public IBlockState getBlockState(@Nonnull BlockPos pos) {
             if (!BlockPos.ORIGIN.equals(pos) || state == null) return Blocks.AIR.getDefaultState();
 
             return state;
         }
 
         @Override
-        public boolean isAirBlock(BlockPos pos) {
+        public boolean isAirBlock(@Nonnull BlockPos pos) {
             return getBlockState(pos).getBlock() == Blocks.AIR;
         }
 
         @Override
-        public int getStrongPower(BlockPos pos, EnumFacing direction) {
+        public int getStrongPower(@Nonnull BlockPos pos, @Nonnull EnumFacing direction) {
             return 0;
         }
 
+        @Nonnull
         @Override
         public WorldType getWorldType() {
             return WorldType.DEFAULT;
         }
 
         @Override
-        public boolean isSideSolid(BlockPos pos, EnumFacing side, boolean _default) {
+        public boolean isSideSolid(@Nonnull BlockPos pos, @Nonnull EnumFacing side, boolean _default) {
             IBlockState blockState = getBlockState(pos);
             return blockState.isSideSolid(this, pos, side);
         }
@@ -1046,12 +1052,13 @@ public class StructureNBTParser {
             this.world = world;
         }
 
-        @Nullable
+        @Nonnull
         @Override
         public Chunk getLoadedChunk(int x, int z) {
             return provideChunk(x, z);
         }
 
+        @Nonnull
         @Override
         public Chunk provideChunk(int x, int z) {
             return new Chunk(world, x, z);
@@ -1062,6 +1069,7 @@ public class StructureNBTParser {
             return false;
         }
 
+        @Nonnull
         @Override
         public String makeString() {
             return "DisplayChunkProvider";
@@ -1084,27 +1092,30 @@ public class StructureNBTParser {
         public void checkSessionLock() {
         }
 
+        @Nonnull
         @Override
-        public IChunkLoader getChunkLoader(WorldProvider provider) {
+        public IChunkLoader getChunkLoader(@Nonnull WorldProvider provider) {
             return this;
         }
 
+        @Nonnull
         @Override
         public IPlayerFileData getPlayerNBTManager() {
             return this;
         }
 
+        @Nonnull
         @Override
         public TemplateManager getStructureTemplateManager() {
             return new TemplateManager("", new DataFixer(0));
         }
 
         @Override
-        public void saveWorldInfoWithPlayer(WorldInfo worldInformation, NBTTagCompound tagCompound) {
+        public void saveWorldInfoWithPlayer(@Nonnull WorldInfo worldInformation, @Nonnull NBTTagCompound tagCompound) {
         }
 
         @Override
-        public void saveWorldInfo(WorldInfo worldInformation) {
+        public void saveWorldInfo(@Nonnull WorldInfo worldInformation) {
         }
 
         @Override
@@ -1113,21 +1124,21 @@ public class StructureNBTParser {
         }
 
         @Override
-        public File getMapFileFromName(String mapName) {
+        public File getMapFileFromName(@Nonnull String mapName) {
             return null;
         }
 
         @Override
-        public Chunk loadChunk(World worldIn, int x, int z) {
+        public Chunk loadChunk(@Nonnull World worldIn, int x, int z) {
             return null;
         }
 
         @Override
-        public void saveChunk(World worldIn, Chunk chunkIn) {
+        public void saveChunk(@Nonnull World worldIn, @Nonnull Chunk chunkIn) {
         }
 
         @Override
-        public void saveExtraChunkData(World worldIn, Chunk chunkIn) {
+        public void saveExtraChunkData(@Nonnull World worldIn, @Nonnull Chunk chunkIn) {
         }
 
         @Override
@@ -1144,14 +1155,15 @@ public class StructureNBTParser {
         }
 
         @Override
-        public void writePlayerData(EntityPlayer player) {
+        public void writePlayerData(@Nonnull EntityPlayer player) {
         }
 
         @Override
-        public NBTTagCompound readPlayerData(EntityPlayer player) {
+        public NBTTagCompound readPlayerData(@Nonnull EntityPlayer player) {
             return null;
         }
 
+        @Nonnull
         @Override
         public String[] getAvailablePlayerDat() {
             return new String[0];

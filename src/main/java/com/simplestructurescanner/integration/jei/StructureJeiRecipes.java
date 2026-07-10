@@ -20,7 +20,7 @@ import com.simplestructurescanner.structure.StructureProviderRegistry;
 
 /**
  * Lazy structure recipe cache for JEI lookups.
- *
+ * <p>
  * This cache keeps a stable wrapper layer for known structures and a separate visible layer that
  * is patched incrementally as visibility changes. As the whole plugin is dynamic (due to hidden structures),
  * JEI would need to walk through hundreds of structures containing dozens of blocks.
@@ -151,6 +151,11 @@ final class StructureJeiRecipes {
 
     /**
      * Applies visibility deltas on top of the stable wrapper layer for the current JEI context.
+     * <p>
+     * FIXME: This step is quite expensive (~60s for 850 structures) on the first load (then is cached).
+     *        We could silently run the sync in the background on a separate thread,
+     *        but then I don't know how fast it should be (to not kill the client) and early JEI queries
+     *        may be wrong until the sync is done. Right now, we eat the full cost on the first load.
      */
     private static void syncVisibleRecipes() {
         syncBaseRecipes();

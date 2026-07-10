@@ -18,7 +18,6 @@ import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
-import net.minecraft.world.WorldServer;
 
 import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.integration.JEIHelper;
@@ -97,8 +96,7 @@ public class GuiLootWindow {
         // Get server world if available (for proper loot simulation)
         World world = mc.world;
         if (mc.getIntegratedServer() != null) {
-            WorldServer serverWorld = mc.getIntegratedServer().getWorld(mc.world.provider.getDimension());
-            world = serverWorld;
+            world = mc.getIntegratedServer().getWorld(mc.world.provider.getDimension());
         }
 
         simulationCount = LootTableResolver.getSimulationCount();
@@ -233,11 +231,13 @@ public class GuiLootWindow {
         }
     }
 
-    public void handleScroll(int amount) {
-        if (!visible) return;
+    public boolean handleMouseInput(int mouseX, int mouseY, int wheel) {
+        if (!visible || !isMouseOver(mouseX, mouseY)) return false;
 
-        scrollOffset -= amount * 10;
+        scrollOffset -= wheel * 10;
         clampScroll();
+
+        return true;
     }
 
     private void clampScroll() {

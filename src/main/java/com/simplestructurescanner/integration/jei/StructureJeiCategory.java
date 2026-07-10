@@ -82,7 +82,8 @@ public class StructureJeiCategory implements IRecipeCategory<StructureJeiRecipe>
     }
 
     @Override
-    public void setRecipe(IRecipeLayout recipeLayout, @Nonnull StructureJeiRecipe recipeWrapper, IIngredients ingredients) {
+    public void setRecipe(@Nonnull IRecipeLayout recipeLayout, @Nonnull StructureJeiRecipe recipeWrapper,
+                          @Nonnull IIngredients ingredients) {
         this.currentRecipe = recipeWrapper;
         if (view == StructureJeiView.PREVIEW) return;
 

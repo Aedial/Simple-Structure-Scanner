@@ -246,17 +246,18 @@ public class LootTableResolver {
     private static String getItemKey(ItemStack stack) {
         Item item = stack.getItem();
         int meta = stack.getMetadata();
+        ResourceLocation registryName = item.getRegistryName();
 
         // Enchanted books - treat all as the same item
-        if (item == Items.ENCHANTED_BOOK) return item.getRegistryName().toString() + "@enchanted";
+        if (item == Items.ENCHANTED_BOOK) return registryName + "@enchanted";
 
         // Items with durability - ignore damage value (metadata)
-        if (stack.isItemStackDamageable()) return item.getRegistryName().toString() + "@0";
+        if (stack.isItemStackDamageable()) return registryName + "@0";
 
         // Wizardry spell books/scrolls and Tombstone scroll_buff - ignore per-spell metadata
-        if (isMetadataStrippedItem(item)) return item.getRegistryName().toString() + "@0";
+        if (isMetadataStrippedItem(item)) return registryName + "@0";
 
-        return item.getRegistryName() + "@" + meta;
+        return registryName + "@" + meta;
     }
 
     /**

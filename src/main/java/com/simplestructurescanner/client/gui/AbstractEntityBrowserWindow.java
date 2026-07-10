@@ -153,16 +153,14 @@ abstract class AbstractEntityBrowserWindow<T> {
         return false;
     }
 
-    public boolean handleMouseInput(int mouseX, int mouseY) {
+    public boolean handleMouseInput(int mouseX, int mouseY, int wheel) {
         if (!visible || !isMouseOver(mouseX, mouseY)) return false;
-
-        int wheel = Mouse.getDWheel();
-        if (wheel == 0) return false;
 
         scrollOffset -= wheel * 0.25f;
         float maxScroll = getMaxScroll();
         if (scrollOffset < 0) scrollOffset = 0;
         if (scrollOffset > maxScroll) scrollOffset = maxScroll;
+
         return true;
     }
 
@@ -505,7 +503,7 @@ abstract class AbstractEntityBrowserWindow<T> {
 
         int previewX = viewerX + (viewerW - previewSize) / 2;
         int previewY = previewTopY + 5;
-        float entityRotation = (Minecraft.getMinecraft().getSystemTime() % 10000L) / 10000.0F * 360.0F;
+        float entityRotation = (Minecraft.getSystemTime() % 10000L) / 10000.0F * 360.0F;
         drawEntityPreview(getEntityId(entry), previewX, previewY, previewSize, entityRotation);
     }
 

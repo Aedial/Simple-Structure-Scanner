@@ -486,23 +486,21 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             String scriptId = scriptTag.getString("id");
             NBTTagCompound data = scriptTag.getCompoundTag("data");
 
-            if (SCRIPT_ID_MULTI.equals(scriptId)) {
-                mergeWorldScriptsPreview(preview, registry, data, origin, transform, recursionStack);
-                continue;
-            }
+            switch (scriptId) {
+                case SCRIPT_ID_MULTI:
+                    mergeWorldScriptsPreview(preview, registry, data, origin, transform, recursionStack);
+                    continue;
 
-            if (SCRIPT_ID_STRUCTURE_GENERATOR.equals(scriptId)) {
-                mergeStructureGeneratorPreview(preview, registry, data, origin, transform, recursionStack);
-                continue;
-            }
+                case SCRIPT_ID_STRUCTURE_GENERATOR:
+                    mergeStructureGeneratorPreview(preview, registry, data, origin, transform, recursionStack);
+                    continue;
 
-            if (SCRIPT_ID_MAZE_GENERATOR.equals(scriptId)) {
-                mergeMazePreview(preview, registry, data, origin, transform, recursionStack);
-                continue;
-            }
+                case SCRIPT_ID_MAZE_GENERATOR:
+                    mergeMazePreview(preview, registry, data, origin, transform, recursionStack);
+                    continue;
 
-            if (SCRIPT_ID_HOLDER.equals(scriptId)) {
-                mergeHolderPreview(preview, registry, data, origin, transform, recursionStack);
+                case SCRIPT_ID_HOLDER:
+                    mergeHolderPreview(preview, registry, data, origin, transform, recursionStack);
             }
         }
     }
@@ -521,23 +519,21 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             String scriptId = scriptTag.getString("id");
             NBTTagCompound data = scriptTag.getCompoundTag("data");
 
-            if (SCRIPT_ID_MULTI.equals(scriptId)) {
-                mergeWorldScripts(contents, registry, data, recursionStack);
-                continue;
-            }
+            switch (scriptId) {
+                case SCRIPT_ID_MULTI:
+                    mergeWorldScripts(contents, registry, data, recursionStack);
+                    continue;
 
-            if (SCRIPT_ID_STRUCTURE_GENERATOR.equals(scriptId)) {
-                mergeStructureGeneratorScript(contents, registry, data, recursionStack);
-                continue;
-            }
+                case SCRIPT_ID_STRUCTURE_GENERATOR:
+                    mergeStructureGeneratorScript(contents, registry, data, recursionStack);
+                    continue;
 
-            if (SCRIPT_ID_MAZE_GENERATOR.equals(scriptId)) {
-                mergeMazeScript(contents, registry, data, recursionStack);
-                continue;
-            }
+                case SCRIPT_ID_MAZE_GENERATOR:
+                    mergeMazeScript(contents, registry, data, recursionStack);
+                    continue;
 
-            if (SCRIPT_ID_HOLDER.equals(scriptId)) {
-                mergeHolderScript(contents, registry, data, recursionStack);
+                case SCRIPT_ID_HOLDER:
+                    mergeHolderScript(contents, registry, data, recursionStack);
             }
         }
     }
@@ -754,7 +750,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
             String candidateMazeId = (String) ReflectionHelper.getField(generationType,
                 generationType.getClass(), "mazeID");
-            if (candidateMazeId == null || !mazeId.equalsIgnoreCase(candidateMazeId)) continue;
+            if (!mazeId.equalsIgnoreCase(candidateMazeId)) continue;
 
             Object mazeComponent = ReflectionHelper.getField(generationType,
                 generationType.getClass(), "mazeComponent");
@@ -1080,10 +1076,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
     private List<WorldProvider> getRegisteredDimensionProviders() {
         Set<Integer> dimensionIds = new LinkedHashSet<>();
-        Integer[] registered = DimensionManager.getIDs();
-        if (registered == null) return Collections.emptyList();
-
-        for (Integer dimensionId : registered) {
+        for (Integer dimensionId : DimensionManager.getIDs()) {
             if (dimensionId != null) dimensionIds.add(dimensionId);
         }
 
@@ -1140,12 +1133,6 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {
-        return null;
-    }
-
-    @Override
-    @Nullable
-    public List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
         return null;
     }
 

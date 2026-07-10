@@ -22,7 +22,6 @@ import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
-import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.Mirror;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.Rotation;
@@ -112,7 +111,7 @@ public class BomdStructureProvider extends AbstractStructureProvider {
     private static final List<StructureDefinition> STRUCTURES = Arrays.asList(
         new StructureDefinition("blossom_cave", "IsBlossomCaveAtPos",
             "void_blosom_search_distance", 96, "void_blossom_cave_weight", "list_of_dimensions",
-            Collections.singletonList("blossom"), Collections.<ResourceLocation>emptyList()),
+            Collections.singletonList("blossom"), Collections.emptyList()),
         new StructureDefinition("rotten_hold", "IsRottenHoldAtPos",
             "rotten_hold_distance", 96, "rot_hold_spacing", "list_of_dimensions_rotten_hold",
             Collections.singletonList("rot_hold"), Collections.singletonList(ENTITY_ANCIENT_FALLEN)),
@@ -121,7 +120,7 @@ public class BomdStructureProvider extends AbstractStructureProvider {
             Collections.singletonList("lich_tower"), Collections.singletonList(ENTITY_NIGHT_LICH)),
         new StructureDefinition("burning_flame_arena", "IsBurningFlameArenaAtPos",
             "burning_flame_arena_search_radius", 96, "burning_arena_weight", null,
-            Collections.singletonList("nether_arena"), Collections.<ResourceLocation>emptyList(), -1),
+            Collections.singletonList("nether_arena"), Collections.emptyList(), -1),
         new StructureDefinition("frozen_castle", "IsFrozenCastleAtPos",
             "frozen_castle_search_distance", 96, "frozen_castle_spacing", "list_of_dimensions_frozen_castle",
             Collections.singletonList("frozen_castle"), Collections.singletonList(ENTITY_GREAT_WYRK)),
@@ -130,22 +129,22 @@ public class BomdStructureProvider extends AbstractStructureProvider {
             Arrays.asList("high_city", "aether_high_city"), Arrays.asList(ENTITY_HIGH_KING_DRAKE, ENTITY_HIGH_KING)),
         new StructureDefinition("forgotten_temple", "IsForgottenTempleAtPos",
             "forgotten_temple_distance", 96, "temple_spacing", "list_of_dimensions_forgotten_temple",
-            Collections.singletonList("forgotten_temple"), Collections.<ResourceLocation>emptyList()),
+            Collections.singletonList("forgotten_temple"), Collections.emptyList()),
         new StructureDefinition("obsidilith_arena", "IsObsidilithArenaAtPos",
             "obsidilith_arena_search_distance", 96, "obsidilith_arena_spacing", "list_of_dimensions_obsidilith_arena",
             Collections.singletonList("obsi_arena"), Arrays.asList(ENTITY_OBSIDILITH, ENTITY_VOIDICLYSM)),
         new StructureDefinition("gaelon_sanctuary", "IsGaelonSanctuaryAtPos",
             "gaelon_sanctuary_search_distance", 96, "gaelon_sanctuary_spacing", "list_of_dimensions_gaelon_sanctuary",
-            Collections.singletonList("gaelon_sanctuary"), Collections.<ResourceLocation>emptyList()),
+            Collections.singletonList("gaelon_sanctuary"), Collections.emptyList()),
         new StructureDefinition("trader_post", "IsTraderPostAtPos",
             "trader_post_search_distance", 96, "mysterious_trader_post_spacing", "list_of_dimensions_mysterious_trader_post",
-            Collections.singletonList("trader"), Collections.<ResourceLocation>emptyList()),
+            Collections.singletonList("trader"), Collections.emptyList()),
         new StructureDefinition("dark_ruins", "IsDarkRuinsAtPos",
             "dark_ruins_search_distance", 96, "dauntless_spacing", "list_of_dimensions_dauntless",
-            Collections.singletonList("dark_ruins"), Collections.<ResourceLocation>emptyList()),
+            Collections.singletonList("dark_ruins"), Collections.emptyList()),
         new StructureDefinition("end_outpost", "IsEndOutpostAtPos",
             null, 90, "end_outposts_spacing", null,
-            Collections.singletonList("outpost/end"), Collections.<ResourceLocation>emptyList(), 1)
+            Collections.singletonList("outpost/end"), Collections.emptyList(), 1)
     );
 
     private final Map<ResourceLocation, StructureDefinition> definitionsById = new LinkedHashMap<>();
@@ -318,15 +317,15 @@ public class BomdStructureProvider extends AbstractStructureProvider {
         Class<?> modStructureTemplateClass = ReflectionHelper.loadClassRequired(MOD_STRUCTURE_TEMPLATE_CLASS);
 
         for (StructureComponent component : components) {
-            if (component == null || !modStructureTemplateClass.isInstance(component)) continue;
+            if (!modStructureTemplateClass.isInstance(component)) continue;
 
             String pieceName = (String) ReflectionHelper.getField(component, modStructureTemplateClass, "pieceName");
             String templateLocation = (String) ReflectionHelper.invokeRequired(component, "templateLocation");
             BlockPos templatePos = (BlockPos) ReflectionHelper.invokeRequired(component, "getTemplatePosition");
             PlacementSettings placementSettings = (PlacementSettings) ReflectionHelper.invokeRequired(component,
                 "getPlacementSettings");
-            Mirror mirror = placementSettings.getMirror() != null ? placementSettings.getMirror() : Mirror.NONE;
-            Rotation rotation = placementSettings.getRotation() != null ? placementSettings.getRotation() : Rotation.NONE;
+            Mirror mirror = placementSettings.getMirror();
+            Rotation rotation = placementSettings.getRotation();
 
             StructureNBTParser.ParsedStructure parsed = StructureNBTParser.parseBundledStructure(
                 MOD_ID,
@@ -734,7 +733,6 @@ public class BomdStructureProvider extends AbstractStructureProvider {
                     return;
 
                 default:
-                    return;
             }
         }
 

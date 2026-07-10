@@ -22,7 +22,7 @@ final class StructureJeiIngredientKeys {
         ResourceLocation itemId = stack.getItem().getRegistryName();
         String tagKey = tagKey(stack.getTagCompound());
 
-        return String.valueOf(itemId) + "@" + stack.getMetadata() + "#" + tagKey;
+        return itemId + "@" + stack.getMetadata() + "#" + tagKey;
     }
 
     /**

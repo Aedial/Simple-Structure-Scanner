@@ -192,7 +192,7 @@ public class DummyWorld extends World {
     }
 
     @Override
-    public void setTileEntity(BlockPos pos, @Nullable TileEntity tileEntityIn) {
+    public void setTileEntity(@Nonnull BlockPos pos, @Nullable TileEntity tileEntityIn) {
         removeTileEntity(pos);
         if (tileEntityIn == null) return;
 
@@ -205,7 +205,7 @@ public class DummyWorld extends World {
     }
 
     @Override
-    public void removeTileEntity(BlockPos pos) {
+    public void removeTileEntity(@Nonnull BlockPos pos) {
         TileEntity tileEntity = tileEntities.remove(pos);
         if (tileEntity == null) return;
 
@@ -269,13 +269,11 @@ public class DummyWorld extends World {
         public void saveWorldInfo(@Nonnull WorldInfo worldInformation) {
         }
 
-        @Nonnull
         @Override
         public File getWorldDirectory() {
             return null;
         }
 
-        @Nonnull
         @Override
         public File getMapFileFromName(@Nonnull String mapName) {
             return null;

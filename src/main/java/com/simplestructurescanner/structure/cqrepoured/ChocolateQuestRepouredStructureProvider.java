@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -41,7 +42,6 @@ import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureNBTParser;
-import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
@@ -77,6 +77,10 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     private static final int PREVIEW_SPACING = 2;
     private static final int GENERATED_PREVIEW_BASE_Y = 64;
 
+    private static final List<ResourceLocation> CQR_NULL_BLOCKS = Arrays.asList(
+        new ResourceLocation(MOD_ID, "null_block"),
+        new ResourceLocation(MOD_ID, "null_block")
+    );
     private static final ResourceLocation CQR_DUMMY_ENTITY = new ResourceLocation(MOD_ID, "dummy");
     private static final ResourceLocation CQR_DUMMY_BOSS_ENTITY = new ResourceLocation(MOD_ID, "dummy_boss");
     private static final PreviewGenerationWorld PREVIEW_WORLD = new PreviewGenerationWorld(1L, GENERATED_PREVIEW_BASE_Y);
@@ -181,6 +185,11 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         }
     }
 
+    /**
+     * Build the default inhabitant definition from the CQR config, if available.
+     * This is used to replace dummy entities in dungeons that don't specify a custom inhabitant.
+     * If we can't read the config, we return null and fall back to an empty inhabitant definition.
+     */
     @Nullable
     private InhabitantDefinition buildDefaultInhabitant(Class<?> cqrConfigClass) {
         Set<ResourceLocation> entityIds = new LinkedHashSet<>();
@@ -203,10 +212,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
                 }
             }
         } catch (ReflectionException e) {
-            for (InhabitantDefinition inhabitant : inhabitantsByName.values()) {
-                entityIds.addAll(inhabitant.entityIds);
-                bossIds.addAll(inhabitant.bossIds);
-            }
+            return null;
         }
 
         return new InhabitantDefinition("DEFAULT", new ArrayList<>(entityIds), new ArrayList<>(bossIds));
@@ -309,6 +315,10 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         List<StructureInfo.StructureLayer> generatedPreviewLayers = buildGeneratedPreviewLayers(dungeon);
 
         // FIXME: content is not built for randomized castles, because there is no "static" structure file to parse
+        // To ensure we show everything that could be generated, we parse every structure file
+        // and merge the results. There is no way to give a realistic %chance for each block or entity,
+        // as we'd need to run the generation logic for many seeds, which is a huge performance hit.
+        // This step also handles the preview stitching for the gallery view, if we don't have a generated preview.
         if (!dungeon.structureFiles.isEmpty()) {
             int previewColumn = 0;
             int previewX = 0;
@@ -350,10 +360,10 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     }
 
     /**
-     * Builds a stitched preview of the structure by generating it in a temporary world
-     * and capturing the resulting blocks. This ensures that the preview accurately reflects
-     * the generated layout, without heavy placement logic. Structures that are not handled
-     * or fail to generate will use the generic "gallery" preview instead.
+     * Try to generate the dungeon in a fake world to capture the resulting blocks for a preview.
+     * This avoids the need to implement a full placement logic for each dungeon type, and ensures
+     * that the preview matches the actual generated layout. If generation fails or is not supported,
+     * the fallback is to use the gallery preview from the structure files instead.
      */
     @Nullable
     private List<StructureInfo.StructureLayer> buildGeneratedPreviewLayers(DungeonDefinition dungeon) {
@@ -406,17 +416,20 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         Class<?> blockDungeonPartClass = ReflectionHelper.loadClassRequired(CQR_BLOCK_DUNGEON_PART_CLASS);
         Class<?> generatableBlockInfoClass = ReflectionHelper.loadClassRequired(CQR_GENERATABLE_BLOCK_INFO_CLASS);
         List<?> parts = ReflectionHelper.getListField(generatableDungeon, generatableDungeon.getClass(), "parts");
+        if (parts == null) return;
 
         for (Object part : parts) {
-            if (part == null || !blockDungeonPartClass.isInstance(part)) continue;
+            if (!blockDungeonPartClass.isInstance(part)) continue;
 
             Object chunksObject = ReflectionHelper.invokeRequired(part, "getChunks");
             if (!(chunksObject instanceof Iterable)) continue;
 
             for (Object chunkInfo : (Iterable<?>) chunksObject) {
                 List<?> blocks = ReflectionHelper.getListField(chunkInfo, chunkInfo.getClass(), "blocks");
+                if (blocks == null) continue;
+
                 for (Object blockInfo : blocks) {
-                    if (blockInfo == null || !generatableBlockInfoClass.isInstance(blockInfo)) continue;
+                    if (!generatableBlockInfoClass.isInstance(blockInfo)) continue;
 
                     int x = (Integer) ReflectionHelper.invokeRequired(blockInfo, "getX");
                     int y = (Integer) ReflectionHelper.invokeRequired(blockInfo, "getY");
@@ -604,35 +617,29 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
             int x, int y, int z, @Nullable InhabitantDefinition inhabitant) throws ReflectionException {
         String className = preparable.getClass().getSimpleName();
 
-        if ("PreparableEmptyInfo".equals(className) || "PreparableMapInfo".equals(className)) return;
-
-        if ("PreparableLootChestInfo".equals(className)) {
-            addLootChest(builder, preparable, x, y, z);
-            return;
-        }
-
-        if ("PreparableSpawnerInfo".equals(className)) {
-            addSpawner(builder, preparable, x, y, z, inhabitant);
-            return;
-        }
-
-        if ("PreparableBossInfo".equals(className)) {
-            addBoss(builder, preparable, x, y, z, inhabitant);
-            return;
-        }
-
-        if ("PreparableForceFieldNexusInfo".equals(className)) {
-            addSyntheticBlock(builder, x, y, z, getCqrDefaultState("FORCE_FIELD_NEXUS"), null);
-            return;
-        }
-
-        if ("PreparableTNTCQRInfo".equals(className)) {
-            addSyntheticBlock(builder, x, y, z, Blocks.TNT.getDefaultState(), null);
-            return;
+        switch (className) {
+            case "PreparableEmptyInfo":
+            case "PreparableMapInfo":
+                return;
+            case "PreparableLootChestInfo":
+                addLootChest(builder, preparable, x, y, z);
+                return;
+            case "PreparableSpawnerInfo":
+                addSpawner(builder, preparable, x, y, z, inhabitant);
+                return;
+            case "PreparableBossInfo":
+                addBoss(builder, preparable, x, y, z, inhabitant);
+                return;
+            case "PreparableForceFieldNexusInfo":
+                addSyntheticBlock(builder, x, y, z, getCqrDefaultState("FORCE_FIELD_NEXUS"), null);
+                return;
+            case "PreparableTNTCQRInfo":
+                addSyntheticBlock(builder, x, y, z, Blocks.TNT.getDefaultState(), null);
+                return;
         }
 
         IBlockState state = tryGetState(preparable);
-        if (state == null || !shouldIncludeState(state)) return;
+        if (!shouldIncludeState(state)) return;
 
         NBTTagCompound tileEntityData = tryGetTileEntityData(preparable);
         addStandardBlock(builder, x, y, z, state, tileEntityData, inhabitant);
@@ -650,7 +657,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     }
 
     private void addSpawner(StructureNBTParser.ParsedStructureBuilder builder, Object preparable,
-            int x, int y, int z, @Nullable InhabitantDefinition inhabitant) throws ReflectionException {
+            int x, int y, int z, @Nullable InhabitantDefinition inhabitant) {
         NBTTagCompound tileEntityData = tryGetTileEntityData(preparable);
         IBlockState state = getCqrDefaultState("SPAWNER");
         if (state == null) state = Blocks.MOB_SPAWNER.getDefaultState();
@@ -771,7 +778,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
 
     private void addSyntheticBlock(StructureNBTParser.ParsedStructureBuilder builder, int x, int y, int z,
             @Nullable IBlockState state, @Nullable NBTTagCompound tileEntityData) {
-        if (state == null || !shouldIncludeState(state)) return;
+        if (!shouldIncludeState(state)) return;
 
         builder.addBlockCount(
             StructureNBTParser.createDisplayedBlockKey(
@@ -790,9 +797,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         if (StructureNBTParser.isInvisibleBlock(state.getBlock())) return false;
 
         ResourceLocation blockId = state.getBlock().getRegistryName();
-        if (blockId == null) return true;
-        if (MOD_ID.equals(blockId.getNamespace()) && "null_block".equals(blockId.getPath())) return false;
-        if (MOD_ID.equals(blockId.getNamespace()) && "map_placeholder".equals(blockId.getPath())) return false;
+        if (blockId != null && CQR_NULL_BLOCKS.contains(blockId)) return false;
 
         return true;
     }
@@ -839,7 +844,6 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         }
 
         Block block = Block.REGISTRY.getObject(new ResourceLocation(value.toLowerCase(Locale.ROOT)));
-        if (block == null) return null;
 
         try {
             return block.getStateFromMeta(meta);
@@ -914,10 +918,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
             return dimensions;
         }
 
-        Integer[] registeredDimensions = DimensionManager.getIDs();
-        if (registeredDimensions == null) return null;
-
-        for (Integer dimensionId : registeredDimensions) {
+        for (Integer dimensionId : DimensionManager.getIDs()) {
             if (dimensionId == null || allowedDimensions.contains(dimensionId)) continue;
             dimensions.add(new DimensionInfo(dimensionId));
         }
@@ -945,7 +946,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
             }
         }
 
-        return matchingBiomes.isEmpty() ? Collections.<Biome>emptySet() : matchingBiomes;
+        return matchingBiomes.isEmpty() ? Collections.emptySet() : matchingBiomes;
     }
 
     private boolean isValidBiome(Biome biome, boolean allowedInAllBiomes,

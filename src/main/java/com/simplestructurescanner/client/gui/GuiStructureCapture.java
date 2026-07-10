@@ -2,6 +2,7 @@ package com.simplestructurescanner.client.gui;
 
 import java.io.IOException;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.lwjgl.input.Keyboard;
@@ -58,7 +59,7 @@ public class GuiStructureCapture extends GuiScreen {
     private GuiCaptureBlocksWindow blocksWindow;
     private GuiCaptureEntitiesWindow entitiesWindow;
     private GuiCaptureLootWindow lootWindow;
-    private GuiCapturePreviewWindow previewWindow;
+    private GuiPreviewWindow previewWindow;
     private boolean previewRequestPending;
 
     private int panelX;
@@ -133,10 +134,10 @@ public class GuiStructureCapture extends GuiScreen {
 
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
-        if (previewWindow != null && previewWindow.isVisible() && previewWindow.handleKey(keyCode)) return;
-        if (blocksWindow.isVisible() && blocksWindow.handleKey(keyCode)) return;
-        if (entitiesWindow.isVisible() && entitiesWindow.handleKey(keyCode)) return;
-        if (lootWindow.isVisible() && lootWindow.handleKey(keyCode)) return;
+        if (previewWindow != null && previewWindow.handleKey(keyCode)) return;
+        if (blocksWindow.handleKey(keyCode)) return;
+        if (entitiesWindow.handleKey(keyCode)) return;
+        if (lootWindow.handleKey(keyCode)) return;
 
         if (keyCode == Keyboard.KEY_ESCAPE) {
             mc.displayGuiScreen(null);
@@ -148,10 +149,10 @@ public class GuiStructureCapture extends GuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
-        if (previewWindow != null && previewWindow.isVisible() && previewWindow.handleClick(mouseX, mouseY, mouseButton)) return;
-        if (blocksWindow.isVisible() && blocksWindow.handleClick(mouseX, mouseY, mouseButton)) return;
-        if (entitiesWindow.isVisible() && entitiesWindow.handleClick(mouseX, mouseY, mouseButton)) return;
-        if (lootWindow.isVisible() && lootWindow.handleClick(mouseX, mouseY, mouseButton)) return;
+        if (previewWindow != null && previewWindow.handleClick(mouseX, mouseY, mouseButton)) return;
+        if (blocksWindow.handleClick(mouseX, mouseY, mouseButton)) return;
+        if (entitiesWindow.handleClick(mouseX, mouseY, mouseButton)) return;
+        if (lootWindow.handleClick(mouseX, mouseY, mouseButton)) return;
 
         super.mouseClicked(mouseX, mouseY, mouseButton);
     }
@@ -160,13 +161,16 @@ public class GuiStructureCapture extends GuiScreen {
     public void handleMouseInput() throws IOException {
         super.handleMouseInput();
 
+        int wheel = Mouse.getDWheel();
+        if (wheel == 0) return;
+
         int mouseX = Mouse.getEventX() * width / mc.displayWidth;
         int mouseY = height - Mouse.getEventY() * height / mc.displayHeight - 1;
 
-        if (previewWindow != null && previewWindow.isVisible()) return;
+        if (previewWindow != null && previewWindow.handleMouseInput(mouseX, mouseY, wheel)) return;
         if (blocksWindow.isVisible()) return;
-        if (entitiesWindow.isVisible() && entitiesWindow.handleMouseInput(mouseX, mouseY)) return;
-        if (lootWindow.isVisible() && lootWindow.handleMouseInput(mouseX, mouseY)) return;
+        if (entitiesWindow.handleMouseInput(mouseX, mouseY, wheel)) return;
+        if (lootWindow.handleMouseInput(mouseX, mouseY, wheel)) return;
     }
 
     @Override
@@ -267,7 +271,7 @@ public class GuiStructureCapture extends GuiScreen {
         if (previewWindow != null) previewWindow.release();
 
         StructurePreviewRenderer previewRenderer = StructurePreviewRenderer.createFromLayers(parsedStructure.layers);
-        previewWindow = new GuiCapturePreviewWindow(previewRenderer);
+        previewWindow = GuiPreviewWindow.createCapturePreview(previewRenderer);
         previewWindow.show();
     }
 
@@ -628,7 +632,7 @@ public class GuiStructureCapture extends GuiScreen {
         }
 
         @Override
-        public void drawButton(Minecraft mc, int mouseX, int mouseY, float partialTicks) {
+        public void drawButton(@Nonnull Minecraft mc, int mouseX, int mouseY, float partialTicks) {
             if (!visible) return;
 
             hovered = mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height;

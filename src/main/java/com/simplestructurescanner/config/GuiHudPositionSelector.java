@@ -12,16 +12,17 @@ import com.simplestructurescanner.config.ModConfig.HudPosition;
 public class GuiHudPositionSelector extends GuiScreen {
     private static final int PADDING = 5;
 
-    // Button IDs for positions (0-8 for grid)
-    private static final int BTN_TOP_LEFT = 0;
-    private static final int BTN_TOP_CENTER = 1;
-    private static final int BTN_TOP_RIGHT = 2;
-    private static final int BTN_CENTER_LEFT = 3;
-    private static final int BTN_CENTER = 4;
-    private static final int BTN_CENTER_RIGHT = 5;
-    private static final int BTN_BOTTOM_LEFT = 6;
-    private static final int BTN_BOTTOM_CENTER = 7;
-    private static final int BTN_BOTTOM_RIGHT = 8;
+    // Create 3x3 grid of position buttons (the button IDs are the same as the ordinal of the HudPosition enum)
+    private static final HudPosition[] POSITIONS = {
+        HudPosition.TOP_LEFT, HudPosition.TOP_CENTER, HudPosition.TOP_RIGHT,
+        HudPosition.CENTER_LEFT, HudPosition.CENTER, HudPosition.CENTER_RIGHT,
+        HudPosition.BOTTOM_LEFT, HudPosition.BOTTOM_CENTER, HudPosition.BOTTOM_RIGHT
+    };
+    private static final String[] LABELS = {
+        "top_left", "top_center", "top_right",
+        "center_left", "center", "center_right",
+        "bottom_left", "bottom_center", "bottom_right"
+    };
 
     private final GuiScreen parentScreen;
 
@@ -43,20 +44,9 @@ public class GuiHudPositionSelector extends GuiScreen {
         int gridWidth = width - 2 * PADDING;
         int gridHeight = height - 2 * PADDING;
 
-        // Create 3x3 grid of position buttons
-        HudPosition[] positions = {
-            HudPosition.TOP_LEFT, HudPosition.TOP_CENTER, HudPosition.TOP_RIGHT,
-            HudPosition.CENTER_LEFT, HudPosition.CENTER, HudPosition.CENTER_RIGHT,
-            HudPosition.BOTTOM_LEFT, HudPosition.BOTTOM_CENTER, HudPosition.BOTTOM_RIGHT
-        };
-        String[] labels = {
-            "top_left", "top_center", "top_right",
-            "center_left", "center", "center_right",
-            "bottom_left", "bottom_center", "bottom_right"
-        };
         String[] buttonLabels = new String[9];
-        for (int i = 0; i < labels.length; i++) {
-            buttonLabels[i] = I18n.format("gui.structurescanner.hudPosition." + labels[i]);
+        for (int i = 0; i < LABELS.length; i++) {
+            buttonLabels[i] = I18n.format("gui.structurescanner.hudPosition." + LABELS[i]);
         }
 
         int btnH = 20;
@@ -77,25 +67,20 @@ public class GuiHudPositionSelector extends GuiScreen {
             gridStartY + gridHeight - btnH
         };
 
-        for (int btn = 0; btn < positions.length; btn++) {
+        for (int btn = 0; btn < POSITIONS.length; btn++) {
             int btnX = positionsX[btn % 3];
             int btnY = positionsY[btn / 3];
             String label = buttonLabels[btn];
+            int index = POSITIONS[btn].ordinal();
 
-            buttonList.add(new GuiButton(btn, btnX, btnY, btnW, btnH, label));
+            buttonList.add(new GuiButton(index, btnX, btnY, btnW, btnH, label));
         }
     }
 
     @Override
     protected void actionPerformed(GuiButton button) {
-        if (button.id >= BTN_TOP_LEFT && button.id <= BTN_BOTTOM_RIGHT) {
-            HudPosition[] positions = {
-                HudPosition.TOP_LEFT, HudPosition.TOP_CENTER, HudPosition.TOP_RIGHT,
-                HudPosition.CENTER_LEFT, HudPosition.CENTER, HudPosition.CENTER_RIGHT,
-                HudPosition.BOTTOM_LEFT, HudPosition.BOTTOM_CENTER, HudPosition.BOTTOM_RIGHT
-            };
-
-            ModConfig.setClientHudPosition(positions[button.id]);
+        if (button.id >= POSITIONS[0].ordinal() && button.id <= POSITIONS[POSITIONS.length - 1].ordinal()) {
+            ModConfig.setClientHudPosition(POSITIONS[button.id]);
         }
     }
 

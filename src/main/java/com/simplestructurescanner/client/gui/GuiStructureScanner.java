@@ -278,13 +278,13 @@ public class GuiStructureScanner extends GuiScreen {
     @Override
     protected void keyTyped(char typedChar, int keyCode) throws IOException {
         // Handle confirmation dialog first (highest priority)
-        if (confirmDialog != null && confirmDialog.isVisible() && confirmDialog.handleKey(keyCode)) return;
+        if (confirmDialog != null && confirmDialog.handleKey(keyCode)) return;
 
         // Handle modal windows first
-        if (previewWindow != null && previewWindow.isVisible() && previewWindow.handleKey(keyCode)) return;
-        if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.handleKey(keyCode)) return;
-        if (lootWindow != null && lootWindow.isVisible() && lootWindow.handleKey(keyCode)) return;
-        if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.handleKey(keyCode)) return;
+        if (previewWindow != null && previewWindow.handleKey(keyCode)) return;
+        if (blocksWindow != null && blocksWindow.handleKey(keyCode)) return;
+        if (lootWindow != null && lootWindow.handleKey(keyCode)) return;
+        if (entitiesWindow != null && entitiesWindow.handleKey(keyCode)) return;
 
         if (keyCode == Keyboard.KEY_ESCAPE) {
             closeScreen();
@@ -300,13 +300,13 @@ public class GuiStructureScanner extends GuiScreen {
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) throws IOException {
         // Handle confirmation dialog first (highest priority)
-        if (confirmDialog != null && confirmDialog.isVisible() && confirmDialog.handleClick(mouseX, mouseY, mouseButton)) return;
+        if (confirmDialog != null && confirmDialog.handleClick(mouseX, mouseY, mouseButton)) return;
 
         // Handle modal windows first
-        if (previewWindow != null && previewWindow.isVisible() && previewWindow.handleClick(mouseX, mouseY, mouseButton)) return;
-        if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.handleClick(mouseX, mouseY, mouseButton)) return;
-        if (lootWindow != null && lootWindow.isVisible() && lootWindow.handleClick(mouseX, mouseY, mouseButton)) return;
-        if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.handleClick(mouseX, mouseY, mouseButton)) return;
+        if (previewWindow != null && previewWindow.handleClick(mouseX, mouseY, mouseButton)) return;
+        if (blocksWindow != null && blocksWindow.handleClick(mouseX, mouseY, mouseButton)) return;
+        if (lootWindow != null && lootWindow.handleClick(mouseX, mouseY, mouseButton)) return;
+        if (entitiesWindow != null && entitiesWindow.handleClick(mouseX, mouseY, mouseButton)) return;
 
         // Right-click on filter field clears it
         if (mouseButton == 1 &&
@@ -406,9 +406,19 @@ public class GuiStructureScanner extends GuiScreen {
 
     private void openPreviewWindow() {
         if (selected == null || selectedInfo == null) return;
-        if (previewRenderer == null || previewRenderer.getWorld().renderedBlocks.isEmpty()) return;
+        if (selectedInfo.getPreviewSnapshot().isEmpty()) return;
 
-        previewWindow = new GuiPreviewWindow(this, selected, selectedInfo, previewRenderer);
+        boolean needsRebuild = previewRenderer == null || lastRenderedStructure == null || !lastRenderedStructure.equals(selected);
+        if (needsRebuild) {
+            buildPreviewRenderer(selectedInfo);
+            lastRenderedStructure = selected;
+        }
+
+        if (previewRenderer == null) return;
+
+        String name = ClientTextResolver.resolve(selectedInfo.getDisplayName());
+        String title = I18n.format("gui.structurescanner.preview.title", name);
+        previewWindow = GuiPreviewWindow.createScannerPreview(title, previewRenderer);
         previewWindow.show();
     }
 
@@ -428,25 +438,19 @@ public class GuiStructureScanner extends GuiScreen {
     public void handleMouseInput() throws IOException {
         super.handleMouseInput();
 
+        int wheel = Mouse.getDWheel();
+        if (wheel == 0) return;
+
         // Check if modal is blocking scroll
         int mouseX = Mouse.getEventX() * this.width / this.mc.displayWidth;
         int mouseY = this.height - Mouse.getEventY() * this.height / this.mc.displayHeight - 1;
 
-        if (previewWindow != null && previewWindow.isVisible() && previewWindow.isMouseOver(mouseX, mouseY)) return;
-        if (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) return;
-        if (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.isMouseOver(mouseX, mouseY) && entitiesWindow.handleMouseInput(mouseX, mouseY)) return;
+        if (previewWindow != null && previewWindow.handleMouseInput(mouseX, mouseY, wheel)) return;
+        if (blocksWindow != null && blocksWindow.isMouseOver(mouseX, mouseY)) return;
+        if (entitiesWindow != null && entitiesWindow.handleMouseInput(mouseX, mouseY, wheel)) return;
+        if (lootWindow != null && lootWindow.handleMouseInput(mouseX, mouseY, wheel)) return;
 
-        int wheel = Mouse.getDWheel();
-        if (wheel != 0) {
-            // Loot window handles its own scrolling
-            if (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) {
-                lootWindow.handleScroll(wheel);
-
-                return;
-            }
-
-            listWidget.handleScroll(wheel);
-        }
+        listWidget.handleScroll(wheel);
     }
 
     @Override
@@ -454,10 +458,10 @@ public class GuiStructureScanner extends GuiScreen {
         this.drawDefaultBackground();
 
         // Check if any modal is blocking
-        boolean modalBlocking = (previewWindow != null && previewWindow.isVisible() && previewWindow.isMouseOver(mouseX, mouseY)) ||
-                                (blocksWindow != null && blocksWindow.isVisible() && blocksWindow.isMouseOver(mouseX, mouseY)) ||
-                                (lootWindow != null && lootWindow.isVisible() && lootWindow.isMouseOver(mouseX, mouseY)) ||
-                                (entitiesWindow != null && entitiesWindow.isVisible() && entitiesWindow.isMouseOver(mouseX, mouseY));
+        boolean modalBlocking = (previewWindow != null && previewWindow.isMouseOver(mouseX, mouseY)) ||
+                                (blocksWindow != null && blocksWindow.isMouseOver(mouseX, mouseY)) ||
+                                (lootWindow != null && lootWindow.isMouseOver(mouseX, mouseY)) ||
+                                (entitiesWindow != null && entitiesWindow.isMouseOver(mouseX, mouseY));
 
         int effectiveMouseX = modalBlocking ? -1 : mouseX;
         int effectiveMouseY = modalBlocking ? -1 : mouseY;
@@ -842,13 +846,16 @@ public class GuiStructureScanner extends GuiScreen {
         Gui.drawRect(previewX - 1, previewY - 1, previewX + previewSize + 1, previewY + previewSize + 1, 0xFF333333);
         Gui.drawRect(previewX, previewY, previewX + previewSize, previewY + previewSize, 0xFF1A1A1A);
 
-        // Keep empty preview if no cached preview data - clear stale renderer
-        if (selectedInfo == null || selectedInfo.getPreviewSnapshot().isEmpty()) {
+        if (selectedInfo == null) return;
+
+        // Keep the renderer in sync when switching to a structure without preview data.
+        if (selectedInfo.getPreviewSnapshot().isEmpty()) {
             if (lastRenderedStructure == null || !lastRenderedStructure.equals(selected)) {
                 clearPreviewRenderer();
                 lastRenderedStructure = selected;
             }
 
+            drawPreviewStatus(I18n.format("gui.structurescanner.preview.unavailable"), 0x888888);
             return;
         }
 
@@ -862,12 +869,29 @@ public class GuiStructureScanner extends GuiScreen {
             lastRenderedStructure = selected;
         }
 
-        // TODO: if we have no preview data at all, show a placeholder image or text instead of a blank box
-        if (previewRenderer == null || previewRenderer.getWorld().renderedBlocks.isEmpty()) return;
+        if (previewRenderer == null) {
+            drawPreviewStatus(I18n.format("gui.structurescanner.preview.unavailable"), 0x888888);
+            return;
+        }
+
+        if (!previewRenderer.isBuildReady()) {
+            String text = I18n.format("gui.structurescanner.preview.loading");
+            drawPreviewStatus(GuiPreviewWindow.getAnimatedLoadingText(text), 0xAAAAAA);
+            return;
+        }
+
+        if (!previewRenderer.hasRenderableBlocks()) {
+            drawPreviewStatus(I18n.format("gui.structurescanner.preview.unavailable"), 0x888888);
+            return;
+        }
 
         // Render the structure (rotation and camera handled internally)
         previewRenderer.setBackgroundColor(0xFF1A1A1A);
         previewRenderer.render(previewX, previewY, previewSize, previewSize);
+    }
+
+    private void drawPreviewStatus(String text, int color) {
+        GuiPreviewWindow.drawCenteredPreviewStatus(fontRenderer, previewX, previewY, previewSize, previewSize, text, color);
     }
 
     /**
@@ -962,11 +986,10 @@ public class GuiStructureScanner extends GuiScreen {
         // Try minimal format without labels
         String yStr = String.valueOf(y);
         String sep = I18n.format("gui.structurescanner.separator");
-        String minimalFormat = yAgnostic
+
+        return yAgnostic
             ? String.join(sep, xCompact, zCompact)
             : String.join(sep, xCompact, yStr, zCompact);
-
-        return minimalFormat;
     }
 
     /**
@@ -1151,7 +1174,7 @@ public class GuiStructureScanner extends GuiScreen {
     }
 
     private void drawSmallPreviewTooltip(int mouseX, int mouseY) {
-        // Skip tooltip if preview modal is open
+        // Skip tooltip if preview modal is open, as we already show the full preview there
         if (previewWindow != null && previewWindow.isVisible()) return;
 
         if (selectedInfo == null || selectedInfo.getPreviewSnapshot().isEmpty()) return;

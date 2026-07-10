@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.lwjgl.BufferUtils;
@@ -83,6 +84,9 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     private static final int GRID_START_X = INNER_FRAME_X + 2;
     private static final int GRID_START_Y = INNER_FRAME_Y + 2;
     private static final int PAGE_BUTTON_Y = INNER_FRAME_Y + INNER_FRAME_H + 2;
+    private static final int NEXT_PAGE_BUTTON_X = INNER_FRAME_X + INNER_FRAME_W - BUTTON_SIZE;
+    private static final int PREV_PAGE_BUTTON_X = NEXT_PAGE_BUTTON_X - BUTTON_SIZE - 2;
+    private static final int SCANNER_BUTTON_X = INNER_FRAME_X + INNER_FRAME_W - BUTTON_SIZE;
     private static final int PANEL_BACKGROUND_COLOR = 0x80F0F0F0;
     private static final int PANEL_LIGHT_BORDER_COLOR = 0xFFF5F5F5;
     private static final int PANEL_DARK_BORDER_COLOR = 0xFF8A8A8A;
@@ -178,7 +182,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
      * Exposes the outputs surfaced by the current tab.
      */
     @Override
-    public void getIngredients(IIngredients ingredients) {
+    public void getIngredients(@Nonnull IIngredients ingredients) {
         StructureInfo structureInfo = getStructureInfo();
         if (structureInfo == null) return;
 
@@ -202,7 +206,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
      * Draws the shared panel and the current tab body.
      */
     @Override
-    public void drawInfo(Minecraft minecraft, int recipeWidth, int recipeHeight, int mouseX, int mouseY) {
+    public void drawInfo(@Nonnull Minecraft minecraft, int recipeWidth, int recipeHeight, int mouseX, int mouseY) {
         resetGuiOverlayState(minecraft);
         drawBackgroundLayer(minecraft, mouseX, mouseY);
 
@@ -238,13 +242,14 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     /**
      * Supplies tab, paging, and hovered-entry tooltips for the panel.
      */
+    @Nonnull
     @Override
     public List<String> getTooltipStrings(int mouseX, int mouseY) {
         if (!StructureJeiVisibility.isCategoryEnabled(view)) return Collections.emptyList();
         if (!StructureJeiVisibility.isStructureVisible(structureId)) return Collections.emptyList();
 
         for (StructureJeiView tabView : StructureJeiView.values()) {
-            if (isInRect(mouseX, mouseY, getTabX(tabView), INNER_TAB_Y, BUTTON_SIZE, BUTTON_SIZE)) {
+            if (isInButtonRect(mouseX, mouseY, getTabX(tabView), INNER_TAB_Y)) {
                 if (!StructureJeiVisibility.isCategoryEnabled(tabView)) {
                     return Collections.singletonList(I18n.format("jei.structurescanner.button.disabled"));
                 }
@@ -253,20 +258,17 @@ public class StructureJeiRecipe implements IRecipeWrapper {
             }
         }
 
-        if (isInRect(mouseX, mouseY, getScannerButtonX(), INNER_TAB_Y, BUTTON_SIZE, BUTTON_SIZE)) {
+        if (isInButtonRect(mouseX, mouseY, SCANNER_BUTTON_X, INNER_TAB_Y)) {
             return Collections.singletonList(I18n.format("jei.structurescanner.button.scanner"));
         }
 
-        if (hasMultiplePages() && isInRect(mouseX, mouseY, getPrevPageX(), getPageButtonY(), BUTTON_SIZE, BUTTON_SIZE)) {
+        if (hasMultiplePages() && isInButtonRect(mouseX, mouseY, PREV_PAGE_BUTTON_X, PAGE_BUTTON_Y)) {
             return Collections.singletonList(I18n.format("jei.structurescanner.button.prevPage"));
         }
 
-        if (hasMultiplePages() && isInRect(mouseX, mouseY, getNextPageX(), getPageButtonY(), BUTTON_SIZE, BUTTON_SIZE)) {
+        if (hasMultiplePages() && isInButtonRect(mouseX, mouseY, NEXT_PAGE_BUTTON_X, PAGE_BUTTON_Y)) {
             return Collections.singletonList(I18n.format("jei.structurescanner.button.nextPage"));
         }
-
-        StructureInfo structureInfo = getStructureInfo();
-        if (structureInfo == null) return Collections.emptyList();
 
         return Collections.emptyList();
     }
@@ -275,23 +277,23 @@ public class StructureJeiRecipe implements IRecipeWrapper {
      * Handles tab switching, scanner jumps, paging, and recipe/use clicks inside the panel.
      */
     @Override
-    public boolean handleClick(Minecraft minecraft, int mouseX, int mouseY, int mouseButton) {
+    public boolean handleClick(@Nonnull Minecraft minecraft, int mouseX, int mouseY, int mouseButton) {
         if (!StructureJeiVisibility.isCategoryEnabled(view)) return false;
         if (!StructureJeiVisibility.isStructureVisible(structureId)) return false;
 
         for (StructureJeiView tabView : StructureJeiView.values()) {
-            if (!isInRect(mouseX, mouseY, getTabX(tabView), INNER_TAB_Y, BUTTON_SIZE, BUTTON_SIZE)) continue;
+            if (!isInButtonRect(mouseX, mouseY, getTabX(tabView), INNER_TAB_Y)) continue;
             if (!StructureJeiVisibility.isCategoryEnabled(tabView)) return false;
 
             return JEIHelper.showStructureCategory(structureId, tabView);
         }
 
-        if (isInRect(mouseX, mouseY, getScannerButtonX(), INNER_TAB_Y, BUTTON_SIZE, BUTTON_SIZE)) {
+        if (isInButtonRect(mouseX, mouseY, SCANNER_BUTTON_X, INNER_TAB_Y)) {
             return JEIHelper.openStructureScanner(structureId);
         }
 
         if (view == StructureJeiView.BLOCKS || view == StructureJeiView.LOOT) {
-            if (hasMultiplePages() && isInRect(mouseX, mouseY, getPrevPageX(), getPageButtonY(), BUTTON_SIZE, BUTTON_SIZE)) {
+            if (hasMultiplePages() && isInButtonRect(mouseX, mouseY, PREV_PAGE_BUTTON_X, PAGE_BUTTON_Y)) {
                 if (page > 0) {
                     page--;
                     invalidateJeiLayout();
@@ -299,7 +301,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
                 return true;
             }
 
-            if (hasMultiplePages() && isInRect(mouseX, mouseY, getNextPageX(), getPageButtonY(), BUTTON_SIZE, BUTTON_SIZE)) {
+            if (hasMultiplePages() && isInButtonRect(mouseX, mouseY, NEXT_PAGE_BUTTON_X, PAGE_BUTTON_Y)) {
                 if (page < getPageCount() - 1) {
                     page++;
                     invalidateJeiLayout();
@@ -307,9 +309,6 @@ public class StructureJeiRecipe implements IRecipeWrapper {
                 return true;
             }
         }
-
-        StructureInfo structureInfo = getStructureInfo();
-        if (structureInfo == null) return false;
 
         return false;
     }
@@ -351,6 +350,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     }
 
     public static ResourceLocation getAnchorStructureId(ItemStack stack) {
+        assert stack.getTagCompound() != null;
         return new ResourceLocation(stack.getTagCompound().getString(ANCHOR_TAG));
     }
 
@@ -400,22 +400,11 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         for (StructureJeiView tabView : StructureJeiView.values()) {
             int tabX = getTabX(tabView);
             boolean enabled = StructureJeiVisibility.isCategoryEnabled(tabView);
-            boolean active = enabled && tabView == view;
-            boolean hovered = enabled && isInRect(mouseX, mouseY, tabX, INNER_TAB_Y, BUTTON_SIZE, BUTTON_SIZE);
-            drawButton(minecraft, tabX, INNER_TAB_Y, BUTTON_SIZE, BUTTON_SIZE, tabView.getButtonLabel(), active, hovered, enabled);
+            boolean active = tabView == view;
+            drawBasicButton(minecraft, tabX, INNER_TAB_Y, tabView.getButtonLabel(), active, enabled, mouseX, mouseY);
         }
 
-        drawButton(
-            minecraft,
-            getScannerButtonX(),
-            INNER_TAB_Y,
-            BUTTON_SIZE,
-            BUTTON_SIZE,
-            "S",
-            false,
-            isInRect(mouseX, mouseY, getScannerButtonX(), INNER_TAB_Y, BUTTON_SIZE, BUTTON_SIZE),
-            true
-        );
+        drawBasicButton(minecraft, SCANNER_BUTTON_X, INNER_TAB_Y, "S", false, true, mouseX, mouseY);
 
         drawFramedPanel(INNER_FRAME_X, INNER_FRAME_Y, INNER_FRAME_W, INNER_FRAME_H, CONTENT_BACKGROUND_COLOR);
     }
@@ -473,37 +462,33 @@ public class StructureJeiRecipe implements IRecipeWrapper {
      */
     private void drawFooter(Minecraft minecraft, String footerText, int totalPages, int mouseX, int mouseY) {
         FontRenderer fontRenderer = minecraft.fontRenderer;
-        int footerY = getPageButtonY() + (totalPages <= 1 ? 4 : 2);
+        int footerY = PAGE_BUTTON_Y + (totalPages <= 1 ? 4 : 2);
         fontRenderer.drawString(footerText, INNER_FRAME_X, footerY, SECONDARY_TEXT_COLOR);
 
         if (totalPages <= 1) return;
 
         String pageText = I18n.format("jei.structurescanner.page", page + 1, totalPages);
         int pageTextWidth = fontRenderer.getStringWidth(pageText);
-        int pageTextX = getPrevPageX() - pageTextWidth - 4;
+        int pageTextX = PREV_PAGE_BUTTON_X - pageTextWidth - 4;
         fontRenderer.drawString(pageText, pageTextX, footerY, SECONDARY_TEXT_COLOR);
 
-        drawButton(
+        drawBasicButton(
             minecraft,
-            getPrevPageX(),
-            getPageButtonY(),
-            BUTTON_SIZE,
-            BUTTON_SIZE,
+            PREV_PAGE_BUTTON_X,
+            PAGE_BUTTON_Y,
             "<",
             false,
-            isInRect(mouseX, mouseY, getPrevPageX(), getPageButtonY(), BUTTON_SIZE, BUTTON_SIZE),
-            true
+            true,
+            mouseX, mouseY
         );
-        drawButton(
+        drawBasicButton(
             minecraft,
-            getNextPageX(),
-            getPageButtonY(),
-            BUTTON_SIZE,
-            BUTTON_SIZE,
+            NEXT_PAGE_BUTTON_X,
+            PAGE_BUTTON_Y,
             ">",
             false,
-            isInRect(mouseX, mouseY, getNextPageX(), getPageButtonY(), BUTTON_SIZE, BUTTON_SIZE),
-            true
+            true,
+            mouseX, mouseY
         );
     }
 
@@ -645,7 +630,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         if (view != StructureJeiView.BLOCKS || focus.getMode() != IFocus.Mode.OUTPUT) return false;
 
         FluidStack stack = focus.getValue();
-        if (stack == null || stack.amount <= 0 || stack.getFluid() == null) return false;
+        if (stack.amount <= 0 || stack.getFluid() == null) return false;
 
         StructureInfo structureInfo = getStructureInfo();
         if (structureInfo == null) return false;
@@ -785,11 +770,9 @@ public class StructureJeiRecipe implements IRecipeWrapper {
                 displayStack.setCount(1);
 
                 String aggregationKey = LootTableResolver.createAggregationKey(displayStack);
-                LootDisplayEntry displayEntry = lootByKey.get(aggregationKey);
-                if (displayEntry == null) {
-                    displayEntry = new LootDisplayEntry(displayStack);
-                    lootByKey.put(aggregationKey, displayEntry);
-                }
+                LootDisplayEntry displayEntry = lootByKey.computeIfAbsent(
+                        aggregationKey,
+                        k -> new LootDisplayEntry(displayStack));
 
                 if (seenInEntry.add(aggregationKey)) displayEntry.sourceCount++;
             }
@@ -894,12 +877,10 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     private BlockEntry getHoveredBlockEntry(int mouseX, int mouseY, StructureInfo structureInfo) {
         List<BlockEntry> blockEntries = getSortedBlockEntries(structureInfo);
         int startIndex = page * PAGE_SIZE;
-        int gridX = getGridStartX();
-        int gridY = getGridStartY();
 
         for (int index = 0; index < PAGE_SIZE && startIndex + index < blockEntries.size(); index++) {
-            int itemX = gridX + (index % GRID_COLS) * CELL_W;
-            int itemY = gridY + (index / GRID_COLS) * CELL_H;
+            int itemX = GRID_START_X + (index % GRID_COLS) * CELL_W;
+            int itemY = GRID_START_Y + (index / GRID_COLS) * CELL_H;
 
             if (!isInRect(mouseX, mouseY, itemX, itemY, SLOT_SIZE, SLOT_SIZE)) continue;
 
@@ -913,12 +894,10 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     private LootDisplayEntry getHoveredLootEntry(int mouseX, int mouseY, StructureInfo structureInfo) {
         List<LootDisplayEntry> lootEntries = getLootDisplayEntries(structureInfo);
         int startIndex = page * PAGE_SIZE;
-        int gridX = getGridStartX();
-        int gridY = getGridStartY();
 
         for (int index = 0; index < PAGE_SIZE && startIndex + index < lootEntries.size(); index++) {
-            int itemX = gridX + (index % GRID_COLS) * CELL_W;
-            int itemY = gridY + (index / GRID_COLS) * CELL_H;
+            int itemX = GRID_START_X + (index % GRID_COLS) * CELL_W;
+            int itemY = GRID_START_Y + (index / GRID_COLS) * CELL_H;
 
             if (!isInRect(mouseX, mouseY, itemX, itemY, SLOT_SIZE, SLOT_SIZE)) continue;
 
@@ -926,14 +905,6 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         }
 
         return null;
-    }
-
-    private int getGridStartX() {
-        return GRID_START_X;
-    }
-
-    private int getGridStartY() {
-        return GRID_START_Y;
     }
 
     @Nullable
@@ -1042,6 +1013,10 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
     }
 
+    private static boolean isInButtonRect(int mouseX, int mouseY, int buttonX, int buttonY) {
+        return isInRect(mouseX, mouseY, buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
+    }
+
     private static void drawSlotCount(FontRenderer fontRenderer, String countText, int slotX, int slotY) {
         if (countText == null || countText.isEmpty()) return;
 
@@ -1130,22 +1105,6 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         return INNER_FRAME_X + tabView.ordinal() * (BUTTON_SIZE + BUTTON_GAP);
     }
 
-    private int getScannerButtonX() {
-        return INNER_FRAME_X + INNER_FRAME_W - BUTTON_SIZE;
-    }
-
-    private int getPrevPageX() {
-        return getNextPageX() - BUTTON_SIZE - 2;
-    }
-
-    private int getNextPageX() {
-        return INNER_FRAME_X + INNER_FRAME_W - BUTTON_SIZE;
-    }
-
-    private int getPageButtonY() {
-        return PAGE_BUTTON_Y;
-    }
-
     private static String getTabTooltipKey(StructureJeiView tabView) {
         if (tabView == StructureJeiView.PREVIEW) return "jei.structurescanner.button.preview";
         if (tabView == StructureJeiView.BLOCKS) return "jei.structurescanner.button.blocks";
@@ -1179,6 +1138,17 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         int textY = y + (height - 8) / 2;
         int textColor = !enabled ? 0x888888 : active ? 0xFFFFCC : 0xFFFFFF;
         fontRenderer.drawStringWithShadow(label, textX, textY, textColor);
+    }
+
+    private static void drawBasicButton(Minecraft minecraft, int x, int y, String label, boolean active,
+            boolean hovered, boolean enabled) {
+        drawButton(minecraft, x, y, BUTTON_SIZE, BUTTON_SIZE, label, active, hovered, enabled);
+    }
+
+    private static void drawBasicButton(Minecraft minecraft, int x, int y, String label, boolean active,
+            boolean enabled, int mouseX, int mouseY) {
+        boolean hovered = isInRect(mouseX, mouseY, x, y, BUTTON_SIZE, BUTTON_SIZE);
+        drawBasicButton(minecraft, x, y, label, active, hovered, enabled);
     }
 
     private void drawCenteredFrameText(Minecraft minecraft, String text, int y, int color) {
