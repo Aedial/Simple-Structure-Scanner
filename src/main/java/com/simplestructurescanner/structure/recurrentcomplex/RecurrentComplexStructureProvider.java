@@ -5,9 +5,11 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
@@ -282,8 +284,10 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         List<NBTTagCompound> entities = getCompoundListField(worldData, "entities");
 
         Set<BlockPos> scriptPositions = collectScriptPositions(tileEntities);
-        mergeBlockCollection(contents, blockCollection, scriptPositions);
+        Map<BlockPos, NBTTagCompound> tileEntitiesByPos = indexTileEntities(tileEntities);
+        mergeBlockCollection(contents, blockCollection, scriptPositions, tileEntitiesByPos);
 
+        // FIXME: Recurrent Complex seems to sanitize spawner data away? Why?
         for (NBTTagCompound tileEntity : tileEntities) {
             if (tileEntity == null) continue;
 
@@ -343,7 +347,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         List<NBTTagCompound> tileEntities = getCompoundListField(worldData, "tileEntities");
 
         Set<BlockPos> scriptPositions = collectScriptPositions(tileEntities);
-        addPreviewBlockCollection(preview, blockCollection, worldDataSize, origin, transform, scriptPositions);
+        Map<BlockPos, NBTTagCompound> tileEntitiesByPos = indexTileEntities(tileEntities);
+        addPreviewBlockCollection(preview, blockCollection, worldDataSize, origin, transform, scriptPositions, tileEntitiesByPos);
 
         for (NBTTagCompound tileEntity : tileEntities) {
             if (!isScriptTileEntity(tileEntity)) continue;
@@ -366,7 +371,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     }
 
     private void mergeBlockCollection(StructureNBTParser.StructureContentSink contents, @Nullable Object blockCollection,
-            Set<BlockPos> scriptPositions) throws ReflectionException {
+            Set<BlockPos> scriptPositions, Map<BlockPos, NBTTagCompound> tileEntitiesByPos) throws ReflectionException {
         if (blockCollection == null) return;
 
         Object area = invokeRequired(blockCollection, "area");
@@ -385,12 +390,14 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             Block block = state != null ? state.getBlock() : null;
             if (!DEFAULT_PARSE_EXTENSION.shouldCountBlock(state, block)) continue;
 
-            contents.addBlockCount(DEFAULT_PARSE_EXTENSION.getBlockCountKey(state, block, null), state);
+            NBTTagCompound blockEntityData = tileEntitiesByPos.containsKey(pos) ? tileEntitiesByPos.get(pos).copy() : null;
+            contents.addBlockCount(DEFAULT_PARSE_EXTENSION.getBlockCountKey(state, block, blockEntityData), state, blockEntityData);
         }
     }
 
     private void addPreviewBlockCollection(StructurePreviewStitcher preview, @Nullable Object blockCollection,
-            int[] size, BlockPos origin, PreviewTransform transform, Set<BlockPos> scriptPositions) throws ReflectionException {
+            int[] size, BlockPos origin, PreviewTransform transform, Set<BlockPos> scriptPositions,
+            Map<BlockPos, NBTTagCompound> tileEntitiesByPos) throws ReflectionException {
         if (blockCollection == null) return;
 
         Object area = invokeRequired(blockCollection, "area");
@@ -408,7 +415,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             Block block = state != null ? state.getBlock() : null;
             if (!DEFAULT_PARSE_EXTENSION.shouldStoreLayerBlock(state, block)) continue;
 
-            preview.setBlock(offsetPos(origin, transform.applyLocal(localPos, size)), state);
+            NBTTagCompound blockEntityData = tileEntitiesByPos.containsKey(localPos) ? tileEntitiesByPos.get(localPos).copy() : null;
+            preview.setBlock(offsetPos(origin, transform.applyLocal(localPos, size)), state, blockEntityData);
         }
     }
 
@@ -432,6 +440,18 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         }
 
         return compounds;
+    }
+
+    private Map<BlockPos, NBTTagCompound> indexTileEntities(List<NBTTagCompound> tileEntities) {
+        Map<BlockPos, NBTTagCompound> tileEntitiesByPos = new HashMap<>();
+
+        for (NBTTagCompound tileEntity : tileEntities) {
+            if (tileEntity == null) continue;
+
+            tileEntitiesByPos.putIfAbsent(getTileEntityPos(tileEntity), tileEntity);
+        }
+
+        return tileEntitiesByPos;
     }
 
     private Set<BlockPos> collectScriptPositions(List<NBTTagCompound> tileEntities) {
@@ -716,44 +736,57 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         return getStructuresFromPairStream(stream);
     }
 
+    // FIXME: RC's maze gen is broken. The pagodas show, but the Stone Maze Small/Big/Huge have a size with no layer
     private List<Object> getMazeStructuresCaseInsensitive(Object registry, String mazeId) throws ReflectionException {
-        List<String> activeStructureIds = new ArrayList<>(getActiveStructureIds(registry));
-        activeStructureIds.sort(String.CASE_INSENSITIVE_ORDER);
-
-        List<Object> matches = new ArrayList<>();
-        for (String rawId : activeStructureIds) {
-            Object structure = getActiveStructure(registry, rawId);
-            if (structure == null) continue;
-
-            List<?> generationTypes = getGenerationTypes(structure);
-            if (generationTypes == null || generationTypes.isEmpty()) continue;
-
-            for (Object generationType : generationTypes) {
-                if (!MAZE_GENERATION_CLASS.equals(generationType.getClass().getName())) continue;
-
-                String candidateMazeId = (String) ReflectionHelper.getField(generationType,
-                    generationType.getClass(), "mazeID");
-                if (candidateMazeId == null || !mazeId.equalsIgnoreCase(candidateMazeId)) continue;
-
-                Object mazeComponent = ReflectionHelper.getField(generationType,
-                    generationType.getClass(), "mazeComponent");
-                if (mazeComponent != null && !invokeBooleanRequired(mazeComponent, "isValid", new Class<?>[0])) {
-                    continue;
-                }
-
-                matches.add(structure);
-                break;
-            }
+        Class<?> mazeGenerationClass = ReflectionHelper.loadClassRequired(MAZE_GENERATION_CLASS);
+        Object generationPairsObject = invokeRequired(registry, "getGenerationTypes", new Class<?>[]{Class.class}, mazeGenerationClass);
+        if (!(generationPairsObject instanceof Collection)) {
+            throw new ReflectionException("Unexpected Recurrent Complex maze generation pair collection payload: " + generationPairsObject);
         }
 
-        if (!matches.isEmpty()) {
+        List<Object> validMatches = new ArrayList<>();
+        List<Object> relaxedMatches = new ArrayList<>();
+
+        for (Object pair : (Collection<?>) generationPairsObject) {
+            Object structure = invokeRequired(pair, "getLeft");
+            Object generationType = invokeRequired(pair, "getRight");
+            if (structure == null || generationType == null) continue;
+
+            String candidateMazeId = (String) ReflectionHelper.getField(generationType,
+                generationType.getClass(), "mazeID");
+            if (candidateMazeId == null || !mazeId.equalsIgnoreCase(candidateMazeId)) continue;
+
+            Object mazeComponent = ReflectionHelper.getField(generationType,
+                generationType.getClass(), "mazeComponent");
+            boolean valid = mazeComponent == null || invokeBooleanRequired(mazeComponent, "isValid", new Class<?>[0]);
+
+            if (valid) {
+                if (!validMatches.contains(structure)) validMatches.add(structure);
+                continue;
+            }
+
+            if (!relaxedMatches.contains(structure)) relaxedMatches.add(structure);
+        }
+
+        if (!validMatches.isEmpty()) {
             SimpleStructureScanner.LOGGER.debug(
                 "Resolved Recurrent Complex maze '{}' via case-insensitive component lookup ({} match(es))",
-                mazeId, matches.size()
+                mazeId, validMatches.size()
             );
+
+            return validMatches;
         }
 
-        return matches;
+        if (!relaxedMatches.isEmpty()) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Resolved Recurrent Complex maze '{}' via relaxed component lookup despite invalid maze components ({} match(es))",
+                mazeId, relaxedMatches.size()
+            );
+
+            return relaxedMatches;
+        }
+
+        return Collections.emptyList();
     }
 
     private List<Object> getStructuresFromPairStream(Object streamObject) throws ReflectionException {

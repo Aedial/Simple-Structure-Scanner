@@ -90,7 +90,8 @@ public class PillarNBTParser {
                 parseDataBlockMetadata(nbtData.getString("metadata"), builder);
             }
 
-            extractContainerItems(state, nbtData, directContainerItems);
+            // Direct containers are processed in parallel, so exclude them to avoid double-counting
+            if (!hasSerializedInventoryItems(nbtData)) extractContainerItems(state, nbtData, directContainerItems);
         }
 
         @Override
@@ -325,6 +326,12 @@ public class PillarNBTParser {
                 if (!stack.isEmpty()) outItems.add(stack.copy());
             }
         }
+    }
+
+    private static boolean hasSerializedInventoryItems(NBTTagCompound nbtData) {
+        if (!nbtData.hasKey("Items", Constants.NBT.TAG_LIST)) return false;
+
+        return nbtData.getTagList("Items", Constants.NBT.TAG_COMPOUND).tagCount() > 0;
     }
 
     @Nullable

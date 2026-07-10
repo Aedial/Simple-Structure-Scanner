@@ -21,10 +21,12 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.resources.I18n;
-import net.minecraft.client.util.ITooltipFlag;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldServer;
 import net.minecraftforge.fluids.FluidStack;
 
 import mezz.jei.api.gui.IDrawable;
@@ -40,10 +42,13 @@ import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.integration.JEIHelper;
 import com.simplestructurescanner.item.ModItems;
 import com.simplestructurescanner.structure.LootTableResolver;
+import com.simplestructurescanner.structure.LootTableResolver.LootItem;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
+import com.simplestructurescanner.structure.StructureInfo.LootEntryKind;
+import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexLootResolver;
 
 
 /**
@@ -541,9 +546,10 @@ public class StructureJeiRecipe implements IRecipeWrapper {
 
             if (entry.displayFluid == null || entry.displayFluid.getFluid() == null || entry.displayFluid.amount <= 0) continue;
 
+            // Where the hell does the -1px offset come from
             FluidStack displayFluid = entry.displayFluid.copy();
             displayFluid.amount = 1000;
-            jeiFluidStacks.init(slotIndex, false, slotX, slotY, 16, 16, 1000, false, null);
+            jeiFluidStacks.init(slotIndex, false, slotX + 1, slotY + 1, 16, 16, 1000, false, null);
             jeiFluidStacks.set(slotIndex, displayFluid);
         }
     }
@@ -593,76 +599,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         if (entry == null) return;
 
         tooltip.add(I18n.format("jei.structurescanner.loot.sources", entry.sourceCount));
-    }
-
-    private List<String> getBlockTooltip(int mouseX, int mouseY, StructureInfo structureInfo) {
-        BlockEntry entry = getHoveredBlockEntry(mouseX, mouseY, structureInfo);
-        if (entry == null) return Collections.emptyList();
-
-        if (entry.displayStack != null) {
-            Minecraft minecraft = Minecraft.getMinecraft();
-            ITooltipFlag.TooltipFlags tooltipFlag = minecraft.gameSettings.advancedItemTooltips
-                ? ITooltipFlag.TooltipFlags.ADVANCED
-                : ITooltipFlag.TooltipFlags.NORMAL;
-
-            List<String> tooltip = new ArrayList<>(entry.displayStack.getTooltip(minecraft.player, tooltipFlag));
-            tooltip.add(I18n.format("gui.structurescanner.blocks.count", entry.count));
-            return tooltip;
-        }
-
-        if (entry.displayFluid != null) {
-            List<String> tooltip = new ArrayList<>();
-            tooltip.add(entry.displayFluid.getLocalizedName());
-            tooltip.add(I18n.format("gui.structurescanner.blocks.count", entry.count));
-            tooltip.add(I18n.format("gui.structurescanner.blocks.fluidAmount", (long) entry.displayFluid.amount * entry.count));
-            return tooltip;
-        }
-
-        return Collections.emptyList();
-    }
-
-    private List<String> getLootTooltip(int mouseX, int mouseY, StructureInfo structureInfo) {
-        LootDisplayEntry entry = getHoveredLootEntry(mouseX, mouseY, structureInfo);
-        if (entry == null) return Collections.emptyList();
-
-        Minecraft minecraft = Minecraft.getMinecraft();
-        ITooltipFlag.TooltipFlags tooltipFlag = minecraft.gameSettings.advancedItemTooltips
-            ? ITooltipFlag.TooltipFlags.ADVANCED
-            : ITooltipFlag.TooltipFlags.NORMAL;
-
-        List<String> tooltip = new ArrayList<>(entry.stack.getTooltip(minecraft.player, tooltipFlag));
-        tooltip.add(I18n.format("jei.structurescanner.loot.sources", entry.sourceCount));
         // TODO: maybe add the sources as - <loot table name>\n- <container name>\n- ...
-
-        return tooltip;
-    }
-
-    private boolean handleBlockClick(int mouseX, int mouseY, int mouseButton, StructureInfo structureInfo) {
-        BlockEntry entry = getHoveredBlockEntry(mouseX, mouseY, structureInfo);
-        if (entry == null) return false;
-
-        if (entry.displayStack != null) {
-            if (mouseButton == 0) return JEIHelper.showItemRecipes(entry.displayStack);
-            if (mouseButton == 1) return JEIHelper.showItemUses(entry.displayStack);
-            return false;
-        }
-
-        if (entry.displayFluid != null) {
-            if (mouseButton == 0) return JEIHelper.showFluidRecipes(entry.displayFluid);
-            if (mouseButton == 1) return JEIHelper.showFluidUses(entry.displayFluid);
-        }
-
-        return false;
-    }
-
-    private boolean handleLootClick(int mouseX, int mouseY, int mouseButton, StructureInfo structureInfo) {
-        LootDisplayEntry entry = getHoveredLootEntry(mouseX, mouseY, structureInfo);
-        if (entry == null) return false;
-
-        if (mouseButton == 0) return JEIHelper.showItemRecipes(entry.stack);
-        if (mouseButton == 1) return JEIHelper.showItemUses(entry.stack);
-
-        return false;
     }
 
     /**
@@ -833,13 +770,15 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         if (cachedLootInfo == structureInfo) return;
 
         Map<String, LootDisplayEntry> lootByKey = new LinkedHashMap<>();
+        World lootResolutionWorld = getLootResolutionWorld();
 
         for (LootEntry lootEntry : structureInfo.getLootTables()) {
-            if (lootEntry.possibleDrops == null || lootEntry.possibleDrops.isEmpty()) continue;
+            List<ItemStack> resolvedDrops = resolveLootDisplayStacks(lootEntry, lootResolutionWorld);
+            if (resolvedDrops.isEmpty()) continue;
 
             Set<String> seenInEntry = new LinkedHashSet<>();
 
-            for (ItemStack possibleDrop : lootEntry.possibleDrops) {
+            for (ItemStack possibleDrop : resolvedDrops) {
                 if (possibleDrop == null || possibleDrop.isEmpty()) continue;
 
                 ItemStack displayStack = LootTableResolver.normalizeForDisplay(possibleDrop);
@@ -870,6 +809,54 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         cachedLootInfo = structureInfo;
         cachedLootEntries = Collections.unmodifiableList(lootEntries);
         cachedLootOutputs = Collections.unmodifiableList(lootOutputs);
+    }
+
+    private List<ItemStack> resolveLootDisplayStacks(LootEntry lootEntry, @Nullable World world) {
+        if (lootEntry.kind == LootEntryKind.LOOT_TABLE && lootEntry.lootTableId != null && world != null) {
+            List<ItemStack> resolvedStacks = new ArrayList<>();
+
+            ResourceLocation lootTable = lootEntry.lootTableId;
+            EntityPlayer player = Minecraft.getMinecraft().player;
+            for (LootItem lootItem : LootTableResolver.resolveLootTableWithSimulation(world, lootTable, player)) {
+                if (lootItem.stack.isEmpty()) continue;
+
+                resolvedStacks.add(lootItem.stack.copy());
+            }
+
+            if (!resolvedStacks.isEmpty()) return resolvedStacks;
+        }
+
+        if (lootEntry.kind == LootEntryKind.GENERATED_ITEMS && lootEntry.sourceStack != null && world != null) {
+            List<ItemStack> resolvedStacks = new ArrayList<>();
+            for (LootItem lootItem : RecurrentComplexLootResolver.resolveGeneratedLootWithSimulation(world, lootEntry.sourceStack)) {
+                if (lootItem.stack.isEmpty()) continue;
+
+                resolvedStacks.add(lootItem.stack.copy());
+            }
+
+            if (!resolvedStacks.isEmpty()) return resolvedStacks;
+        }
+
+        if (lootEntry.possibleDrops == null || lootEntry.possibleDrops.isEmpty()) return Collections.emptyList();
+
+        List<ItemStack> fallbackStacks = new ArrayList<>(lootEntry.possibleDrops.size());
+        for (ItemStack possibleDrop : lootEntry.possibleDrops) {
+            if (possibleDrop == null || possibleDrop.isEmpty()) continue;
+
+            fallbackStacks.add(possibleDrop.copy());
+        }
+
+        return fallbackStacks;
+    }
+
+    @Nullable
+    private static World getLootResolutionWorld() {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft.world == null) return null;
+        if (minecraft.getIntegratedServer() == null) return minecraft.world;
+
+        WorldServer serverWorld = minecraft.getIntegratedServer().getWorld(minecraft.world.provider.getDimension());
+        return serverWorld != null ? serverWorld : minecraft.world;
     }
 
     /**
@@ -1002,6 +989,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         }
     }
 
+    // TODO: loot is normalized to 1, but it should mirror the display of the main GUI (3.1 = 310%, 50% = 50%)
     private void drawLootCountOverlays(Minecraft minecraft, StructureInfo structureInfo, int offsetX, int offsetY) {
         for (int slotIndex = 0; slotIndex < PAGE_SIZE; slotIndex++) {
             LootDisplayEntry entry = getDisplayedLootEntry(slotIndex, structureInfo);

@@ -509,7 +509,7 @@ public class StructureNBTParser {
     public static void handleDefaultBlockEntity(StructureContentSink builder, @Nullable IBlockState state,
             @Nullable Block block, NBTTagCompound nbtData) {
         // Spawner and LootTable tags are widely used enough to belong in the shared default parser.
-        if (block == Blocks.MOB_SPAWNER) parseSpawnerTileEntityNBT(builder, nbtData);
+        if (isSpawnerTileEntity(block, nbtData)) parseSpawnerTileEntityNBT(builder, nbtData);
 
         if (nbtData.hasKey("LootTable")) {
             String lootTable = nbtData.getString("LootTable");
@@ -543,31 +543,75 @@ public class StructureNBTParser {
         return EntityLiving.class.isAssignableFrom(entityClass);
     }
 
+    private static boolean isSpawnerTileEntity(@Nullable Block block, NBTTagCompound nbtData) {
+        if (block == Blocks.MOB_SPAWNER) return true;
+
+        if (nbtData.hasKey("id", Constants.NBT.TAG_STRING)) {
+            String tileEntityId = nbtData.getString("id");
+            if ("minecraft:mob_spawner".equals(tileEntityId) || "MobSpawner".equals(tileEntityId)) return true;
+        }
+
+        if (nbtData.hasKey("SpawnPotentials", Constants.NBT.TAG_LIST)) return true;
+        if (nbtData.hasKey("SpawnData", Constants.NBT.TAG_COMPOUND)) return true;
+
+        return nbtData.hasKey("EntityId", Constants.NBT.TAG_STRING) && !nbtData.getString("EntityId").isEmpty();
+    }
+
     public static void parseSpawnerTileEntityNBT(StructureContentSink builder, NBTTagCompound nbt) {
-        Set<String> foundIds = new LinkedHashSet<>();
+        for (ResourceLocation entityId : collectSpawnerEntityIds(nbt)) {
+            builder.addEntity(entityId, true);
+        }
+    }
+
+    public static Set<ResourceLocation> collectSpawnerEntityIds(NBTTagCompound nbt) {
+        Set<ResourceLocation> foundIds = new LinkedHashSet<>();
 
         // SpawnPotentials is preferred because it can expose every possible mob a spawner may create.
         if (nbt.hasKey("SpawnPotentials", Constants.NBT.TAG_LIST)) {
             NBTTagList potentials = nbt.getTagList("SpawnPotentials", Constants.NBT.TAG_COMPOUND);
 
             for (int i = 0; i < potentials.tagCount(); i++) {
-                NBTTagCompound potential = potentials.getCompoundTagAt(i);
-                if (!potential.hasKey("Entity", Constants.NBT.TAG_COMPOUND)) continue;
-
-                String id = potential.getCompoundTag("Entity").getString("id");
-                if (!id.isEmpty()) foundIds.add(id);
+                collectSpawnerPotentialEntityId(foundIds, potentials.getCompoundTagAt(i));
             }
         }
 
         // If no potential list exists, fall back to the currently selected SpawnData entry.
         if (foundIds.isEmpty() && nbt.hasKey("SpawnData", Constants.NBT.TAG_COMPOUND)) {
-            String id = nbt.getCompoundTag("SpawnData").getString("id");
-            if (!id.isEmpty()) foundIds.add(id);
+            collectSpawnerEntityCompoundId(foundIds, nbt.getCompoundTag("SpawnData"));
         }
 
-        for (String id : foundIds) {
-            builder.addEntity(new ResourceLocation(id), true);
+        // Older structure snapshots still store the selected mob under EntityId.
+        if (foundIds.isEmpty()) addSpawnerEntityId(foundIds, nbt.getString("EntityId"));
+
+        return foundIds;
+    }
+
+    private static void collectSpawnerPotentialEntityId(Set<ResourceLocation> foundIds, NBTTagCompound potential) {
+        boolean found = false;
+
+        if (potential.hasKey("Entity", Constants.NBT.TAG_COMPOUND)) {
+            found = collectSpawnerEntityCompoundId(foundIds, potential.getCompoundTag("Entity"));
         }
+
+        // Legacy SpawnPotentials entries used Type + Properties instead of Entity.
+        if (!found && potential.hasKey("Properties", Constants.NBT.TAG_COMPOUND)) {
+            found = collectSpawnerEntityCompoundId(foundIds, potential.getCompoundTag("Properties"));
+        }
+
+        if (!found) addSpawnerEntityId(foundIds, potential.getString("Type"));
+    }
+
+    private static boolean collectSpawnerEntityCompoundId(Set<ResourceLocation> foundIds, NBTTagCompound entityTag) {
+        if (addSpawnerEntityId(foundIds, entityTag.getString("id"))) return true;
+
+        return addSpawnerEntityId(foundIds, entityTag.getString("EntityId"));
+    }
+
+    private static boolean addSpawnerEntityId(Set<ResourceLocation> foundIds, String entityIdText) {
+        if (entityIdText.isEmpty()) return false;
+
+        foundIds.add(new ResourceLocation(entityIdText));
+        return true;
     }
 
     @Nullable

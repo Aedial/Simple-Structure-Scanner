@@ -308,6 +308,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         InhabitantDefinition inhabitant = resolveInhabitant(dungeon.dungeonMob);
         List<StructureInfo.StructureLayer> generatedPreviewLayers = buildGeneratedPreviewLayers(dungeon);
 
+        // FIXME: content is not built for randomized castles, because there is no "static" structure file to parse
         if (!dungeon.structureFiles.isEmpty()) {
             int previewColumn = 0;
             int previewX = 0;
@@ -337,10 +338,6 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
                     previewX += width + PREVIEW_SPACING;
                 }
             }
-        }
-
-        if (generatedPreviewLayers == null && "randomized_castle".equals(dungeon.generatorType)) {
-            applyRandomizedCastleApproximation(dungeon, inhabitant, contents, preview);
         }
 
         info.setBlocks(contents.buildBlocks());
@@ -694,26 +691,9 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
 
     private void extractVanillaSpawnerEntities(StructureNBTParser.ParsedStructureBuilder builder,
             NBTTagCompound tileEntityData, @Nullable InhabitantDefinition inhabitant) {
-        Set<String> foundIds = new LinkedHashSet<>();
-
-        if (tileEntityData.hasKey("SpawnPotentials", Constants.NBT.TAG_LIST)) {
-            NBTTagList potentials = tileEntityData.getTagList("SpawnPotentials", Constants.NBT.TAG_COMPOUND);
-
-            for (int i = 0; i < potentials.tagCount(); i++) {
-                NBTTagCompound potential = potentials.getCompoundTagAt(i);
-                if (!potential.hasKey("Entity", Constants.NBT.TAG_COMPOUND)) continue;
-
-                String id = potential.getCompoundTag("Entity").getString("id");
-                if (!id.isEmpty()) foundIds.add(id);
-            }
+        for (ResourceLocation foundId : StructureNBTParser.collectSpawnerEntityIds(tileEntityData)) {
+            addEntityId(builder, foundId.toString(), inhabitant, true);
         }
-
-        if (foundIds.isEmpty() && tileEntityData.hasKey("SpawnData", Constants.NBT.TAG_COMPOUND)) {
-            String id = tileEntityData.getCompoundTag("SpawnData").getString("id");
-            if (!id.isEmpty()) foundIds.add(id);
-        }
-
-        for (String foundId : foundIds) addEntityId(builder, foundId, inhabitant, true);
     }
 
     private void extractBossEntities(StructureNBTParser.ParsedStructureBuilder builder,
@@ -832,67 +812,6 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         } catch (ReflectionException e) {
             return null;
         }
-    }
-
-    private void applyRandomizedCastleApproximation(DungeonDefinition dungeon,
-            @Nullable InhabitantDefinition inhabitant, StructureContentAccumulator contents,
-            StructurePreviewStitcher preview) {
-        List<IBlockState> states = new ArrayList<>();
-        addConfigState(states, dungeon.properties, "mainBlock");
-        addConfigState(states, dungeon.properties, "fancyBlock");
-        addConfigState(states, dungeon.properties, "slabBlock");
-        addConfigState(states, dungeon.properties, "stairBlock");
-        addConfigState(states, dungeon.properties, "floorBlock");
-        addConfigState(states, dungeon.properties, "roofBlock");
-        addConfigState(states, dungeon.properties, "fenceBlock");
-        addConfigState(states, dungeon.properties, "woodStairBlock");
-        addConfigState(states, dungeon.properties, "woodSlabBlock");
-        addConfigState(states, dungeon.properties, "plankBlock");
-        addConfigState(states, dungeon.properties, "doorBlock");
-
-        for (IBlockState state : states) {
-            BlockEntry blockEntry = StructureNBTParser.createBlockEntry(state, 1);
-            contents.addBlock(blockEntry);
-        }
-
-        if (inhabitant != null) {
-            for (ResourceLocation entityId : inhabitant.entityIds) {
-                contents.addEntity(new EntityEntry(entityId, 1, true));
-            }
-            if (!inhabitant.bossIds.isEmpty()) {
-                for (ResourceLocation bossId : inhabitant.bossIds) {
-                    contents.addEntity(new EntityEntry(bossId, 1, false));
-                }
-            }
-        }
-
-        IBlockState mainBlock = parseBlockStateString(dungeon.properties.getProperty("mainBlock"));
-        IBlockState floorBlock = parseBlockStateString(dungeon.properties.getProperty("floorBlock"));
-        IBlockState roofBlock = parseBlockStateString(dungeon.properties.getProperty("roofBlock"));
-        if (mainBlock == null) mainBlock = Blocks.STONEBRICK.getDefaultState();
-        if (floorBlock == null) floorBlock = mainBlock;
-        if (roofBlock == null) roofBlock = mainBlock;
-
-        for (int x = 0; x < 7; x++) {
-            for (int z = 0; z < 7; z++) {
-                preview.setBlock(new BlockPos(x, 0, z), floorBlock, null);
-                preview.setBlock(new BlockPos(x, 4, z), roofBlock, null);
-            }
-        }
-
-        for (int y = 1; y < 4; y++) {
-            for (int x = 0; x < 7; x++) {
-                preview.setBlock(new BlockPos(x, y, 0), mainBlock, null);
-                preview.setBlock(new BlockPos(x, y, 6), mainBlock, null);
-            }
-            for (int z = 1; z < 6; z++) {
-                preview.setBlock(new BlockPos(0, y, z), mainBlock, null);
-                preview.setBlock(new BlockPos(6, y, z), mainBlock, null);
-            }
-        }
-
-        preview.setBlock(new BlockPos(3, 1, 0), null, null);
-        preview.setBlock(new BlockPos(3, 2, 0), null, null);
     }
 
     private void addConfigState(List<IBlockState> target, Properties properties, String key) {
