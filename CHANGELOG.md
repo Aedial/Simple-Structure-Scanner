@@ -21,6 +21,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Fix tracked structure overlays and guiding arrows ignoring the hidden-HUD toggle, which could leave the tracker visible and darken the screen after pressing F1.
 - Revert some of the TESR fixes of fab37568eed6814f8f3d275c1337567ffef11105 (1.2.0), as they caused many of the TESRs in preview window to be broken.
 - Fix structure preview window inheriting broken GL/lightmap state from earlier GUI draws, which could make some TESR such as chests render dark or partially obscured.
+- Fix OpenBlocks' Sky blocks making the full screen blue when rendered in the structure preview, by skipping them entirely.
 - Fix Recurrent Complex provider not exposing localization keys for the structure names (instead, it was using the structure file name as the display name).
 - Add wheel zoom support to the structure preview window, allowing you to zoom in/out the preview. Useful for the larger structures as details may be hard to see at the default zoom level.
 

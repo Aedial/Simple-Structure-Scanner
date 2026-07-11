@@ -5,6 +5,7 @@ import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.annotation.Nullable;
 
@@ -12,6 +13,7 @@ import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.block.properties.IProperty;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.BlockRendererDispatcher;
@@ -28,6 +30,7 @@ import net.minecraft.client.renderer.vertex.VertexBuffer;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.client.ForgeHooksClient;
@@ -59,6 +62,7 @@ public class StructurePreviewRenderer {
         BlockRenderLayer.CUTOUT_MIPPED,
         BlockRenderLayer.CUTOUT
     };
+
     private static final FloatBuffer LIGHT_POSITION = makeLightBuffer(0.5f, 1.0f, 0.8f, 0.0f);
     private static final FloatBuffer LIGHT_DIFFUSE = makeLightBuffer(0.9f, 0.9f, 0.9f, 1.0f);
     private static final FloatBuffer LIGHT_AMBIENT = makeLightBuffer(0.4f, 0.4f, 0.4f, 1.0f);
@@ -79,6 +83,7 @@ public class StructurePreviewRenderer {
     private float centerZ = 0.5f;
     private float maxDimension = 1.0f;
     private boolean buffersUploaded;
+    private boolean loggedUnsupportedLayerWarning;
     private volatile boolean buildReady = true;
     private volatile boolean released;
 
@@ -103,6 +108,7 @@ public class StructurePreviewRenderer {
     //       The most common case would probably be something like Botania's Mana Pylons.
     public StructurePreviewRenderer() {
         this.world = new DummyWorld();
+        this.loggedUnsupportedLayerWarning = false;
 
         for (BlockRenderLayer layer : BlockRenderLayer.values()) {
             layerEntries.put(layer, new ArrayList<>());
@@ -417,12 +423,14 @@ public class StructurePreviewRenderer {
 
         if (shouldCancelBuild()) return null;
 
+        this.loggedUnsupportedLayerWarning = false;
         for (PreviewBlockEntry entry : previewSnapshot.getBlocks()) {
             if (shouldCancelBuild()) return null;
 
             long loopStart = PROFILE_PREPARE_PREVIEW ? System.nanoTime() : 0L;
 
             IBlockState state = entry.state;
+            if (shouldSkipPreviewBlock(state)) continue;
 
             // Initialize tile entities if the block has one. They are expected to be far and few
             if (PROFILE_PREPARE_PREVIEW) t = System.nanoTime();
@@ -440,15 +448,13 @@ public class StructurePreviewRenderer {
             state = state.getActualState(buildWorld, entry.pos);
             if (PROFILE_PREPARE_PREVIEW) tActualState += System.nanoTime() - t;
 
+            if (shouldSkipPreviewBlock(state)) continue;
+
             // Separate blocks into their render layers for efficient render dispatch
             // TODO: This step is the most expensive part of the loop and could easily be cached into bitmasks.
             //       But it is fairly minor, as the whole build *before VBO upload* is still < 1s for 100k blocks.
             if (PROFILE_PREPARE_PREVIEW) t = System.nanoTime();
-            for (BlockRenderLayer layer : BlockRenderLayer.values()) {
-                if (!state.getBlock().canRenderInLayer(state, layer)) continue;
-
-                buildLayerEntries.get(layer).add(new RenderBlockEntry(entry.pos, state));
-            }
+            addBlockToPreviewLayers(buildLayerEntries, entry.pos, state);
             if (PROFILE_PREPARE_PREVIEW) tLayerDispatch += System.nanoTime() - t;
 
             if (PROFILE_PREPARE_PREVIEW) tLoopTotal += System.nanoTime() - loopStart;
@@ -503,6 +509,77 @@ public class StructurePreviewRenderer {
 
         return new PreparedPreview(buildWorld, buildLayerEntries, buildTileEntityEntries, buildLayerBufferData,
                 previewSnapshot);
+    }
+
+    private void addBlockToPreviewLayers(EnumMap<BlockRenderLayer, List<RenderBlockEntry>> buildLayerEntries,
+            BlockPos pos, IBlockState state) {
+        RenderBlockEntry renderEntry = new RenderBlockEntry(pos, state);
+        boolean addedPreviewLayer = false;
+        boolean foundUnsupportedLayer = false;
+
+        for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            if (!state.getBlock().canRenderInLayer(state, layer)) continue;
+
+            if (isPreviewRenderLayer(layer)) {
+                buildLayerEntries.get(layer).add(renderEntry);
+                addedPreviewLayer = true;
+                continue;
+            }
+
+            foundUnsupportedLayer = true;
+        }
+
+        if (addedPreviewLayer || !foundUnsupportedLayer) return;
+
+        // Preview rendering only supports the vanilla block layers. Omitting a custom-only block
+        // is safer than forcing a mismatched opaque model into the preview.
+        if (!loggedUnsupportedLayerWarning) {
+            SimpleStructureScanner.LOGGER.warn(
+                "Block {} at {} only renders in unsupported custom layers, skipping it in structure preview",
+                state.getBlock().getRegistryName(), pos);
+            loggedUnsupportedLayerWarning = true;
+        }
+    }
+
+    // TODO: Maybe add a config of blocks to skip in the preview.
+    //       Would help devs deal with blocks that don't render properly.
+    private boolean shouldSkipPreviewBlock(IBlockState state) {
+        ResourceLocation blockId = state.getBlock().getRegistryName();
+        if (blockId == null) return false;
+
+        return isActiveOpenBlocksSkyBlock(state, blockId.toString());
+    }
+
+    // Active OpenBlocks sky blocks render through a terrain shader path that the GUI preview
+    // does not have. When forced through the normal model path, they become an opaque blue shell.
+    private boolean isActiveOpenBlocksSkyBlock(IBlockState state, String blockName) {
+        if (!"openblocks:sky".equals(blockName)) return false;
+
+        boolean isPowered = getBooleanPropertyValue(state, "powered");
+        boolean isInverted = getBooleanPropertyValue(state, "inverted");
+        return isPowered ^ isInverted;
+    }
+
+    private boolean getBooleanPropertyValue(IBlockState state, String propertyName) {
+        for (Map.Entry<?, Comparable<?>> entry : state.getProperties().entrySet()) {
+            Object property = entry.getKey();
+            if (!(property instanceof IProperty)) continue;
+
+            IProperty<?> blockProperty = (IProperty<?>) property;
+            if (!propertyName.equals(blockProperty.getName())) continue;
+
+            Comparable<?> value = entry.getValue();
+            return value instanceof Boolean && (Boolean) value;
+        }
+
+        return false;
+    }
+
+    private boolean isPreviewRenderLayer(BlockRenderLayer layer) {
+        return layer == BlockRenderLayer.SOLID
+            || layer == BlockRenderLayer.CUTOUT_MIPPED
+            || layer == BlockRenderLayer.CUTOUT
+            || layer == BlockRenderLayer.TRANSLUCENT;
     }
 
     /**
