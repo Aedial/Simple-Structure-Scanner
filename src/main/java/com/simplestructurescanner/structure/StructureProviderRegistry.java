@@ -34,6 +34,7 @@ public class StructureProviderRegistry {
     private static final List<StructureProvider> providers = new ArrayList<>();
     private static final Map<ResourceLocation, StructureProvider> structureToProvider = new LinkedHashMap<>();
     private static boolean initialized = false;
+    private static long revision = 0L;
 
     private static final List<Class<? extends StructureProvider>> providerClasses = Arrays.asList(
         VanillaStructureProvider.class,
@@ -80,6 +81,7 @@ public class StructureProviderRegistry {
         }
 
         initialized = true;
+        revision++;
         SimpleStructureScanner.LOGGER.info("Registered {} structure providers", providers.size());
     }
 
@@ -101,6 +103,7 @@ public class StructureProviderRegistry {
         if (provider == null) return;
 
         indexProviderStructures(provider);
+        revision++;
     }
 
     /**
@@ -229,6 +232,17 @@ public class StructureProviderRegistry {
         return StructureSearchOverrides.isStructureHidden(provider.getProviderId(), structureId);
     }
 
+    public static boolean isStructureHidden(ResourceLocation structureId, @Nullable java.util.Set<String> stageSnapshot) {
+        StructureProvider provider = getProviderForStructure(structureId);
+        if (provider == null) return false;
+
+        return StructureSearchOverrides.isStructureHidden(provider.getProviderId(), structureId, stageSnapshot);
+    }
+
+    public static long getRevision() {
+        return revision;
+    }
+
     /**
      * Find the nearest structure of a given type.
      */
@@ -275,5 +289,6 @@ public class StructureProviderRegistry {
         providers.clear();
         structureToProvider.clear();
         initialized = false;
+        revision++;
     }
 }

@@ -12,7 +12,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Added
 - Add optional GameStages-aware blacklist entries for structure visibility and searching. The player's stages are snapshotted when the Structure Scanner GUI opens, so `stage` and `nostage` rules can gate what that session may view or search.
 - Add an optional Map button beside located structure coordinates, opening JourneyMap's waypoint editor when available and otherwise adding an equivalent Xaero's Minimap waypoint.
-- Add JEI structure preview, blocks, and loot categories with in-panel buttons to switch views for the same structure or open that structure directly in the scanner.
+- Add JEI structure preview, blocks, and loot categories with in-panel buttons to switch views for the same structure or open that structure directly in the scanner. To avoid the first JEI match freezing the client for extended periods (can be noticeable with as low as 100 registered structures), the JEI categories are built in a background thread and may show missing or incomplete content until the warmup is finished.
 - Add client config toggles to disable all Structure Scanner JEI categories at once or disable the preview, blocks, and loot categories individually.
 - Add native providers for Unseen's Dungeon Additions and Chocolate Quest Repoured, with structure search and CQR custom dungeon handling.
 

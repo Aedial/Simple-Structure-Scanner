@@ -2,6 +2,10 @@ package com.simplestructurescanner.integration.jei;
 
 import net.minecraft.util.ResourceLocation;
 
+import java.util.Set;
+
+import javax.annotation.Nullable;
+
 import com.simplestructurescanner.client.integration.GameStagesIntegration;
 import com.simplestructurescanner.config.ModConfig;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
@@ -19,16 +23,31 @@ public final class StructureJeiVisibility {
      * Refreshes the stage-qualified visibility snapshot before a JEI lookup.
      */
     public static void refreshStageSnapshot() {
-        StructureSearchOverrides.setActiveStageSnapshot(GameStagesIntegration.captureClientStages());
+        StructureSearchOverrides.setActiveStageSnapshot(captureStageSnapshot());
+    }
+
+    public static boolean isStageSnapshotReady() {
+        return GameStagesIntegration.isClientStageSnapshotReady();
+    }
+
+    @Nullable
+    public static Set<String> captureStageSnapshot() {
+        return StructureSearchOverrides.normalizeStageSnapshot(GameStagesIntegration.captureClientStages());
     }
 
     /**
      * Checks whether one structure is allowed to surface in JEI.
      */
     public static boolean isStructureVisible(ResourceLocation structureId) {
-        refreshStageSnapshot();
+        Set<String> stageSnapshot = captureStageSnapshot();
+        StructureSearchOverrides.setActiveStageSnapshot(stageSnapshot);
+
+        return isStructureVisible(structureId, stageSnapshot);
+    }
+
+    public static boolean isStructureVisible(ResourceLocation structureId, @Nullable Set<String> stageSnapshot) {
         if (StructureProviderRegistry.getStructureInfo(structureId) == null) return false;
-        if (StructureProviderRegistry.isStructureHidden(structureId)) return false;
+        if (StructureProviderRegistry.isStructureHidden(structureId, stageSnapshot)) return false;
 
         return !ModConfig.isBlacklisted(structureId.toString());
     }

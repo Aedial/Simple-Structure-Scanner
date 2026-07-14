@@ -6,7 +6,7 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 - GUI accessible via keybinding (default P).
 - Live search on the main screen for the nearest selected structure. Double-click a structure in the list to toggle search.
 - Preview of structure schematic when available. Click on the preview area to open a larger preview window.
-- Support for custom loot tables integrated with JEI: U/Left-click for uses, R/Right-click for recipes.
+- Support for structure's blocks and loot tables integrated with JEI: U/Left-click for uses, R/Right-click for recipes.
 - Filterable scrolling list of structures on the left; right panel shows details.
   - Use the Refresh button to re-query structure locations.
   - Cycle through multiple found locations for a structure using the arrow buttons in the right panel.
@@ -14,6 +14,7 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
   - Teleport to the found structure (op only) using the TP button.
   - X/Y/Z coordinates are shown for the location, if found.
   - A [M]ap button will create a waypoint at the structure's coordinates, if a map mod is installed (currently only JourneyMap and Xaero's Minimap are supported).
+
 
 ### List of supported structures :
   - Vanilla Minecraft structures.
@@ -26,7 +27,18 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
   - Default and custom structures from Chocolate Quest Repoured.
 
 
-### Search/Visbility blacklist
+### JEI integration
+The mod adds 3 JEI categories for each structure: Preview, Blocks, and Loot. Due to the sheer number of structures that can be registered and visibility constraints, the JEI categories are built in a background thread, and may show missing or incomplete content until the warmup is finished (notified by a log message), as to not freeze the client on first JEI match. The warmup is re-run when the client connects to a server, so that the JEI categories are built with the correct visibility and search blacklists.
+
+The JEI categories are as follows:
+- **Preview**: Shows a preview of the structure, if available. It cannot be searched for, as previews are not "items" in the traditional sense, only accessed from the other 2 categories via the buttons.
+- **Blocks**: Shows all blocks that are part of the structure, just like the "Blocks" window in the Structure Scanner GUI.
+- **Loot**: Shows all loot tables that are part of the structure, just like the "Loot" window in the Structure Scanner GUI.
+
+JEI will respect the visibility blacklist, so if a structure is hidden, its blocks and loot will not be shown in JEI. The JEI categories can be disabled individually or all at once via the config. Beside the 3 category buttons, an additional button is available to open the structure directly in the Structure Scanner GUI. From that GUI, the entity list, bigger preview, and search functionality are available.
+
+
+### Search/Visibility blacklist
 On top of the config blacklist/whitelist (see Config section), there exists a more controlable and fine-grained blacklist system for search and visibility. Visibility is whether the structure will show in the list at all (allowing preview, blocks, entities, loot), while Search is whether the structure will be searchable (arrow pointing to the nearest in-world). It is perfectly reasonable to just use Simple Structure Scanner for the metadata alone, leaving the search disabled. If you want to disable **ALL** search altogether, I would redirect you to the enableSearch config.
 
 These blacklist are per provider, the id of the provider being matched by file name (see the id of each provider under [structure/](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/java/com/simplestructurescanner/structure) or in your own external providers). The blacklists should be placed under minecraft/config/. For example for provider `examplepack` :
@@ -48,7 +60,7 @@ For example:
 
 `/sssblacklist` can be used to remove entries from these blacklists directly, for example using an item or finishing a quest that allows showing or searching for a specific structure or in a specific dimension.
 
-`/sssblacklist hidden` handles the vibility blacklist, while `/sssblacklist search` handles the search blacklist. The provider to pass as argument is the same provider mentioned above, the id that is used for the blacklist file name.
+`/sssblacklist hidden` handles the visibility blacklist, while `/sssblacklist search` handles the search blacklist. The provider to pass as argument is the same provider mentioned above, the id that is used for the blacklist file name.
 
 To remove a stage-qualified entry, use the same prefix as the file syntax, for example:
 - `/sssblacklist hidden remove examplepack stage progression:ancient_map structure examplepack:sky_keep`
@@ -61,9 +73,9 @@ To remove a stage-qualified entry, use the same prefix as the file syntax, for e
 - showBlocks: Show blocks that are part of the structure in the details panel of the main GUI.
 - showEntities: Show entities that are part of the structure in the details panel of the main GUI.
 - showLootTables: Show loot tables that are part of the structure in the details panel of the main GUI.
-- enableJeiBlocks: Enable the registration of structure blocks in JEI as coming from the structure. This allows you to see what structures a block is part of. Respects the visibility blacklist, so if a structure is hidden, its blocks will not be shown in JEI.
-- enableJeiLoot: Enable the registration of structure loot tables in JEI as coming from the structure. This allows you to see what loot can be found in a structure. Respects the visibility blacklist just like the blocks.
-- enableJeiPreview: Allow to see structure previews in JEI. It can only be accessed from the other 2 categories, as structures don't have "a recipe" or "uses" in the traditional sense.
+- enableJeiBlocks: Enable the registration of structure blocks in JEI as coming from the structure. This allows you to see what structures a block is part of.
+- enableJeiLoot: Enable the registration of structure loot tables in JEI as coming from the structure. This allows you to see what loot can be found in a structure.
+- enableJeiPreview: Allow to see structure previews in JEI.
 - enableJeiCategories: Master switch to enable/disable all JEI categories. If disabled, the other 3 JEI configs are ignored.
 
 

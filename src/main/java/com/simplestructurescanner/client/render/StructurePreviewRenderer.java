@@ -461,7 +461,8 @@ public class StructurePreviewRenderer {
         }
 
         // TODO: This part will need to be optimized, as it's extremely expensive for large structures.
-        //       Profiling shows a good 80% of the time is spent on VBO, which can be a few seconds for 100k blocks.
+        //       Profiling shows a good 80% of preparePreview is spent on VBO,
+        //       which can be several seconds for 100k blocks, in which the preview is not rendered.
         //       But honestly, I don't really know *how* to optimize that, beside throwing more power into the pot...
         //       I *guess* it's not that big of a deal to wait a few seconds for a large structure to load.
         //       It's not like the GUI freezes anymore, so it's just a mild annoyance.
@@ -585,6 +586,7 @@ public class StructurePreviewRenderer {
     /**
      * Builds CPU-side layer vertex data on the worker thread so the first GUI render only needs the GL upload.
      * This is a UX optimization to avoid blocking the GUI thread for large structures.
+     * Without it, expect to freeze the GUI for several seconds on the bigger structures.
      */
     @Nullable
     private EnumMap<BlockRenderLayer, PreparedLayerBufferData> prepareLayerUploadData(DummyWorld buildWorld,

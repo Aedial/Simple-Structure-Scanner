@@ -9,6 +9,7 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import com.simplestructurescanner.CommonProxy;
 import com.simplestructurescanner.client.command.CommandStructureSearchBlacklist;
 import com.simplestructurescanner.client.event.ClientRenderEvents;
+import com.simplestructurescanner.integration.jei.StructureJeiClientEvents;
 import com.simplestructurescanner.item.ModItems;
 
 
@@ -19,6 +20,7 @@ public class ClientProxy extends CommonProxy {
         ModItems.registerModels();
         MinecraftForge.EVENT_BUS.register(new KeybindHandler());
         MinecraftForge.EVENT_BUS.register(new ClientRenderEvents());
+        MinecraftForge.EVENT_BUS.register(new StructureJeiClientEvents());
     }
 
     @Override
