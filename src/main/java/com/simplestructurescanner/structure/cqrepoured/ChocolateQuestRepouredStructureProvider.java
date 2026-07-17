@@ -97,6 +97,12 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     private Class<?> worldDungeonGeneratorClass;
     private Class<?> cqStructureClass;
     private Class<?> cqrBlocksClass;
+    private Class<?> dungeonGeneratorEnumClass;
+    private Class<?> dungeonSpawnTypeClass;
+    private Class<?> blockDungeonPartClass;
+    private Class<?> entityDungeonPartClass;
+    private Class<?> generatableBlockInfoClass;
+    private Class<?> generatableEntityInfoClass;
 
     @Nullable
     private InhabitantDefinition defaultInhabitant;
@@ -119,6 +125,12 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
             worldDungeonGeneratorClass = ReflectionHelper.loadClassRequired(WORLD_DUNGEON_GENERATOR_CLASS);
             cqStructureClass = ReflectionHelper.loadClassRequired(CQ_STRUCTURE_CLASS);
             cqrBlocksClass = ReflectionHelper.loadClassRequired(CQR_BLOCKS_CLASS);
+            dungeonGeneratorEnumClass = ReflectionHelper.loadClassRequired(CQR_DUNGEON_GENERATOR_ENUM_CLASS);
+            dungeonSpawnTypeClass = ReflectionHelper.loadClassRequired(CQR_DUNGEON_SPAWN_TYPE_CLASS);
+            blockDungeonPartClass = ReflectionHelper.loadClassRequired(CQR_BLOCK_DUNGEON_PART_CLASS);
+            entityDungeonPartClass = ReflectionHelper.loadClassRequired(CQR_ENTITY_DUNGEON_PART_CLASS);
+            generatableBlockInfoClass = ReflectionHelper.loadClassRequired(CQR_GENERATABLE_BLOCK_INFO_CLASS);
+            generatableEntityInfoClass = ReflectionHelper.loadClassRequired(CQR_GENERATABLE_ENTITY_INFO_CLASS);
 
             File dungeonFolder = (File) ReflectionHelper.getStaticField(cqrMainClass, "CQ_DUNGEON_FOLDER");
             File gridFolder = (File) ReflectionHelper.getStaticField(cqrMainClass, "CQ_DUNGEON_GRID_FOLDER");
@@ -323,8 +335,14 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         StructureContentAccumulator contents = new StructureContentAccumulator();
         StructurePreviewStitcher preview = new StructurePreviewStitcher();
         InhabitantDefinition inhabitant = resolveInhabitant(dungeon.dungeonMob);
-        StructureContentAccumulator.GeneratedPreviewData generatedPreviewData = buildGeneratedPreviewData(dungeon,
-            inhabitant);
+
+        // Most dungeons already rebuild their content catalog from the static NBT files below.
+        // In those cases we only need generated preview layers, not a second copy of block/entity content.
+        boolean generatedPreviewNeedsContents = dungeon.structureFiles.isEmpty() && isRandomizedDungeon(dungeon);
+        StructureContentAccumulator.GeneratedPreviewData generatedPreviewData = buildGeneratedPreviewData(
+            dungeon, inhabitant, generatedPreviewNeedsContents);
+        // TODO: Preview is about 2/3rd of the load time. Maybe lazy load?
+        //       Would add a few seconds to the preview, which is a fair bit.
         List<StructureInfo.StructureLayer> generatedPreviewLayers = generatedPreviewData != null
             ? generatedPreviewData.getLayers()
             : null;
@@ -338,11 +356,13 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
             int previewX = 0;
             int previewZ = 0;
             int rowDepth = 0;
+            boolean includeParsedLayers = generatedPreviewLayers == null;
 
             for (File structureFile : dungeon.structureFiles) {
                 // Keep parsing every structure file here to show the full superset of blocks, entities,
                 // and loot pieces, instead of only the first realized layout.
-                StructureNBTParser.ParsedStructure parsed = parseCqStructure(structureFile, inhabitant);
+                StructureNBTParser.ParsedStructure parsed = parseCqStructure(
+                    structureFile, inhabitant, includeParsedLayers);
                 if (parsed == null) continue;
 
                 contents.add(parsed);
@@ -365,7 +385,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
                 }
             }
 
-        } else if (isRandomizedDungeon(dungeon)) {
+        } else if (generatedPreviewNeedsContents) {
             // Randomized dungeons have no static structure file to parse,
             // so we build the preview layers from the generated layout instead.
             if (generatedPreviewData != null) contents.fromPreviewData(generatedPreviewData);
@@ -387,21 +407,31 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
      * the fallback is to use the gallery preview from the structure files instead.
      */
     @Nullable
-        private StructureContentAccumulator.GeneratedPreviewData buildGeneratedPreviewData(DungeonDefinition dungeon,
-            @Nullable InhabitantDefinition inhabitant) {
+    private StructureContentAccumulator.GeneratedPreviewData buildGeneratedPreviewData(DungeonDefinition dungeon,
+            @Nullable InhabitantDefinition inhabitant, boolean includeContents) {
         try {
             Object generatableDungeon = createGeneratedPreviewDungeon(dungeon);
             if (generatableDungeon == null) return null;
 
             StructurePreviewStitcher preview = new StructurePreviewStitcher();
-            StructureContentAccumulator contents = new StructureContentAccumulator();
+            StructureContentAccumulator contents = includeContents ? new StructureContentAccumulator() : null;
             populateGeneratedPreviewData(preview, contents, generatableDungeon, inhabitant);
 
             List<StructureInfo.StructureLayer> layers = preview.buildLayers();
-            List<BlockEntry> blocks = contents.buildBlocks();
-            List<EntityEntry> entities = contents.buildEntities();
-            List<LootEntry> lootEntries = contents.buildLootEntries();
-            if (layers.isEmpty() && blocks.isEmpty() && entities.isEmpty() && lootEntries.isEmpty()) return null;
+            if (!includeContents && layers.isEmpty()) return null;
+
+            List<BlockEntry> blocks = includeContents && contents != null
+                ? contents.buildBlocks()
+                : Collections.emptyList();
+            List<EntityEntry> entities = includeContents && contents != null
+                ? contents.buildEntities()
+                : Collections.emptyList();
+            List<LootEntry> lootEntries = includeContents && contents != null
+                ? contents.buildLootEntries()
+                : Collections.emptyList();
+            if (includeContents && layers.isEmpty() && blocks.isEmpty() && entities.isEmpty() && lootEntries.isEmpty()) {
+                return null;
+            }
 
             return new StructureContentAccumulator.GeneratedPreviewData(blocks, entities, lootEntries, layers);
         } catch (ReflectionException e) {
@@ -439,14 +469,10 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
         }
     }
 
-        private void populateGeneratedPreviewData(StructurePreviewStitcher preview,
-            StructureContentAccumulator contents, Object generatableDungeon,
+    private void populateGeneratedPreviewData(StructurePreviewStitcher preview,
+            @Nullable StructureContentAccumulator contents, Object generatableDungeon,
             @Nullable InhabitantDefinition inhabitant)
             throws ReflectionException {
-        Class<?> blockDungeonPartClass = ReflectionHelper.loadClassRequired(CQR_BLOCK_DUNGEON_PART_CLASS);
-        Class<?> entityDungeonPartClass = ReflectionHelper.loadClassRequired(CQR_ENTITY_DUNGEON_PART_CLASS);
-        Class<?> generatableBlockInfoClass = ReflectionHelper.loadClassRequired(CQR_GENERATABLE_BLOCK_INFO_CLASS);
-        Class<?> generatableEntityInfoClass = ReflectionHelper.loadClassRequired(CQR_GENERATABLE_ENTITY_INFO_CLASS);
         List<?> parts = ReflectionHelper.getListField(generatableDungeon, generatableDungeon.getClass(), "parts");
         if (parts == null) return;
 
@@ -456,14 +482,14 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
                 continue;
             }
 
-            if (entityDungeonPartClass.isInstance(part)) {
+            if (contents != null && entityDungeonPartClass.isInstance(part)) {
                 populateGeneratedEntityPart(contents, part, generatableEntityInfoClass);
             }
         }
     }
 
-        private void populateGeneratedBlockPart(StructurePreviewStitcher preview,
-            StructureContentAccumulator contents, Object part, Class<?> generatableBlockInfoClass,
+    private void populateGeneratedBlockPart(StructurePreviewStitcher preview,
+            @Nullable StructureContentAccumulator contents, Object part, Class<?> generatableBlockInfoClass,
             @Nullable InhabitantDefinition inhabitant)
             throws ReflectionException {
         Object chunksObject = ReflectionHelper.invokeRequired(part, "getChunks");
@@ -484,8 +510,8 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
 
                 TileEntity tileEntity = (TileEntity) ReflectionHelper.invokeRequired(blockInfo, "getTileEntity");
                 NBTTagCompound tileEntityData = createPreviewTileEntityData(tileEntity);
-                addGeneratedBlock(contents, state, tileEntityData, inhabitant);
-                preview.setBlock(new BlockPos(x, y - GENERATED_PREVIEW_BASE_Y, z), state, tileEntityData);
+                if (contents != null) addGeneratedBlock(contents, state, tileEntityData, inhabitant);
+                preview.setBlock(x, y - GENERATED_PREVIEW_BASE_Y, z, state, tileEntityData);
             }
         }
     }
@@ -553,10 +579,8 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     @Nullable
     @SuppressWarnings({"rawtypes", "unchecked"})
     private Object resolveDungeonGeneratorType(String generatorType) throws ReflectionException {
-        Class<?> enumClass = ReflectionHelper.loadClassRequired(CQR_DUNGEON_GENERATOR_ENUM_CLASS);
-
         try {
-            return Enum.valueOf((Class<Enum>) enumClass, generatorType.toUpperCase(Locale.ROOT));
+            return Enum.valueOf((Class<Enum>) dungeonGeneratorEnumClass, generatorType.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return null;
         }
@@ -565,10 +589,8 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     @Nullable
     @SuppressWarnings({"rawtypes", "unchecked"})
     private Object resolveDungeonSpawnType() throws ReflectionException {
-        Class<?> enumClass = ReflectionHelper.loadClassRequired(CQR_DUNGEON_SPAWN_TYPE_CLASS);
-
         try {
-            return Enum.valueOf((Class<Enum>) enumClass, "DUNGEON_GENERATION");
+            return Enum.valueOf((Class<Enum>) dungeonSpawnTypeClass, "DUNGEON_GENERATION");
         } catch (IllegalArgumentException e) {
             return null;
         }
@@ -657,7 +679,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
 
     @Nullable
     private StructureNBTParser.ParsedStructure parseCqStructure(File structureFile,
-            @Nullable InhabitantDefinition inhabitant) {
+            @Nullable InhabitantDefinition inhabitant, boolean includeLayers) {
         try {
             Object cqStructure = ReflectionHelper.invokeStaticRequired(cqStructureClass, "createFromFile",
                 new Class<?>[]{File.class}, structureFile);
@@ -668,8 +690,9 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
             int sizeX = Math.max(size.getX(), 0);
             int sizeY = Math.max(size.getY(), 0);
             int sizeZ = Math.max(size.getZ(), 0);
+            // TODO: NBT is the other 1/3rd. This one might be more complicated without multithreading
             StructureNBTParser.ParsedStructureBuilder builder = new StructureNBTParser.ParsedStructureBuilder(
-                sizeX, sizeY, sizeZ);
+                sizeX, sizeY, sizeZ, includeLayers);
 
             List<?> blockInfoList = (List<?>) ReflectionHelper.invokeRequired(cqStructure, "getBlockInfoList");
             int layerSize = sizeY * sizeZ;

@@ -26,16 +26,28 @@ import com.simplestructurescanner.structure.StructureNBTParser;
  */
 public class StructurePreviewStitcher {
 
-    private final Map<BlockPos, PreviewBlock> blocks = new LinkedHashMap<>();
+    private final Map<Integer, PreviewLayerAccumulator> layersByY = new TreeMap<>();
 
     public void setBlock(BlockPos pos, @Nullable IBlockState state) {
         setBlock(pos, state, null);
     }
 
     public void setBlock(BlockPos pos, @Nullable IBlockState state, @Nullable NBTTagCompound blockEntityData) {
+        if (pos == null) return;
+
+        setBlock(pos.getX(), pos.getY(), pos.getZ(), state, blockEntityData);
+    }
+
+    public void setBlock(int x, int y, int z, @Nullable IBlockState state) {
+        setBlock(x, y, z, state, null);
+    }
+
+    public void setBlock(int x, int y, int z, @Nullable IBlockState state,
+            @Nullable NBTTagCompound blockEntityData) {
         if (state == null) return;
 
-        blocks.put(pos, new PreviewBlock(state, blockEntityData));
+        PreviewLayerAccumulator layer = layersByY.computeIfAbsent(y, PreviewLayerAccumulator::new);
+        layer.add(x, z, new PreviewBlock(state, blockEntityData));
     }
 
     public void addParsedStructure(StructureNBTParser.ParsedStructure parsed, BlockPos origin) {
@@ -97,14 +109,7 @@ public class StructurePreviewStitcher {
     }
 
     public List<StructureInfo.StructureLayer> buildLayers() {
-        if (blocks.isEmpty()) return Collections.emptyList();
-
-        Map<Integer, PreviewLayerAccumulator> layersByY = new TreeMap<>();
-        for (Map.Entry<BlockPos, PreviewBlock> entry : blocks.entrySet()) {
-            BlockPos pos = entry.getKey();
-            PreviewLayerAccumulator layer = layersByY.computeIfAbsent(pos.getY(), PreviewLayerAccumulator::new);
-            layer.add(pos, entry.getValue());
-        }
+        if (layersByY.isEmpty()) return Collections.emptyList();
 
         List<StructureInfo.StructureLayer> layers = new ArrayList<>();
         for (PreviewLayerAccumulator accumulator : layersByY.values()) {
@@ -121,7 +126,7 @@ public class StructurePreviewStitcher {
 
         private PreviewBlock(IBlockState state, @Nullable NBTTagCompound blockEntityData) {
             this.state = state;
-            this.blockEntityData = blockEntityData != null && !blockEntityData.isEmpty() ? blockEntityData.copy() : null;
+            this.blockEntityData = blockEntityData != null && !blockEntityData.isEmpty() ? blockEntityData : null;
         }
     }
 
@@ -131,19 +136,19 @@ public class StructurePreviewStitcher {
         private int maxX = Integer.MIN_VALUE;
         private int minZ = Integer.MAX_VALUE;
         private int maxZ = Integer.MIN_VALUE;
-        private final Map<BlockPos, PreviewBlock> blocks = new LinkedHashMap<>();
+        private final Map<Long, PreviewBlock> blocks = new LinkedHashMap<>();
 
         private PreviewLayerAccumulator(int y) {
             this.y = y;
         }
 
-        private void add(BlockPos pos, PreviewBlock block) {
-            blocks.put(pos, block);
+        private void add(int x, int z, PreviewBlock block) {
+            blocks.put(createColumnKey(x, z), block);
 
-            if (pos.getX() < minX) minX = pos.getX();
-            if (pos.getX() > maxX) maxX = pos.getX();
-            if (pos.getZ() < minZ) minZ = pos.getZ();
-            if (pos.getZ() > maxZ) maxZ = pos.getZ();
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (z < minZ) minZ = z;
+            if (z > maxZ) maxZ = z;
         }
 
         private StructureInfo.StructureLayer build() {
@@ -151,13 +156,26 @@ public class StructurePreviewStitcher {
             int depth = maxZ - minZ + 1;
             StructureInfo.StructureLayer layer = new StructureInfo.StructureLayer(y, width, depth, minX, minZ);
 
-            for (Map.Entry<BlockPos, PreviewBlock> entry : blocks.entrySet()) {
-                BlockPos pos = entry.getKey();
+            for (Map.Entry<Long, PreviewBlock> entry : blocks.entrySet()) {
+                int x = unpackX(entry.getKey());
+                int z = unpackZ(entry.getKey());
                 PreviewBlock block = entry.getValue();
-                layer.setBlockState(pos.getX() - minX, pos.getZ() - minZ, block.state, block.blockEntityData);
+                layer.setBlockState(x - minX, z - minZ, block.state, block.blockEntityData);
             }
 
             return layer;
         }
+    }
+
+    private static long createColumnKey(int x, int z) {
+        return ((long) x << 32) ^ (z & 0xffffffffL);
+    }
+
+    private static int unpackX(long key) {
+        return (int) (key >> 32);
+    }
+
+    private static int unpackZ(long key) {
+        return (int) key;
     }
 }

@@ -442,6 +442,8 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         }
     }
 
+    // TODO: Loot can take a second to load for ~10 pages, which is probably building the full loot table beforehand
+    //       Can it be optimized? Not that big of a deal, but still slightly annoying.
     private void drawLoot(Minecraft minecraft, StructureInfo structureInfo, int mouseX, int mouseY) {
         List<LootDisplayEntry> lootEntries = getLootDisplayEntries(structureInfo);
         int totalPages = Math.max(1, (lootEntries.size() + PAGE_SIZE - 1) / PAGE_SIZE);

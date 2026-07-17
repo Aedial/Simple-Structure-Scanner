@@ -169,16 +169,29 @@ public class StructureNBTParser {
         private final int sizeZ;
         private final Map<Object, Integer> blockCounts = new LinkedHashMap<>();
         private final Map<Object, BlockCountRepresentative> blockRepresentatives = new LinkedHashMap<>();
-        private final Map<Integer, StructureLayer> layerBlocks = new LinkedHashMap<>();
+        @Nullable
+        private final Map<Integer, StructureLayer> layerBlocks;
         private final Map<EntityKey, Integer> entityCounts = new LinkedHashMap<>();
         private final Set<ResourceLocation> lootTableIds = new LinkedHashSet<>();
         private final List<LootEntry> extraLootEntries = new ArrayList<>();
+        private final boolean storeLayers;
 
         public ParsedStructureBuilder(int sizeX, int sizeY, int sizeZ) {
+            this(sizeX, sizeY, sizeZ, true);
+        }
+
+        public ParsedStructureBuilder(int sizeX, int sizeY, int sizeZ, boolean storeLayers) {
             this.sizeX = sizeX;
             this.sizeY = sizeY;
             this.sizeZ = sizeZ;
+            this.storeLayers = storeLayers;
 
+            if (!storeLayers) {
+                this.layerBlocks = null;
+                return;
+            }
+
+            this.layerBlocks = new LinkedHashMap<>();
             for (int y = 0; y < sizeY; y++) {
                 layerBlocks.put(y, new StructureLayer(y, sizeX, sizeZ));
             }
@@ -223,6 +236,7 @@ public class StructureNBTParser {
         public void setLayerBlock(int x, int y, int z, @Nullable IBlockState state,
                 @Nullable NBTTagCompound blockEntityData) {
             if (state == null) return;
+            if (!storeLayers || layerBlocks == null) return;
             if (y < 0 || y >= sizeY || x < 0 || x >= sizeX || z < 0 || z >= sizeZ) return;
 
             layerBlocks.get(y).setBlockState(x, z, state, blockEntityData);
@@ -275,7 +289,9 @@ public class StructureNBTParser {
 
             // Rebuild the layer list from the indexed 3D snapshot collected during parsing.
             List<StructureLayer> layers = new ArrayList<>();
-            for (int y = 0; y < sizeY; y++) layers.add(layerBlocks.get(y));
+            if (storeLayers && layerBlocks != null) {
+                for (int y = 0; y < sizeY; y++) layers.add(layerBlocks.get(y));
+            }
 
             // Entity counts are merged by id + spawner flag so repeated references become one UI entry.
             List<EntityEntry> entities = new ArrayList<>();
