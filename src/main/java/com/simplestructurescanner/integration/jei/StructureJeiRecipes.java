@@ -75,7 +75,7 @@ final class StructureJeiRecipes {
     /** Last observed StructureInfo reference for each structure id. */
     private static final Map<ResourceLocation, StructureInfo> INFO_REFERENCES = new LinkedHashMap<>();
 
-    /** Per-world cache of resolved dynamic loot outputs, deduplicated by logical loot source. */
+    /** Per-session cache of resolved dynamic loot outputs, deduplicated by logical loot source. */
     private static final Map<LootSourceKey, List<ItemStack>> RESOLVED_LOOT_SOURCE_CACHE = new ConcurrentHashMap<>();
 
     @Nullable
@@ -151,6 +151,10 @@ final class StructureJeiRecipes {
     }
 
     public static void onWorldLoad() {
+        // Client world loads also fire during dimension travel. Keep the current JEI snapshot alive
+        // until the connection actually ends so portal hops do not restart the full warm-up.
+        if (worldSessionActive) return;
+
         reset();
         worldSessionActive = true;
 
