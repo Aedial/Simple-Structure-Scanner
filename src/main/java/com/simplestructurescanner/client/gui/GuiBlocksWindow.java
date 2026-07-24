@@ -54,7 +54,7 @@ public class GuiBlocksWindow {
 
     // Block data
     private final List<BlockEntry> blocks;
-    private int totalBlocks;
+    private final int totalBlocks;
 
     public GuiBlocksWindow(GuiScreen parent, ResourceLocation structureId, StructureInfo structureInfo) {
         this.parent = parent;

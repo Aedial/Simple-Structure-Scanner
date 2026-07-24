@@ -7,19 +7,22 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 
-import com.simplestructurescanner.structure.StructureProvider;
+import javax.annotation.Nonnull;
+
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.command.WrongUsageException;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ResourceLocation;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.TextComponentString;
 import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraftforge.client.IClientCommand;
 
 import com.simplestructurescanner.searching.StructureSearchManager;
+import com.simplestructurescanner.structure.StructureProvider;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureSearchOverrides;
 
@@ -33,6 +36,7 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
     private static final List<String> ACTIONS = Collections.singletonList("remove");
     private static final List<String> STAGE_FILTER_TYPES = Arrays.asList("stage", "nostage");
     private static final List<String> ENTRY_TYPES = Arrays.asList("structure", "dimension", "structure_dimension");
+    private static final List<String> ALL_TYPES = combineLists(STAGE_FILTER_TYPES, ENTRY_TYPES);
 
     private static final class ParsedTarget {
         private final StructureSearchOverrides.EntryType entryType;
@@ -49,23 +53,31 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
         }
     }
 
+    @Nonnull
     @Override
     public String getName() {
         return "sssblacklist";
     }
 
+    @Nonnull
     @Override
     public List<String> getAliases() {
         return Collections.singletonList("structurescannerblacklist");
     }
 
-    @Override
-    public String getUsage(ICommandSender sender) {
+    @Nonnull
+    String getUsage() {
         return "/sssblacklist <hidden|search> remove <provider> [stage|nostage <stage>] <structure|dimension|structure_dimension> <value...>";
     }
 
+    @Nonnull
     @Override
-    public void execute(MinecraftServer server, ICommandSender sender, String[] args) throws CommandException {
+    public String getUsage(@Nonnull ICommandSender sender) {
+        return getUsage();
+    }
+
+    @Override
+    public void execute(@Nonnull MinecraftServer server, @Nonnull ICommandSender sender, String[] args) throws CommandException {
         if (args.length < 5) throw new WrongUsageException(getUsage(sender));
 
         StructureSearchOverrides.BlacklistType blacklistType = parseBlacklistType(sender, args[0]);
@@ -83,13 +95,14 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
     }
 
     @Override
-    public boolean checkPermission(MinecraftServer server, ICommandSender sender) {
+    public boolean checkPermission(@Nonnull MinecraftServer server, @Nonnull ICommandSender sender) {
         return true;
     }
 
+    @Nonnull
     @Override
-    public List<String> getTabCompletions(MinecraftServer server, ICommandSender sender, String[] args,
-            net.minecraft.util.math.BlockPos targetPos) {
+    public List<String> getTabCompletions(@Nonnull MinecraftServer server, @Nonnull ICommandSender sender, String[] args,
+                                          BlockPos targetPos) {
         if (args.length == 1) return getListOfStringsMatchingLastWord(args, BLACKLIST_TYPES);
         if (args.length == 2) return getListOfStringsMatchingLastWord(args, ACTIONS);
         if (args.length == 3) {
@@ -100,7 +113,7 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
                 .collect(Collectors.toList());
             return getListOfStringsMatchingLastWord(args, providerIds);
         }
-        if (args.length == 4) return getListOfStringsMatchingLastWord(args, combineSuggestions(STAGE_FILTER_TYPES, ENTRY_TYPES));
+        if (args.length == 4) return getListOfStringsMatchingLastWord(args, ALL_TYPES);
         if (args.length == 6 && isStageFilterToken(args[3])) return getListOfStringsMatchingLastWord(args, ENTRY_TYPES);
 
         return Collections.emptyList();
@@ -147,7 +160,7 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
                             : "commands.structurescanner.blacklist.notFoundStructureDimensionConditional",
                         providerId, target.structureId, target.dimensionId, describeBlacklistType(blacklistType), condition);
                 default:
-                    return new TextComponentString(getUsage(null));
+                    return new TextComponentString(getUsage());
             }
         }
 
@@ -168,7 +181,7 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
                         : "commands.structurescanner.blacklist.notFoundStructureDimension",
                     providerId, target.structureId, target.dimensionId, describeBlacklistType(blacklistType));
             default:
-                return new TextComponentString(getUsage(null));
+                return new TextComponentString(getUsage());
         }
     }
 
@@ -226,12 +239,12 @@ public class CommandStructureSearchBlacklist extends CommandBase implements ICli
         return StructureSearchOverrides.StageConditionType.fromToken(token) != null;
     }
 
-    private static List<String> combineSuggestions(List<String> first, List<String> second) {
-        List<String> suggestions = new ArrayList<>(first.size() + second.size());
-        suggestions.addAll(first);
-        suggestions.addAll(second);
+    private static List<String> combineLists(List<String> first, List<String> second) {
+        List<String> lists = new ArrayList<>(first.size() + second.size());
+        lists.addAll(first);
+        lists.addAll(second);
 
-        return suggestions;
+        return lists;
     }
 
     private static ITextComponent describeBlacklistType(StructureSearchOverrides.BlacklistType blacklistType) {

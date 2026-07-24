@@ -139,6 +139,14 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
         info.setLootTables(buildLootEntries());
     }
 
+    public void fromPreviewData(GeneratedPreviewData previewData) {
+        if (previewData == null) return;
+
+        for (BlockEntry blockEntry : previewData.blocks) addBlock(blockEntry);
+        for (EntityEntry entityEntry : previewData.entities) addEntity(entityEntry);
+        for (LootEntry lootEntry : previewData.lootEntries) addLootEntry(lootEntry);
+    }
+
     private static LootEntry createLootTableEntry(ResourceLocation lootTableId) {
         return new LootEntry(lootTableId, new ArrayList<>(),
             LocalizedText.translatable("gui.structurescanner.loot.chest"));
@@ -211,6 +219,26 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
             this.entityId = entityEntry.entityId;
             this.spawner = entityEntry.spawner;
             this.count = entityEntry.count;
+        }
+    }
+
+    
+    public static final class GeneratedPreviewData {
+        private final List<BlockEntry> blocks;
+        private final List<EntityEntry> entities;
+        private final List<LootEntry> lootEntries;
+        private final List<StructureInfo.StructureLayer> layers;
+
+        public GeneratedPreviewData(List<BlockEntry> blocks, List<EntityEntry> entities,
+                List<LootEntry> lootEntries, List<StructureInfo.StructureLayer> layers) {
+            this.blocks = blocks;
+            this.entities = entities;
+            this.lootEntries = lootEntries;
+            this.layers = layers;
+        }
+
+        public List<StructureInfo.StructureLayer> getLayers() {
+            return layers;
         }
     }
 }

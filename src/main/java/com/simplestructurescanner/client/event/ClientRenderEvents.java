@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.annotation.Nonnull;
+
 import org.lwjgl.opengl.GL11;
 
 import net.minecraft.client.Minecraft;
@@ -251,18 +253,7 @@ public class ClientRenderEvents {
         BlockPos secondCorner = StructureCaptureClientController.getRenderSecondCorner(player);
         if (firstCorner == null || secondCorner == null) return;
 
-        BlockPos minPos = new BlockPos(
-            Math.min(firstCorner.getX(), secondCorner.getX()),
-            Math.min(firstCorner.getY(), secondCorner.getY()),
-            Math.min(firstCorner.getZ(), secondCorner.getZ())
-        );
-        BlockPos maxPos = new BlockPos(
-            Math.max(firstCorner.getX(), secondCorner.getX()),
-            Math.max(firstCorner.getY(), secondCorner.getY()),
-            Math.max(firstCorner.getZ(), secondCorner.getZ())
-        );
-
-        AxisAlignedBB bounds = new AxisAlignedBB(minPos, maxPos.add(1, 1, 1));
+        AxisAlignedBB bounds = getAABB(firstCorner, secondCorner);
         double cameraX = player.lastTickPosX + (player.posX - player.lastTickPosX) * partialTicks;
         double cameraY = player.lastTickPosY + (player.posY - player.lastTickPosY) * partialTicks;
         double cameraZ = player.lastTickPosZ + (player.posZ - player.lastTickPosZ) * partialTicks;
@@ -285,6 +276,22 @@ public class ClientRenderEvents {
         GlStateManager.enableTexture2D();
         GlStateManager.disableBlend();
         GlStateManager.popMatrix();
+    }
+
+    @Nonnull
+    private static AxisAlignedBB getAABB(BlockPos firstCorner, BlockPos secondCorner) {
+        BlockPos minPos = new BlockPos(
+            Math.min(firstCorner.getX(), secondCorner.getX()),
+            Math.min(firstCorner.getY(), secondCorner.getY()),
+            Math.min(firstCorner.getZ(), secondCorner.getZ())
+        );
+        BlockPos maxPos = new BlockPos(
+            Math.max(firstCorner.getX(), secondCorner.getX()),
+            Math.max(firstCorner.getY(), secondCorner.getY()),
+            Math.max(firstCorner.getZ(), secondCorner.getZ())
+        );
+
+        return new AxisAlignedBB(minPos, maxPos.add(1, 1, 1));
     }
 
     private boolean shouldRenderClientOverlays(Minecraft mc) {

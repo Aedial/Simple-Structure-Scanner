@@ -74,14 +74,12 @@ public class ValidationSaveHandler implements ISaveHandler, IPlayerFileData, ICh
         // No-op - don't save anything
     }
 
-    @Nullable
     @Override
     public File getWorldDirectory() {
         // Return null - validation world has no directory
         return null;
     }
 
-    @Nullable
     @Override
     public File getMapFileFromName(@Nonnull String mapName) {
         // Return null - validation world doesn't save maps

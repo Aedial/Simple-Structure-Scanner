@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.regex.Pattern;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.apache.commons.lang3.tuple.Pair;
@@ -214,12 +215,12 @@ public final class RecurrentComplexLootResolver {
     private static void simulateLootTableResult(@Nullable World world, Object lootTable, Random random,
             Map<String, LootItem> itemMap, int depth) {
         ItemStack generated = generateLootTableItem(world, lootTable, random);
-        if (generated == null || generated.isEmpty()) return;
+        if (generated.isEmpty()) return;
 
         simulateGenerator(world, generated, random, itemMap, depth);
     }
 
-    @Nullable
+    @Nonnull
     private static ItemStack generateLootTableItem(@Nullable World world, Object lootTable, Random random) {
         try {
             if (isVanillaLootTable(lootTable) && !(world instanceof WorldServer)) {
@@ -227,7 +228,7 @@ public final class RecurrentComplexLootResolver {
             }
 
             return (ItemStack) invokeRequired(lootTable, "getRandomItemStack",
-                new Class<?>[]{WorldServer.class, Random.class}, world instanceof WorldServer ? (WorldServer) world : null, random);
+                new Class<?>[]{WorldServer.class, Random.class}, world instanceof WorldServer ? world : null, random);
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.debug("Failed to generate Recurrent Complex loot result", e);
             return ItemStack.EMPTY;
@@ -247,7 +248,7 @@ public final class RecurrentComplexLootResolver {
         itemMap.put(itemKey, new LootItem(stack.copy(), stack.getCount()));
     }
 
-    @Nullable
+    @Nonnull
     private static ItemStack pickApproximateVanillaLoot(@Nullable World world, Object lootTable, Random random) {
         if (world == null) return ItemStack.EMPTY;
 

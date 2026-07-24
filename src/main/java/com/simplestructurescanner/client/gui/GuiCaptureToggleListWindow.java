@@ -106,11 +106,8 @@ public abstract class GuiCaptureToggleListWindow<T> {
         return true;
     }
 
-    public boolean handleMouseInput(int mouseX, int mouseY) {
+    public boolean handleMouseInput(int mouseX, int mouseY, int wheel) {
         if (!visible || !isMouseOver(mouseX, mouseY)) return false;
-
-        int wheel = Mouse.getDWheel();
-        if (wheel == 0) return false;
 
         scrollOffset -= wheel * 0.25f;
         clampScroll();

@@ -12,15 +12,18 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Added
 - Add optional GameStages-aware blacklist entries for structure visibility and searching. The player's stages are snapshotted when the Structure Scanner GUI opens, so `stage` and `nostage` rules can gate what that session may view or search.
 - Add an optional Map button beside located structure coordinates, opening JourneyMap's waypoint editor when available and otherwise adding an equivalent Xaero's Minimap waypoint.
-- Add JEI structure preview, blocks, and loot categories with in-panel buttons to switch views for the same structure or open that structure directly in the scanner.
+- Add JEI structure preview, blocks, and loot categories with in-panel buttons to switch views for the same structure or open that structure directly in the scanner. To avoid the first JEI match freezing the client for extended periods (can be noticeable with as low as 100 registered structures), the JEI categories are built in a background thread and may show missing or incomplete content until the warmup is finished.
 - Add client config toggles to disable all Structure Scanner JEI categories at once or disable the preview, blocks, and loot categories individually.
 - Add native providers for Unseen's Dungeon Additions and Chocolate Quest Repoured, with structure search and CQR custom dungeon handling.
 
 ### Fixed
+- Fix large structure previews freezing the GUI while opening by precomputing flattened preview block snapshots during structure registration and moving preview world assembly off the GUI thread. Most structures should load nearly instantly, only the biggest ones taking more than a second. Proper feedback is provided in the preview window while the structure is being built.
 - Fix tracked structure overlays and guiding arrows ignoring the hidden-HUD toggle, which could leave the tracker visible and darken the screen after pressing F1.
 - Revert some of the TESR fixes of fab37568eed6814f8f3d275c1337567ffef11105 (1.2.0), as they caused many of the TESRs in preview window to be broken.
 - Fix structure preview window inheriting broken GL/lightmap state from earlier GUI draws, which could make some TESR such as chests render dark or partially obscured.
+- Fix OpenBlocks' Sky blocks making the full screen blue when rendered in the structure preview, by skipping them entirely.
 - Fix Recurrent Complex provider not exposing localization keys for the structure names (instead, it was using the structure file name as the display name).
+- Add wheel zoom support to the structure preview window, allowing you to zoom in/out the preview. Useful for the larger structures as details may be hard to see at the default zoom level.
 
 
 ## [1.2.1] - 2026-06-27

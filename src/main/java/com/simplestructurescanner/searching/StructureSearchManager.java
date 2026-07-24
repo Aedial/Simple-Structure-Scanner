@@ -220,20 +220,10 @@ public class StructureSearchManager {
 
     public static void toggleTracking(ResourceLocation id) {
         if (searchedStructures.contains(id)) {
-            searchedStructures.remove(id);
-            lastKnownLocations.remove(id);
-            skipOffsets.remove(id);
-            pendingSearches.remove(id);
-            removeSortedCacheEntry(getCurrentCacheKey(), id);
-            freeColor(id);
+            stopTracking(id);
         } else {
-            searchedStructures.add(id);
-            assignColor(id);
-            skipOffsets.put(id, 0);
-            queueSearchIfAllowed(id);
+            startTracking(id);
         }
-
-        saveToConfig();
     }
 
     public static void startTracking(ResourceLocation id) {
@@ -253,7 +243,7 @@ public class StructureSearchManager {
         lastKnownLocations.remove(id);
         skipOffsets.remove(id);
         pendingSearches.remove(id);
-        sortedCache.remove(id);
+        removeSortedCacheEntry(getCurrentCacheKey(), id);
         freeColor(id);
         saveToConfig();
     }

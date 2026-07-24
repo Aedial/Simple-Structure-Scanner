@@ -73,7 +73,7 @@ if (propertyBool('publish_to_curseforge')) {
                 it.displayName = displayName
                 if (propertyBool('use_mixins')) {
                     relations {
-                        requiredDependency 'mixin-booter'
+                        optionalDependency 'mixin-booter'
                     }
                 }
                 if (propertyBool('use_asset_mover')) {

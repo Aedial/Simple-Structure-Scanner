@@ -106,7 +106,6 @@ public final class ExternalStructureProviderLoader {
 
                 JsonObject structureObject = structureElement.getAsJsonObject();
                 StructureInfo structureInfo = parseStructure(providerId, structureObject, file, nbtRoot);
-                if (structureInfo == null) continue;
 
                 structureIds.add(structureInfo.getId());
                 structureInfos.put(structureInfo.getId(), structureInfo);

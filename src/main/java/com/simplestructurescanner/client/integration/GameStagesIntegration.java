@@ -31,6 +31,12 @@ public final class GameStagesIntegration {
         return captureClientStagesOptional();
     }
 
+    public static boolean isClientStageSnapshotReady() {
+        if (!Loader.isModLoaded(MOD_ID)) return true;
+
+        return isClientStageSnapshotReadyOptional();
+    }
+
     @Nullable
     @Optional.Method(modid = MOD_ID)
     private static Set<String> captureClientStagesOptional() {
@@ -44,5 +50,13 @@ public final class GameStagesIntegration {
         if (stages == null || stages.isEmpty()) return Collections.emptySet();
 
         return new LinkedHashSet<>(stages);
+    }
+
+    @Optional.Method(modid = MOD_ID)
+    private static boolean isClientStageSnapshotReadyOptional() {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft.player == null) return false;
+
+        return GameStageHelper.getPlayerData(minecraft.player) != null;
     }
 }

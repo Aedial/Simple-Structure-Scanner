@@ -2,6 +2,7 @@ package com.simplestructurescanner.item;
 
 import java.util.List;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import net.minecraft.client.resources.I18n;
@@ -40,8 +41,9 @@ public class ItemStructureCaptureTool extends Item {
 
     // TODO: Add something to adjust the bounds on the fly instead of re-doing the 2 corners
 
+    @Nonnull
     @Override
-    public ActionResult<ItemStack> onItemRightClick(World world, EntityPlayer player, EnumHand hand) {
+    public ActionResult<ItemStack> onItemRightClick(@Nonnull World world, EntityPlayer player, @Nonnull EnumHand hand) {
         ItemStack stack = player.getHeldItem(hand);
         if (hand != EnumHand.MAIN_HAND) return new ActionResult<>(EnumActionResult.PASS, stack);
 
@@ -50,9 +52,11 @@ public class ItemStructureCaptureTool extends Item {
         return new ActionResult<>(EnumActionResult.SUCCESS, stack);
     }
 
+    @Nonnull
     @Override
-    public EnumActionResult onItemUseFirst(EntityPlayer player, World world, BlockPos pos, EnumFacing side,
-            float hitX, float hitY, float hitZ, EnumHand hand) {
+    public EnumActionResult onItemUseFirst(@Nonnull EntityPlayer player, @Nonnull World world, @Nonnull BlockPos pos,
+                                           @Nonnull EnumFacing side, float hitX, float hitY, float hitZ,
+                                           @Nonnull EnumHand hand) {
         if (hand != EnumHand.MAIN_HAND) return EnumActionResult.PASS;
 
         if (world.isRemote) StructureCaptureClientController.handleToolUse(player);
@@ -62,7 +66,7 @@ public class ItemStructureCaptureTool extends Item {
 
     @SideOnly(Side.CLIENT)
     @Override
-    public void addInformation(ItemStack stack, @Nullable World worldIn, List<String> tooltip, ITooltipFlag flagIn) {
+    public void addInformation(@Nonnull ItemStack stack, @Nullable World worldIn, List<String> tooltip, @Nonnull ITooltipFlag flagIn) {
         tooltip.add("");
         tooltip.add(I18n.format("item.simplestructurescanner.structure_capture_tool.tooltip.1"));
         tooltip.add(I18n.format("item.simplestructurescanner.structure_capture_tool.tooltip.2"));

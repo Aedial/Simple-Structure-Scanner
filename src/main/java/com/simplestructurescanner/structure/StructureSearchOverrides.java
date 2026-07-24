@@ -159,10 +159,22 @@ public final class StructureSearchOverrides {
     }
 
     public static void setActiveStageSnapshot(@Nullable Set<String> stages) {
-        if (stages == null) {
+        Set<String> normalizedStages = normalizeStageSnapshot(stages);
+        if (normalizedStages == null) {
             ACTIVE_STAGE_SNAPSHOT = null;
             return;
         }
+
+        ACTIVE_STAGE_SNAPSHOT = normalizedStages;
+    }
+
+    public static void clearActiveStageSnapshot() {
+        ACTIVE_STAGE_SNAPSHOT = null;
+    }
+
+    @Nullable
+    public static Set<String> normalizeStageSnapshot(@Nullable Set<String> stages) {
+        if (stages == null) return null;
 
         Set<String> normalizedStages = new HashSet<>();
 
@@ -173,11 +185,7 @@ public final class StructureSearchOverrides {
             if (!normalizedStage.isEmpty()) normalizedStages.add(normalizedStage);
         }
 
-        ACTIVE_STAGE_SNAPSHOT = Collections.unmodifiableSet(normalizedStages);
-    }
-
-    public static void clearActiveStageSnapshot() {
-        ACTIVE_STAGE_SNAPSHOT = null;
+        return Collections.unmodifiableSet(normalizedStages);
     }
 
     public static void load() {
@@ -192,8 +200,20 @@ public final class StructureSearchOverrides {
         return isStructureBlacklisted(HIDDEN_RULES, providerId, structureId);
     }
 
+    public static boolean isStructureHidden(String providerId, ResourceLocation structureId,
+            @Nullable Set<String> stageSnapshot) {
+        return isStructureBlacklisted(HIDDEN_RULES, providerId, structureId,
+            normalizeStageSnapshot(stageSnapshot));
+    }
+
     public static boolean isStructureHiddenInDimension(String providerId, ResourceLocation structureId, int dimensionId) {
         return isStructureBlacklistedInDimension(HIDDEN_RULES, providerId, structureId, dimensionId);
+    }
+
+    public static boolean isStructureHiddenInDimension(String providerId, ResourceLocation structureId,
+            int dimensionId, @Nullable Set<String> stageSnapshot) {
+        return isStructureBlacklistedInDimension(HIDDEN_RULES, providerId, structureId, dimensionId,
+            normalizeStageSnapshot(stageSnapshot));
     }
 
     public static boolean isStructureSearchBlacklisted(String providerId, ResourceLocation structureId) {
@@ -356,22 +376,34 @@ public final class StructureSearchOverrides {
 
     private static boolean isStructureBlacklisted(Map<String, ProviderRules> rulesByProvider,
             String providerId, ResourceLocation structureId) {
+        return isStructureBlacklisted(rulesByProvider, providerId, structureId, ACTIVE_STAGE_SNAPSHOT);
+    }
+
+    private static boolean isStructureBlacklisted(Map<String, ProviderRules> rulesByProvider,
+            String providerId, ResourceLocation structureId, @Nullable Set<String> activeStages) {
         ProviderRules rules = rulesByProvider.get(providerId);
         if (rules == null) return false;
 
         if (isBlacklisted(rules.always, structureId, null)) return true;
 
-        return matchesConditionalRules(rules, structureId, null);
+        return matchesConditionalRules(rules, structureId, null, activeStages);
     }
 
     private static boolean isStructureBlacklistedInDimension(Map<String, ProviderRules> rulesByProvider,
             String providerId, ResourceLocation structureId, int dimensionId) {
+        return isStructureBlacklistedInDimension(rulesByProvider, providerId, structureId, dimensionId,
+            ACTIVE_STAGE_SNAPSHOT);
+    }
+
+    private static boolean isStructureBlacklistedInDimension(Map<String, ProviderRules> rulesByProvider,
+            String providerId, ResourceLocation structureId, int dimensionId,
+            @Nullable Set<String> activeStages) {
         ProviderRules rules = rulesByProvider.get(providerId);
         if (rules == null) return false;
 
         if (isBlacklisted(rules.always, structureId, dimensionId)) return true;
 
-        return matchesConditionalRules(rules, structureId, dimensionId);
+        return matchesConditionalRules(rules, structureId, dimensionId, activeStages);
     }
 
     private static boolean isBlacklisted(RuleEntries rules, ResourceLocation structureId, @Nullable Integer dimensionId) {
@@ -387,8 +419,7 @@ public final class StructureSearchOverrides {
 
     // Stage-qualified entries only participate after a GUI-open snapshot is available.
     private static boolean matchesConditionalRules(ProviderRules rules, ResourceLocation structureId,
-            @Nullable Integer dimensionId) {
-        Set<String> activeStages = ACTIVE_STAGE_SNAPSHOT;
+            @Nullable Integer dimensionId, @Nullable Set<String> activeStages) {
         if (activeStages == null) return false;
 
         for (String activeStage : activeStages) {

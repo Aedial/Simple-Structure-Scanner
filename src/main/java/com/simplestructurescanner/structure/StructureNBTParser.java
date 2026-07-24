@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import com.google.common.base.Optional;
@@ -168,16 +169,29 @@ public class StructureNBTParser {
         private final int sizeZ;
         private final Map<Object, Integer> blockCounts = new LinkedHashMap<>();
         private final Map<Object, BlockCountRepresentative> blockRepresentatives = new LinkedHashMap<>();
-        private final Map<Integer, StructureLayer> layerBlocks = new LinkedHashMap<>();
+        @Nullable
+        private final Map<Integer, StructureLayer> layerBlocks;
         private final Map<EntityKey, Integer> entityCounts = new LinkedHashMap<>();
         private final Set<ResourceLocation> lootTableIds = new LinkedHashSet<>();
         private final List<LootEntry> extraLootEntries = new ArrayList<>();
+        private final boolean storeLayers;
 
         public ParsedStructureBuilder(int sizeX, int sizeY, int sizeZ) {
+            this(sizeX, sizeY, sizeZ, true);
+        }
+
+        public ParsedStructureBuilder(int sizeX, int sizeY, int sizeZ, boolean storeLayers) {
             this.sizeX = sizeX;
             this.sizeY = sizeY;
             this.sizeZ = sizeZ;
+            this.storeLayers = storeLayers;
 
+            if (!storeLayers) {
+                this.layerBlocks = null;
+                return;
+            }
+
+            this.layerBlocks = new LinkedHashMap<>();
             for (int y = 0; y < sizeY; y++) {
                 layerBlocks.put(y, new StructureLayer(y, sizeX, sizeZ));
             }
@@ -222,6 +236,7 @@ public class StructureNBTParser {
         public void setLayerBlock(int x, int y, int z, @Nullable IBlockState state,
                 @Nullable NBTTagCompound blockEntityData) {
             if (state == null) return;
+            if (!storeLayers || layerBlocks == null) return;
             if (y < 0 || y >= sizeY || x < 0 || x >= sizeX || z < 0 || z >= sizeZ) return;
 
             layerBlocks.get(y).setBlockState(x, z, state, blockEntityData);
@@ -274,7 +289,9 @@ public class StructureNBTParser {
 
             // Rebuild the layer list from the indexed 3D snapshot collected during parsing.
             List<StructureLayer> layers = new ArrayList<>();
-            for (int y = 0; y < sizeY; y++) layers.add(layerBlocks.get(y));
+            if (storeLayers && layerBlocks != null) {
+                for (int y = 0; y < sizeY; y++) layers.add(layerBlocks.get(y));
+            }
 
             // Entity counts are merged by id + spawner flag so repeated references become one UI entry.
             List<EntityEntry> entities = new ArrayList<>();
@@ -509,7 +526,7 @@ public class StructureNBTParser {
     public static void handleDefaultBlockEntity(StructureContentSink builder, @Nullable IBlockState state,
             @Nullable Block block, NBTTagCompound nbtData) {
         // Spawner and LootTable tags are widely used enough to belong in the shared default parser.
-        if (block == Blocks.MOB_SPAWNER) parseSpawnerTileEntityNBT(builder, nbtData);
+        if (isSpawnerTileEntity(block, nbtData)) parseSpawnerTileEntityNBT(builder, nbtData);
 
         if (nbtData.hasKey("LootTable")) {
             String lootTable = nbtData.getString("LootTable");
@@ -543,31 +560,75 @@ public class StructureNBTParser {
         return EntityLiving.class.isAssignableFrom(entityClass);
     }
 
+    private static boolean isSpawnerTileEntity(@Nullable Block block, NBTTagCompound nbtData) {
+        if (block == Blocks.MOB_SPAWNER) return true;
+
+        if (nbtData.hasKey("id", Constants.NBT.TAG_STRING)) {
+            String tileEntityId = nbtData.getString("id");
+            if ("minecraft:mob_spawner".equals(tileEntityId) || "MobSpawner".equals(tileEntityId)) return true;
+        }
+
+        if (nbtData.hasKey("SpawnPotentials", Constants.NBT.TAG_LIST)) return true;
+        if (nbtData.hasKey("SpawnData", Constants.NBT.TAG_COMPOUND)) return true;
+
+        return nbtData.hasKey("EntityId", Constants.NBT.TAG_STRING) && !nbtData.getString("EntityId").isEmpty();
+    }
+
     public static void parseSpawnerTileEntityNBT(StructureContentSink builder, NBTTagCompound nbt) {
-        Set<String> foundIds = new LinkedHashSet<>();
+        for (ResourceLocation entityId : collectSpawnerEntityIds(nbt)) {
+            builder.addEntity(entityId, true);
+        }
+    }
+
+    public static Set<ResourceLocation> collectSpawnerEntityIds(NBTTagCompound nbt) {
+        Set<ResourceLocation> foundIds = new LinkedHashSet<>();
 
         // SpawnPotentials is preferred because it can expose every possible mob a spawner may create.
         if (nbt.hasKey("SpawnPotentials", Constants.NBT.TAG_LIST)) {
             NBTTagList potentials = nbt.getTagList("SpawnPotentials", Constants.NBT.TAG_COMPOUND);
 
             for (int i = 0; i < potentials.tagCount(); i++) {
-                NBTTagCompound potential = potentials.getCompoundTagAt(i);
-                if (!potential.hasKey("Entity", Constants.NBT.TAG_COMPOUND)) continue;
-
-                String id = potential.getCompoundTag("Entity").getString("id");
-                if (!id.isEmpty()) foundIds.add(id);
+                collectSpawnerPotentialEntityId(foundIds, potentials.getCompoundTagAt(i));
             }
         }
 
         // If no potential list exists, fall back to the currently selected SpawnData entry.
         if (foundIds.isEmpty() && nbt.hasKey("SpawnData", Constants.NBT.TAG_COMPOUND)) {
-            String id = nbt.getCompoundTag("SpawnData").getString("id");
-            if (!id.isEmpty()) foundIds.add(id);
+            collectSpawnerEntityCompoundId(foundIds, nbt.getCompoundTag("SpawnData"));
         }
 
-        for (String id : foundIds) {
-            builder.addEntity(new ResourceLocation(id), true);
+        // Older structure snapshots still store the selected mob under EntityId.
+        if (foundIds.isEmpty()) addSpawnerEntityId(foundIds, nbt.getString("EntityId"));
+
+        return foundIds;
+    }
+
+    private static void collectSpawnerPotentialEntityId(Set<ResourceLocation> foundIds, NBTTagCompound potential) {
+        boolean found = false;
+
+        if (potential.hasKey("Entity", Constants.NBT.TAG_COMPOUND)) {
+            found = collectSpawnerEntityCompoundId(foundIds, potential.getCompoundTag("Entity"));
         }
+
+        // Legacy SpawnPotentials entries used Type + Properties instead of Entity.
+        if (!found && potential.hasKey("Properties", Constants.NBT.TAG_COMPOUND)) {
+            found = collectSpawnerEntityCompoundId(foundIds, potential.getCompoundTag("Properties"));
+        }
+
+        if (!found) addSpawnerEntityId(foundIds, potential.getString("Type"));
+    }
+
+    private static boolean collectSpawnerEntityCompoundId(Set<ResourceLocation> foundIds, NBTTagCompound entityTag) {
+        if (addSpawnerEntityId(foundIds, entityTag.getString("id"))) return true;
+
+        return addSpawnerEntityId(foundIds, entityTag.getString("EntityId"));
+    }
+
+    private static boolean addSpawnerEntityId(Set<ResourceLocation> foundIds, String entityIdText) {
+        if (entityIdText.isEmpty()) return false;
+
+        foundIds.add(new ResourceLocation(entityIdText));
+        return true;
     }
 
     @Nullable
@@ -803,7 +864,9 @@ public class StructureNBTParser {
         return createDisplayStack(state, null);
     }
 
-    public static ItemStack createDisplayStack(IBlockState state, @Nullable NBTTagCompound blockEntityData) {
+    public static ItemStack createDisplayStack(@Nullable IBlockState state, @Nullable NBTTagCompound blockEntityData) {
+        if (state == null) return ItemStack.EMPTY;
+
         Block block = state.getBlock();
         if (isInvisibleBlock(block) || isFluidBlock(state, block)) return ItemStack.EMPTY;
 
@@ -943,6 +1006,7 @@ public class StructureNBTParser {
             tileEntity = null;
         }
 
+        @Nonnull
         @Override
         protected IChunkProvider createChunkProvider() {
             return new DisplayChunkProvider(this);
@@ -955,41 +1019,43 @@ public class StructureNBTParser {
 
         @Nullable
         @Override
-        public TileEntity getTileEntity(BlockPos pos) {
+        public TileEntity getTileEntity(@Nonnull BlockPos pos) {
             if (!BlockPos.ORIGIN.equals(pos)) return null;
 
             return tileEntity;
         }
 
         @Override
-        public int getCombinedLight(BlockPos pos, int lightValue) {
+        public int getCombinedLight(@Nonnull BlockPos pos, int lightValue) {
             return 15 << 20 | 15 << 4;
         }
 
+        @Nonnull
         @Override
-        public IBlockState getBlockState(BlockPos pos) {
+        public IBlockState getBlockState(@Nonnull BlockPos pos) {
             if (!BlockPos.ORIGIN.equals(pos) || state == null) return Blocks.AIR.getDefaultState();
 
             return state;
         }
 
         @Override
-        public boolean isAirBlock(BlockPos pos) {
+        public boolean isAirBlock(@Nonnull BlockPos pos) {
             return getBlockState(pos).getBlock() == Blocks.AIR;
         }
 
         @Override
-        public int getStrongPower(BlockPos pos, EnumFacing direction) {
+        public int getStrongPower(@Nonnull BlockPos pos, @Nonnull EnumFacing direction) {
             return 0;
         }
 
+        @Nonnull
         @Override
         public WorldType getWorldType() {
             return WorldType.DEFAULT;
         }
 
         @Override
-        public boolean isSideSolid(BlockPos pos, EnumFacing side, boolean _default) {
+        public boolean isSideSolid(@Nonnull BlockPos pos, @Nonnull EnumFacing side, boolean _default) {
             IBlockState blockState = getBlockState(pos);
             return blockState.isSideSolid(this, pos, side);
         }
@@ -1002,12 +1068,13 @@ public class StructureNBTParser {
             this.world = world;
         }
 
-        @Nullable
+        @Nonnull
         @Override
         public Chunk getLoadedChunk(int x, int z) {
             return provideChunk(x, z);
         }
 
+        @Nonnull
         @Override
         public Chunk provideChunk(int x, int z) {
             return new Chunk(world, x, z);
@@ -1018,6 +1085,7 @@ public class StructureNBTParser {
             return false;
         }
 
+        @Nonnull
         @Override
         public String makeString() {
             return "DisplayChunkProvider";
@@ -1040,27 +1108,30 @@ public class StructureNBTParser {
         public void checkSessionLock() {
         }
 
+        @Nonnull
         @Override
-        public IChunkLoader getChunkLoader(WorldProvider provider) {
+        public IChunkLoader getChunkLoader(@Nonnull WorldProvider provider) {
             return this;
         }
 
+        @Nonnull
         @Override
         public IPlayerFileData getPlayerNBTManager() {
             return this;
         }
 
+        @Nonnull
         @Override
         public TemplateManager getStructureTemplateManager() {
             return new TemplateManager("", new DataFixer(0));
         }
 
         @Override
-        public void saveWorldInfoWithPlayer(WorldInfo worldInformation, NBTTagCompound tagCompound) {
+        public void saveWorldInfoWithPlayer(@Nonnull WorldInfo worldInformation, @Nonnull NBTTagCompound tagCompound) {
         }
 
         @Override
-        public void saveWorldInfo(WorldInfo worldInformation) {
+        public void saveWorldInfo(@Nonnull WorldInfo worldInformation) {
         }
 
         @Override
@@ -1069,21 +1140,21 @@ public class StructureNBTParser {
         }
 
         @Override
-        public File getMapFileFromName(String mapName) {
+        public File getMapFileFromName(@Nonnull String mapName) {
             return null;
         }
 
         @Override
-        public Chunk loadChunk(World worldIn, int x, int z) {
+        public Chunk loadChunk(@Nonnull World worldIn, int x, int z) {
             return null;
         }
 
         @Override
-        public void saveChunk(World worldIn, Chunk chunkIn) {
+        public void saveChunk(@Nonnull World worldIn, @Nonnull Chunk chunkIn) {
         }
 
         @Override
-        public void saveExtraChunkData(World worldIn, Chunk chunkIn) {
+        public void saveExtraChunkData(@Nonnull World worldIn, @Nonnull Chunk chunkIn) {
         }
 
         @Override
@@ -1100,14 +1171,15 @@ public class StructureNBTParser {
         }
 
         @Override
-        public void writePlayerData(EntityPlayer player) {
+        public void writePlayerData(@Nonnull EntityPlayer player) {
         }
 
         @Override
-        public NBTTagCompound readPlayerData(EntityPlayer player) {
+        public NBTTagCompound readPlayerData(@Nonnull EntityPlayer player) {
             return null;
         }
 
+        @Nonnull
         @Override
         public String[] getAvailablePlayerDat() {
             return new String[0];

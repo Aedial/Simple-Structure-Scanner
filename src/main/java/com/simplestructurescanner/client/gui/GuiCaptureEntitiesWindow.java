@@ -9,6 +9,7 @@ import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.util.ResourceLocation;
+
 import com.simplestructurescanner.capture.StructureCaptureExclusions;
 import com.simplestructurescanner.capture.StructureCaptureSummary.EntityInstance;
 
@@ -144,12 +145,8 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
     private static List<EntityGroup> aggregateEntities(List<EntityInstance> entityInstances) {
         LinkedHashMap<ResourceLocation, EntityGroup> groupedEntities = new LinkedHashMap<>();
         for (EntityInstance entity : entityInstances) {
-            EntityGroup group = groupedEntities.get(entity.getEntityId());
-            if (group == null) {
-                group = new EntityGroup(entity.getEntityId());
-                groupedEntities.put(entity.getEntityId(), group);
-            }
-
+            ResourceLocation entityId = entity.getEntityId();
+            EntityGroup group = groupedEntities.computeIfAbsent(entityId, k -> new EntityGroup(entityId));
             group.add(entity);
         }
 
@@ -165,7 +162,7 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
         return aggregatedEntities;
     }
 
-    static final class EntityGroup {
+    static public class EntityGroup {
         private final ResourceLocation entityId;
         private int count;
 

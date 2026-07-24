@@ -7,9 +7,11 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import javax.annotation.Nullable;
+import javax.annotation.ParametersAreNonnullByDefault;
 
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -33,21 +35,48 @@ import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 public abstract class AbstractStructureProvider implements StructureProvider {
     private static final String STRUCTURE_OVERRIDE_DIRECTORY = "structures";
 
+    /** The unique ID of this structure provider. Used for filtering and identification. Does not need to match the mod ID. */
     private final String providerId;
+    /** The namespace used for all structures registered by this provider. Usually matches the provider ID. */
     private final String structureNamespace;
+    /** I18n key of the mod providing these structures. */
     private final String modName;
+    /** The ID of the mod the structures depends on. Should always be provided for modded structures. */
     @Nullable
     private final String requiredModId;
 
     protected final List<ResourceLocation> knownStructures = new ArrayList<>();
     protected final Map<ResourceLocation, StructureInfo> structureInfos = new LinkedHashMap<>();
 
+    /**
+     * Creates a structure provider that is always available, regardless of mod presence.
+     * Should **NEVER** be used for modded structures, as the provider will try to load resources
+     * that will not exist if the mod is not present, causing errors and crashes.
+     * <p>
+     * @param providerId Unique ID of this structure provider. Used for filtering and identification.
+     *                   Does not need to match the mod ID.
+     * @param structureNamespace Namespace used for all structures registered by this provider.
+     *                           Usually matches the provider ID.
+     * @param modName I18n key of the mod providing these structures.
+     */
+    @ParametersAreNonnullByDefault
     protected AbstractStructureProvider(String providerId, String structureNamespace, String modName) {
-        this(providerId, structureNamespace, modName, null);
+        this.providerId = providerId;
+        this.structureNamespace = structureNamespace;
+        this.modName = modName;
+        this.requiredModId = null;
     }
 
-    protected AbstractStructureProvider(String providerId, String structureNamespace, String modName,
-            @Nullable String requiredModId) {
+    /**
+     * Creates a structure provider that is only available if the required mod is present.
+     * <p>
+     * @param providerId Unique ID of this structure provider. Used for filtering and identification. Does not need to match the mod ID.
+     * @param structureNamespace Namespace used for all structures registered by this provider. Usually matches the provider ID.
+     * @param modName I18n key of the mod providing these structures.
+     * @param requiredModId The ID of the mod the structures depends on. Should always be provided for modded structures.
+     */
+    @ParametersAreNonnullByDefault
+    protected AbstractStructureProvider(String providerId, String structureNamespace, String modName, String requiredModId) {
         this.providerId = providerId;
         this.structureNamespace = structureNamespace;
         this.modName = modName;
@@ -349,10 +378,7 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         for (LootEntry existingEntry : existingEntries) {
             if (existingEntry == null) continue;
             if (existingEntry.kind != candidate.kind) continue;
-            if (existingEntry.lootTableId == null ? candidate.lootTableId != null :
-                    !existingEntry.lootTableId.equals(candidate.lootTableId)) {
-                continue;
-            }
+            if (!Objects.equals(existingEntry.lootTableId, candidate.lootTableId)) continue;
             if (!sameLocalizedText(existingEntry.containerType, candidate.containerType)) continue;
             if (!sameLocalizedText(existingEntry.sourceName, candidate.sourceName)) continue;
             if (!sameItemStack(existingEntry.sourceStack, candidate.sourceStack)) continue;

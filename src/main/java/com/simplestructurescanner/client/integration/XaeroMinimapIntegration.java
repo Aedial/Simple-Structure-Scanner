@@ -63,10 +63,7 @@ public final class XaeroMinimapIntegration {
         if (waypointSet == null) return false;
 
         List<Object> waypointList = getWaypointList(waypointSet);
-        if (waypointList == null) return false;
-
-        Object waypoint = createWaypoint(name, pos, color, yAgnostic);
-        waypointList.add(waypoint);
+        waypointList.add(createWaypoint(name, pos, color, yAgnostic));
 
         Object waypointSession = invokeRequired(waypointsManager, "getWaypointSession");
         invokeRequired(waypointSession, "setSetChangedTime", new Class<?>[] { long.class }, System.currentTimeMillis());

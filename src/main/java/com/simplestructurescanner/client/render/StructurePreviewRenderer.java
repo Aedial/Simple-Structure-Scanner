@@ -1,18 +1,20 @@
 package com.simplestructurescanner.client.render;
 
+import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import javax.annotation.Nullable;
 
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.block.properties.IProperty;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.BlockRendererDispatcher;
 import net.minecraft.client.renderer.BufferBuilder;
@@ -21,18 +23,15 @@ import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.texture.TextureMap;
-import net.minecraft.client.renderer.texture.TextureManager;
 import net.minecraft.client.renderer.tileentity.TileEntityRendererDispatcher;
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.client.renderer.vertex.VertexBuffer;
-import net.minecraft.entity.Entity;
-import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.RayTraceResult;
 import net.minecraft.world.World;
 import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.client.MinecraftForgeClient;
@@ -40,7 +39,12 @@ import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.fml.relauncher.Side;
 import net.minecraftforge.fml.relauncher.SideOnly;
 
+import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.StructureInfo;
+import com.simplestructurescanner.structure.StructureInfo.PreviewBlockEntry;
+import com.simplestructurescanner.structure.StructureInfo.PreviewSnapshot;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
+
 
 /**
  * Renders a structure preview in a GUI with isometric-style view.
@@ -51,29 +55,37 @@ public class StructurePreviewRenderer {
 
     private static final float ISOMETRIC_PITCH = 30f;
     private static final float ROTATION_SPEED = 20f;
-    private static final float ZOOM_FACTOR = 0.75f;
+    private static final float ZOOM_IN_FACTOR = 1.1f;
     private static final int CACHE_BUFFER_SIZE = 131072;
     private static final BlockRenderLayer[] OPAQUE_LAYERS = new BlockRenderLayer[] {
         BlockRenderLayer.SOLID,
         BlockRenderLayer.CUTOUT_MIPPED,
         BlockRenderLayer.CUTOUT
     };
+
     private static final FloatBuffer LIGHT_POSITION = makeLightBuffer(0.5f, 1.0f, 0.8f, 0.0f);
     private static final FloatBuffer LIGHT_DIFFUSE = makeLightBuffer(0.9f, 0.9f, 0.9f, 1.0f);
     private static final FloatBuffer LIGHT_AMBIENT = makeLightBuffer(0.4f, 0.4f, 0.4f, 1.0f);
+    private static final boolean PROFILE_PREPARE_PREVIEW = Boolean.getBoolean("simplestructurescanner.profile.preparePreview");
 
-    private final DummyWorld world;
+    private final Object buildLock = new Object();
     private final EnumMap<BlockRenderLayer, List<RenderBlockEntry>> layerEntries = new EnumMap<>(BlockRenderLayer.class);
     private final EnumMap<BlockRenderLayer, LayerBufferCache> layerBuffers = new EnumMap<>(BlockRenderLayer.class);
-    private final Map<BlockPos, NBTTagCompound> blockEntityData = new HashMap<>();
     private final List<RenderTileEntityEntry> tileEntityEntries = new ArrayList<>();
 
+    private DummyWorld world;
+    @Nullable
+    private Thread buildThread;
     private LightingMode lightingMode = LightingMode.STRUCTURE;
+    private float zoom_factor = 0.75f;
     private float centerX = 0.5f;
     private float centerY = 0.5f;
     private float centerZ = 0.5f;
     private float maxDimension = 1.0f;
     private boolean buffersUploaded;
+    private boolean loggedUnsupportedLayerWarning;
+    private volatile boolean buildReady = true;
+    private volatile boolean released;
 
     // Isometric camera settings
     public enum LightingMode {
@@ -89,54 +101,32 @@ public class StructurePreviewRenderer {
 
     // TODO: Get the full Global TESR rendering from Machinery Assembler, if needed.
     //       It is quite heavy, so will only be done if there is demand for it.
-    // TODO: We do not create a full world with all the block states and tile entities,
-    //       so some TESRs may not render correctly. This should not be necessary with
-    //       structures (do you put machines in your structures?), and will only be
+    // TODO: We do not create a "real" world with all the block states and tile entities,
+    //       so some TESRs may not render properly. This should not be necessary with
+    //       most structures (do you put machines in your structures?), and will only be
     //       implemented if there is demand for it. See Machinery Assembler for example.
     //       The most common case would probably be something like Botania's Mana Pylons.
     public StructurePreviewRenderer() {
         this.world = new DummyWorld();
+        this.loggedUnsupportedLayerWarning = false;
 
         for (BlockRenderLayer layer : BlockRenderLayer.values()) {
-            layerEntries.put(layer, new ArrayList<RenderBlockEntry>());
+            layerEntries.put(layer, new ArrayList<>());
             layerBuffers.put(layer, new LayerBufferCache());
         }
     }
 
     public static StructurePreviewRenderer createFromLayers(List<StructureLayer> layers) {
         StructurePreviewRenderer renderer = new StructurePreviewRenderer();
-        if (layers == null || layers.isEmpty()) return renderer;
+        renderer.startBuild(layers);
+        return renderer;
+    }
 
-        int minY = Integer.MAX_VALUE;
-        for (StructureLayer layer : layers) {
-            if (layer.y < minY) minY = layer.y;
-        }
+    public static StructurePreviewRenderer createFromStructureInfo(@Nullable StructureInfo structureInfo) {
+        StructurePreviewRenderer renderer = new StructurePreviewRenderer();
+        if (structureInfo == null || structureInfo.getPreviewSnapshot().isEmpty()) return renderer;
 
-        // Shift the preview upward when a structure uses negative layer coordinates.
-        int yOffset = minY < 0 ? -minY : 0;
-        for (StructureLayer layer : layers) {
-            int y = layer.y + yOffset;
-
-            for (int x = 0; x < layer.width; x++) {
-                for (int z = 0; z < layer.depth; z++) {
-                    IBlockState state = layer.getBlockState(x, z);
-                    if (state == null || state.getBlock() == Blocks.AIR || state.getBlock() == Blocks.STRUCTURE_VOID) continue;
-
-                    BlockPos pos = new BlockPos(x + layer.xOffset, y, z + layer.zOffset);
-                    renderer.getWorld().addBlock(pos, state);
-
-                    NBTTagCompound tileEntityData = layer.getBlockEntityData(x, z);
-                    if (tileEntityData == null) {
-                        renderer.blockEntityData.remove(pos);
-                        continue;
-                    }
-
-                    renderer.blockEntityData.put(pos, tileEntityData);
-                }
-            }
-        }
-
-        renderer.rebuildRenderCache();
+        renderer.startBuild(structureInfo.getPreviewSnapshot());
         return renderer;
     }
 
@@ -144,7 +134,59 @@ public class StructurePreviewRenderer {
         return world;
     }
 
+    public boolean isBuildReady() {
+        return buildReady;
+    }
+
+    public boolean hasRenderableBlocks() {
+        return !world.renderedBlocks.isEmpty();
+    }
+
     public void setBackgroundColor(int color) {
+    }
+
+    public void setZoomFactor(float zoomFactor) {
+        this.zoom_factor = zoomFactor;
+    }
+
+    public float getZoomFactor() {
+        return zoom_factor;
+    }
+
+    /**
+     * Zooms in the structure preview by the default zoom factor.
+     * The default zoom factor is 1.1, which means the structure will appear 10% larger.
+     */
+    public void zoomIn() {
+        zoomIn(ZOOM_IN_FACTOR);
+    }
+
+    /**
+     * Zooms in the structure preview by the given factor.
+     * @param factor The zoom factor to apply (e.g., 1.1 for a structure 10% larger)
+     */
+    public void zoomIn(float factor) {
+        if (factor <= 0.0f) return;
+
+        zoom_factor = zoom_factor / factor;
+    }
+
+    /**
+     * Zooms out the structure preview by the default zoom factor.
+     * The default zoom factor is 1.1, which means the structure will appear 10% smaller.
+     */
+    public void zoomOut() {
+        zoomOut(ZOOM_IN_FACTOR);
+    }
+
+    /**
+     * Zooms out the structure preview by the given factor.
+     * @param factor The zoom factor to apply (e.g., 1.1 for a structure 10% smaller)
+     */
+    public void zoomOut(float factor) {
+        if (factor <= 0.0f) return;
+
+        zoom_factor = zoom_factor * factor;
     }
 
     public void setLightingMode(LightingMode mode) {
@@ -156,16 +198,34 @@ public class StructurePreviewRenderer {
     }
 
     public void release() {
+        Thread threadToStop;
+
+        synchronized (buildLock) {
+            released = true;
+            buildReady = false;
+            threadToStop = buildThread;
+            buildThread = null;
+        }
+
+        if (threadToStop != null) threadToStop.interrupt();
+
         deleteLayerBuffers();
+        clearPendingLayerUploadData();
+        for (List<RenderBlockEntry> entries : layerEntries.values()) entries.clear();
+
         tileEntityEntries.clear();
-        blockEntityData.clear();
-        world.clearTileEntities();
+        world.clear();
+        centerX = 0.5f;
+        centerY = 0.5f;
+        centerZ = 0.5f;
+        maxDimension = 1.0f;
     }
 
     /**
      * Renders the structure at the given GUI position with automatic rotation.
      */
     public void render(float guiX, float guiY, float guiWidth, float guiHeight) {
+        if (!buildReady) return;
         if (world.renderedBlocks.isEmpty()) return;
 
         Minecraft mc = Minecraft.getMinecraft();
@@ -178,7 +238,7 @@ public class StructurePreviewRenderer {
         int screenH = Math.max(1, (int) (guiHeight * scaleFactor));
         float rotation = (System.currentTimeMillis() % 36000L) / 1000f * ROTATION_SPEED;
         float aspect = guiHeight <= 0.0f ? 1.0f : guiWidth / guiHeight;
-        float orthoSize = maxDimension * ZOOM_FACTOR;
+        float orthoSize = maxDimension * zoom_factor;
 
         GlStateManager.matrixMode(GL11.GL_PROJECTION);
         GlStateManager.pushMatrix();
@@ -270,60 +330,348 @@ public class StructurePreviewRenderer {
         RenderHelper.disableStandardItemLighting();
     }
 
-    private void rebuildRenderCache() {
-        deleteLayerBuffers();
-        tileEntityEntries.clear();
-        world.clearTileEntities();
+    private void startBuild(@Nullable List<StructureLayer> layers) {
+        if (layers == null || layers.isEmpty()) return;
 
-        for (List<RenderBlockEntry> entries : layerEntries.values()) {
-            entries.clear();
+        startBuildTask(() -> preparePreview(StructureInfo.createPreviewSnapshot(layers)));
+    }
+
+    private void startBuild(PreviewSnapshot previewSnapshot) {
+        if (previewSnapshot.isEmpty()) return;
+
+        startBuildTask(() -> preparePreview(previewSnapshot));
+    }
+
+    private void startBuildTask(PreviewBuildTask buildTask) {
+        released = false;
+        buildReady = false;
+
+        Thread thread = new Thread(() -> buildPreview(buildTask), "Structure Preview Builder");
+        thread.setDaemon(true);
+
+        synchronized (buildLock) {
+            buildThread = thread;
         }
 
-        if (world.renderedBlocks.isEmpty()) {
-            centerX = 0.5f;
-            centerY = 0.5f;
-            centerZ = 0.5f;
-            maxDimension = 1.0f;
-            return;
-        }
+        thread.start();
+    }
 
-        float minX = world.getMinPos().x;
-        float minY = world.getMinPos().y;
-        float minZ = world.getMinPos().z;
-        float maxX = world.getMaxPos().x;
-        float maxY = world.getMaxPos().y;
-        float maxZ = world.getMaxPos().z;
+    private void buildPreview(PreviewBuildTask buildTask) {
+        PreparedPreview preparedPreview = null;
+        boolean installed = false;
 
-        centerX = (minX + maxX) / 2f + 0.5f;
-        centerY = (minY + maxY) / 2f + 0.5f;
-        centerZ = (minZ + maxZ) / 2f + 0.5f;
-        maxDimension = Math.max(Math.max(maxX - minX + 1.0f, maxY - minY + 1.0f), maxZ - minZ + 1.0f);
+        try {
+            preparedPreview = buildTask.prepare();
+            if (preparedPreview == null) return;
 
-        // Resolve actual states once so large previews do not repeat the same block work every frame.
-        for (BlockPos pos : world.renderedBlocks) {
-            IBlockState state = world.getBlockState(pos);
-            if (state.getBlock() == Blocks.AIR) continue;
+            synchronized (buildLock) {
+                if (released || buildThread != Thread.currentThread()) return;
 
-            TileEntity tileEntity = createRenderTileEntity(pos, state, blockEntityData.get(pos));
-            if (tileEntity != null) {
-                world.setTileEntity(pos, tileEntity);
-                tileEntityEntries.add(new RenderTileEntityEntry(pos, tileEntity));
+                installPreparedPreview(preparedPreview);
+                buildReady = true;
+                installed = true;
             }
+        } finally {
+            synchronized (buildLock) {
+                if (buildThread == Thread.currentThread()) {
+                    buildThread = null;
 
-            try {
-                state = state.getActualState(world, pos);
-            } catch (Exception ignored) {
-            }
-
-            for (BlockRenderLayer layer : BlockRenderLayer.values()) {
-                if (state.getBlock().canRenderInLayer(state, layer)) {
-                    layerEntries.get(layer).add(new RenderBlockEntry(pos, state));
+                    if (!released) buildReady = true;
                 }
             }
+
+            if (!installed && preparedPreview != null) preparedPreview.world.clear();
         }
     }
 
-    private TileEntity createRenderTileEntity(BlockPos pos, IBlockState state, NBTTagCompound blockEntityData) {
+    @Nullable
+    private PreparedPreview preparePreview(PreviewSnapshot previewSnapshot) {
+        final long startNano = PROFILE_PREPARE_PREVIEW ? System.nanoTime() : 0L;
+
+        long t = 0L;
+        long tAddBlocks = 0L;
+        long tLoopTotal = 0L;
+        long tTileEntity = 0L;
+        long tActualState = 0L;
+        long tLayerDispatch = 0L;
+        long tLayerBufferBuild = 0L;
+        int loopCount = previewSnapshot.getBlocks().size();
+        int tileEntityCount = 0;
+
+        if (previewSnapshot.isEmpty()) return new PreparedPreview(
+                new DummyWorld(),
+                new EnumMap<>(BlockRenderLayer.class),
+                new ArrayList<>(),
+                new EnumMap<>(BlockRenderLayer.class),
+                0.5f, 0.5f, 0.5f, 1.0f);
+
+        DummyWorld buildWorld = new DummyWorld();
+        EnumMap<BlockRenderLayer, List<RenderBlockEntry>> buildLayerEntries = new EnumMap<>(BlockRenderLayer.class);
+        List<RenderTileEntityEntry> buildTileEntityEntries = new ArrayList<>();
+
+        for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            buildLayerEntries.put(layer, new ArrayList<>());
+        }
+
+        if (PROFILE_PREPARE_PREVIEW) t = System.nanoTime();
+        // Populate the full dummy world first so neighbor-dependent actual states resolve
+        // against the same complete snapshot in the second pass.
+        buildWorld.addBlocks(previewSnapshot.getBlocks(),
+            previewSnapshot.getMinX(), previewSnapshot.getMinY(), previewSnapshot.getMinZ(),
+            previewSnapshot.getMaxX(), previewSnapshot.getMaxY(), previewSnapshot.getMaxZ());
+        if (PROFILE_PREPARE_PREVIEW) tAddBlocks = System.nanoTime() - t;
+
+        if (shouldCancelBuild()) return null;
+
+        this.loggedUnsupportedLayerWarning = false;
+        for (PreviewBlockEntry entry : previewSnapshot.getBlocks()) {
+            if (shouldCancelBuild()) return null;
+
+            long loopStart = PROFILE_PREPARE_PREVIEW ? System.nanoTime() : 0L;
+
+            IBlockState state = entry.state;
+            if (shouldSkipPreviewBlock(state)) continue;
+
+            // Initialize tile entities if the block has one. They are expected to be far and few
+            if (PROFILE_PREPARE_PREVIEW) t = System.nanoTime();
+            TileEntity tileEntity = createRenderTileEntity(buildWorld, entry.pos, state, entry.blockEntityData);
+            if (PROFILE_PREPARE_PREVIEW) tTileEntity += System.nanoTime() - t;
+
+            if (tileEntity != null) {
+                buildWorld.setTileEntity(entry.pos, tileEntity);
+                buildTileEntityEntries.add(new RenderTileEntityEntry(entry.pos, tileEntity));
+                tileEntityCount++;
+            }
+
+            // Retrieve correct state if it has world-dependent properties
+            if (PROFILE_PREPARE_PREVIEW) t = System.nanoTime();
+            state = state.getActualState(buildWorld, entry.pos);
+            if (PROFILE_PREPARE_PREVIEW) tActualState += System.nanoTime() - t;
+
+            if (shouldSkipPreviewBlock(state)) continue;
+
+            // Separate blocks into their render layers for efficient render dispatch
+            // TODO: This step is the most expensive part of the loop and could easily be cached into bitmasks.
+            //       But it is fairly minor, as the whole build *before VBO upload* is still < 1s for 100k blocks.
+            if (PROFILE_PREPARE_PREVIEW) t = System.nanoTime();
+            addBlockToPreviewLayers(buildLayerEntries, entry.pos, state);
+            if (PROFILE_PREPARE_PREVIEW) tLayerDispatch += System.nanoTime() - t;
+
+            if (PROFILE_PREPARE_PREVIEW) tLoopTotal += System.nanoTime() - loopStart;
+        }
+
+        // TODO: This part will need to be optimized, as it's extremely expensive for large structures.
+        //       Profiling shows a good 80% of preparePreview is spent on VBO,
+        //       which can be several seconds for 100k blocks, in which the preview is not rendered.
+        //       But honestly, I don't really know *how* to optimize that, beside throwing more power into the pot...
+        //       I *guess* it's not that big of a deal to wait a few seconds for a large structure to load.
+        //       It's not like the GUI freezes anymore, so it's just a mild annoyance.
+        EnumMap<BlockRenderLayer, PreparedLayerBufferData> buildLayerBufferData = new EnumMap<>(BlockRenderLayer.class);
+        if (OpenGlHelper.useVbo()) {
+            if (PROFILE_PREPARE_PREVIEW) t = System.nanoTime();
+
+            try {
+                EnumMap<BlockRenderLayer, PreparedLayerBufferData> preparedLayerBufferData =
+                    prepareLayerUploadData(buildWorld, buildLayerEntries);
+                if (preparedLayerBufferData == null) return null;
+
+                buildLayerBufferData = preparedLayerBufferData;
+            } catch (Throwable throwable) {
+                SimpleStructureScanner.LOGGER.warn(
+                    "Failed to prepare preview layer buffers asynchronously, falling back to client-thread upload",
+                    throwable);
+            }
+
+            if (PROFILE_PREPARE_PREVIEW) tLayerBufferBuild = System.nanoTime() - t;
+        }
+
+        if (PROFILE_PREPARE_PREVIEW) {
+            long total = System.nanoTime() - startNano;
+            double totalMs = total / 1_000_000.0;
+            double addBlocksMs = tAddBlocks / 1_000_000.0;
+            double loopMs = tLoopTotal / 1_000_000.0;
+            double tileEntityMs = tTileEntity / 1_000_000.0;
+            double actualStateMs = tActualState / 1_000_000.0;
+            double layerDispatchMs = tLayerDispatch / 1_000_000.0;
+            double layerBufferBuildMs = tLayerBufferBuild / 1_000_000.0;
+            SimpleStructureScanner.LOGGER.info(
+                "preparePreview took {} ms :\n" +
+                "  - addBlocks:        {} ms\n" +
+                "  - Loop:             {} ms (count: {}, {} ms per)\n" +
+                "    -> Tile Entities: {} ms (count: {}, {} ms per)\n" +
+                "    -> actualState:   {} ms\n" +
+                "    -> layerDispatch: {} ms\n" +
+                "  - layerBuffers:     {} ms\n",
+                totalMs, addBlocksMs,
+                loopMs, loopCount, loopCount > 0 ? loopMs / loopCount : 0.0,
+                tileEntityMs, tileEntityCount, tileEntityCount > 0 ? tileEntityMs / tileEntityCount : 0.0,
+                actualStateMs, layerDispatchMs, layerBufferBuildMs);
+        }
+
+        return new PreparedPreview(buildWorld, buildLayerEntries, buildTileEntityEntries, buildLayerBufferData,
+                previewSnapshot);
+    }
+
+    private void addBlockToPreviewLayers(EnumMap<BlockRenderLayer, List<RenderBlockEntry>> buildLayerEntries,
+            BlockPos pos, IBlockState state) {
+        RenderBlockEntry renderEntry = new RenderBlockEntry(pos, state);
+        boolean addedPreviewLayer = false;
+        boolean foundUnsupportedLayer = false;
+
+        for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            if (!state.getBlock().canRenderInLayer(state, layer)) continue;
+
+            if (isPreviewRenderLayer(layer)) {
+                buildLayerEntries.get(layer).add(renderEntry);
+                addedPreviewLayer = true;
+                continue;
+            }
+
+            foundUnsupportedLayer = true;
+        }
+
+        if (addedPreviewLayer || !foundUnsupportedLayer) return;
+
+        // Preview rendering only supports the vanilla block layers. Omitting a custom-only block
+        // is safer than forcing a mismatched opaque model into the preview.
+        if (!loggedUnsupportedLayerWarning) {
+            SimpleStructureScanner.LOGGER.warn(
+                "Block {} at {} only renders in unsupported custom layers, skipping it in structure preview",
+                state.getBlock().getRegistryName(), pos);
+            loggedUnsupportedLayerWarning = true;
+        }
+    }
+
+    // TODO: Maybe add a config of blocks to skip in the preview.
+    //       Would help devs deal with blocks that don't render properly.
+    private boolean shouldSkipPreviewBlock(IBlockState state) {
+        ResourceLocation blockId = state.getBlock().getRegistryName();
+        if (blockId == null) return false;
+
+        return isActiveOpenBlocksSkyBlock(state, blockId.toString());
+    }
+
+    // Active OpenBlocks sky blocks render through a terrain shader path that the GUI preview
+    // does not have. When forced through the normal model path, they become an opaque blue shell.
+    private boolean isActiveOpenBlocksSkyBlock(IBlockState state, String blockName) {
+        if (!"openblocks:sky".equals(blockName)) return false;
+
+        boolean isPowered = getBooleanPropertyValue(state, "powered");
+        boolean isInverted = getBooleanPropertyValue(state, "inverted");
+        return isPowered ^ isInverted;
+    }
+
+    private boolean getBooleanPropertyValue(IBlockState state, String propertyName) {
+        for (Map.Entry<?, Comparable<?>> entry : state.getProperties().entrySet()) {
+            Object property = entry.getKey();
+            if (!(property instanceof IProperty)) continue;
+
+            IProperty<?> blockProperty = (IProperty<?>) property;
+            if (!propertyName.equals(blockProperty.getName())) continue;
+
+            Comparable<?> value = entry.getValue();
+            return value instanceof Boolean && (Boolean) value;
+        }
+
+        return false;
+    }
+
+    private boolean isPreviewRenderLayer(BlockRenderLayer layer) {
+        return layer == BlockRenderLayer.SOLID
+            || layer == BlockRenderLayer.CUTOUT_MIPPED
+            || layer == BlockRenderLayer.CUTOUT
+            || layer == BlockRenderLayer.TRANSLUCENT;
+    }
+
+    /**
+     * Builds CPU-side layer vertex data on the worker thread so the first GUI render only needs the GL upload.
+     * This is a UX optimization to avoid blocking the GUI thread for large structures.
+     * Without it, expect to freeze the GUI for several seconds on the bigger structures.
+     */
+    @Nullable
+    private EnumMap<BlockRenderLayer, PreparedLayerBufferData> prepareLayerUploadData(DummyWorld buildWorld,
+            EnumMap<BlockRenderLayer, List<RenderBlockEntry>> buildLayerEntries) {
+        BlockRendererDispatcher blockRenderer = Minecraft.getMinecraft().getBlockRendererDispatcher();
+        BlockRenderLayer previousLayer = MinecraftForgeClient.getRenderLayer();
+        EnumMap<BlockRenderLayer, PreparedLayerBufferData> buildLayerBufferData = new EnumMap<>(BlockRenderLayer.class);
+
+        try {
+            for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+                if (shouldCancelBuild()) return null;
+
+                List<RenderBlockEntry> entries = buildLayerEntries.get(layer);
+                if (entries == null || entries.isEmpty()) continue;
+
+                ForgeHooksClient.setRenderLayer(layer);
+
+                BufferBuilder buffer = new BufferBuilder(CACHE_BUFFER_SIZE);
+                buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK);
+
+                for (RenderBlockEntry entry : entries) {
+                    if (shouldCancelBuild()) return null;
+
+                    blockRenderer.renderBlock(entry.state, entry.pos, buildWorld, buffer);
+                }
+
+                if (buffer.getVertexCount() <= 0) {
+                    buffer.reset();
+                    continue;
+                }
+
+                buffer.finishDrawing();
+                buildLayerBufferData.put(layer,
+                    new PreparedLayerBufferData(copyVertexData(buffer.getByteBuffer()), buffer.getDrawMode()));
+            }
+
+            return buildLayerBufferData;
+        } finally {
+            ForgeHooksClient.setRenderLayer(previousLayer);
+        }
+    }
+
+    private ByteBuffer copyVertexData(ByteBuffer sourceBuffer) {
+        ByteBuffer copy = BufferUtils.createByteBuffer(sourceBuffer.limit());
+        ByteBuffer source = sourceBuffer.duplicate();
+        source.position(0);
+        copy.put(source);
+        copy.flip();
+        return copy;
+    }
+            
+
+    private void installPreparedPreview(PreparedPreview preparedPreview) {
+        long t = PROFILE_PREPARE_PREVIEW ? System.nanoTime() : 0L;
+
+        for (List<RenderBlockEntry> entries : layerEntries.values()) entries.clear();
+
+        for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            layerEntries.get(layer).addAll(preparedPreview.layerEntries.get(layer));
+            layerBuffers.get(layer).preparedData = preparedPreview.layerBufferData.get(layer);
+        }
+
+        tileEntityEntries.clear();
+        tileEntityEntries.addAll(preparedPreview.tileEntityEntries);
+        world.clear();
+        world = preparedPreview.world;
+        centerX = preparedPreview.centerX;
+        centerY = preparedPreview.centerY;
+        centerZ = preparedPreview.centerZ;
+        maxDimension = preparedPreview.maxDimension;
+        buffersUploaded = false;
+
+        if (PROFILE_PREPARE_PREVIEW) {
+            long total = System.nanoTime() - t;
+            double totalMs = total / 1_000_000.0;
+            SimpleStructureScanner.LOGGER.info("installPreparedPreview took {} ms", totalMs);
+        }
+    }
+
+    private boolean shouldCancelBuild() {
+        return released || Thread.currentThread().isInterrupted();
+    }
+
+    private TileEntity createRenderTileEntity(DummyWorld previewWorld, BlockPos pos, IBlockState state,
+            @Nullable NBTTagCompound blockEntityData) {
         if (!state.getBlock().hasTileEntity(state)) return null;
 
         try {
@@ -333,18 +681,18 @@ public class StructurePreviewRenderer {
 
             TileEntity tileEntity = null;
             if (tileEntityTag != null && blockEntityData.hasKey("id", Constants.NBT.TAG_STRING)) {
-                tileEntity = TileEntity.create(world, tileEntityTag);
+                tileEntity = TileEntity.create(previewWorld, tileEntityTag);
             }
 
-            if (tileEntity == null) tileEntity = state.getBlock().createTileEntity(world, state);
+            if (tileEntity == null) tileEntity = state.getBlock().createTileEntity(previewWorld, state);
             if (tileEntity == null) return null;
 
-            tileEntity.setWorld(world);
+            tileEntity.setWorld(previewWorld);
             tileEntity.setPos(pos);
 
             if (tileEntityTag != null) {
                 tileEntity.readFromNBT(tileEntityTag);
-                tileEntity.setWorld(world);
+                tileEntity.setWorld(previewWorld);
                 tileEntity.setPos(pos);
             }
 
@@ -481,11 +829,29 @@ public class StructurePreviewRenderer {
     private void ensureLayerBuffersUploaded(BlockRendererDispatcher blockRenderer) {
         if (buffersUploaded) return;
 
+        long t = PROFILE_PREPARE_PREVIEW ? System.nanoTime() : 0L;
+        int preparedLayerCount = 0;
+        int fallbackLayerCount = 0;
+
         deleteLayerBuffers();
 
         for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            LayerBufferCache layerBuffer = layerBuffers.get(layer);
+            PreparedLayerBufferData preparedData = layerBuffer.preparedData;
+
+            if (preparedData != null) {
+                layerBuffer.vertexBuffer = new VertexBuffer(DefaultVertexFormats.BLOCK);
+                layerBuffer.drawMode = preparedData.drawMode;
+                layerBuffer.vertexBuffer.bufferData(preparedData.vertexData.duplicate());
+                layerBuffer.preparedData = null;
+                preparedLayerCount++;
+                continue;
+            }
+
             List<RenderBlockEntry> entries = layerEntries.get(layer);
             if (entries == null || entries.isEmpty()) continue;
+
+            fallbackLayerCount++;
 
             ForgeHooksClient.setRenderLayer(layer);
 
@@ -503,13 +869,20 @@ public class StructurePreviewRenderer {
 
             buffer.finishDrawing();
 
-            LayerBufferCache layerBuffer = layerBuffers.get(layer);
             layerBuffer.vertexBuffer = new VertexBuffer(DefaultVertexFormats.BLOCK);
             layerBuffer.drawMode = buffer.getDrawMode();
             layerBuffer.vertexBuffer.bufferData(buffer.getByteBuffer());
         }
 
         buffersUploaded = true;
+
+        if (PROFILE_PREPARE_PREVIEW) {
+            long total = System.nanoTime() - t;
+            double totalMs = total / 1_000_000.0;
+            SimpleStructureScanner.LOGGER.info(
+                "ensureLayerBuffersUploaded took {} ms (prepared layers: {}, fallback layers: {})",
+                totalMs, preparedLayerCount, fallbackLayerCount);
+        }
     }
 
     private void renderImmediateLayers(BlockRendererDispatcher blockRenderer) {
@@ -627,6 +1000,12 @@ public class StructurePreviewRenderer {
         buffersUploaded = false;
     }
 
+    private void clearPendingLayerUploadData() {
+        for (LayerBufferCache layerBuffer : layerBuffers.values()) {
+            layerBuffer.preparedData = null;
+        }
+    }
+
     private static FloatBuffer makeLightBuffer(float x, float y, float z, float w) {
         FloatBuffer buffer = BufferUtils.createFloatBuffer(4);
         buffer.put(new float[] {x, y, z, w});
@@ -657,5 +1036,71 @@ public class StructurePreviewRenderer {
     private static class LayerBufferCache {
         private VertexBuffer vertexBuffer;
         private int drawMode = GL11.GL_QUADS;
+        @Nullable
+        private PreparedLayerBufferData preparedData;
+    }
+
+    private static class PreparedLayerBufferData {
+        private final ByteBuffer vertexData;
+        private final int drawMode;
+
+        private PreparedLayerBufferData(ByteBuffer vertexData, int drawMode) {
+            this.vertexData = vertexData;
+            this.drawMode = drawMode;
+        }
+    }
+
+    private interface PreviewBuildTask {
+        @Nullable
+        PreparedPreview prepare();
+    }
+
+    private static class PreparedPreview {
+        private final DummyWorld world;
+        private final EnumMap<BlockRenderLayer, List<RenderBlockEntry>> layerEntries;
+        private final List<RenderTileEntityEntry> tileEntityEntries;
+        private final EnumMap<BlockRenderLayer, PreparedLayerBufferData> layerBufferData;
+        private final float centerX;
+        private final float centerY;
+        private final float centerZ;
+        private final float maxDimension;
+
+        private PreparedPreview(DummyWorld world, EnumMap<BlockRenderLayer, List<RenderBlockEntry>> layerEntries,
+                List<RenderTileEntityEntry> tileEntityEntries,
+                EnumMap<BlockRenderLayer, PreparedLayerBufferData> layerBufferData, float centerX, float centerY,
+                float centerZ, float maxDimension) {
+            this.world = world;
+            this.layerEntries = layerEntries;
+            this.tileEntityEntries = tileEntityEntries;
+            this.layerBufferData = layerBufferData;
+            this.centerX = centerX;
+            this.centerY = centerY;
+            this.centerZ = centerZ;
+            this.maxDimension = maxDimension;
+        }
+
+        private PreparedPreview(DummyWorld world, EnumMap<BlockRenderLayer, List<RenderBlockEntry>> layerEntries,
+                List<RenderTileEntityEntry> tileEntityEntries,
+                EnumMap<BlockRenderLayer, PreparedLayerBufferData> layerBufferData, PreviewSnapshot previewSnapshot) {
+            float minX = previewSnapshot.getMinX();
+            float minY = previewSnapshot.getMinY();
+            float minZ = previewSnapshot.getMinZ();
+            float maxX = previewSnapshot.getMaxX();
+            float maxY = previewSnapshot.getMaxY();
+            float maxZ = previewSnapshot.getMaxZ();
+            float previewCenterX = (minX + maxX) / 2f + 0.5f;
+            float previewCenterY = (minY + maxY) / 2f + 0.5f;
+            float previewCenterZ = (minZ + maxZ) / 2f + 0.5f;
+            float previewMaxDimension = Math.max(Math.max(maxX - minX + 1.0f, maxY - minY + 1.0f), maxZ - minZ + 1.0f);
+
+            this.world = world;
+            this.layerEntries = layerEntries;
+            this.tileEntityEntries = tileEntityEntries;
+            this.layerBufferData = layerBufferData;
+            this.centerX = previewCenterX;
+            this.centerY = previewCenterY;
+            this.centerZ = previewCenterZ;
+            this.maxDimension = previewMaxDimension;
+        }
     }
 }
