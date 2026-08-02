@@ -22,7 +22,6 @@ import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.resources.I18n;
-import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
@@ -49,7 +48,6 @@ import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntryKind;
-import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexLootResolver;
 
 
 /**
@@ -586,6 +584,18 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         if (entry == null) return;
 
         tooltip.add(I18n.format("jei.structurescanner.loot.sources", entry.sourceCount));
+
+        if (entry.isFixedOnly()) {
+            tooltip.add(I18n.format("gui.structurescanner.loot.fixedCountTooltip", entry.getFixedCount()));
+            return;
+        }
+
+        tooltip.add(I18n.format("gui.structurescanner.loot.rateTooltip", entry.formatMetric()));
+        if (!entry.hasFixedContribution()) {
+            tooltip.add(I18n.format("gui.structurescanner.loot.rateTooltipSimulated",
+                entry.totalDropCount, LootTableResolver.getSimulationCount()));
+        }
+
         // TODO: maybe add the sources as - <loot table name>\n- <container name>\n- ...
     }
 
@@ -758,17 +768,20 @@ public class StructureJeiRecipe implements IRecipeWrapper {
 
         Map<String, LootDisplayEntry> lootByKey = new LinkedHashMap<>();
         World lootResolutionWorld = getLootResolutionWorld();
+        int simulationCount = LootTableResolver.getSimulationCount();
 
         for (LootEntry lootEntry : structureInfo.getLootTables()) {
-            List<ItemStack> resolvedDrops = resolveLootDisplayStacks(lootEntry, lootResolutionWorld);
+            List<LootItem> resolvedDrops = resolveLootDisplayItems(lootEntry, lootResolutionWorld, simulationCount);
             if (resolvedDrops.isEmpty()) continue;
 
             Set<String> seenInEntry = new LinkedHashSet<>();
 
-            for (ItemStack possibleDrop : resolvedDrops) {
-                if (possibleDrop == null || possibleDrop.isEmpty()) continue;
+            for (LootItem possibleDrop : resolvedDrops) {
+                if (possibleDrop == null || possibleDrop.stack.isEmpty() || possibleDrop.dropCount <= 0) continue;
 
-                ItemStack displayStack = LootTableResolver.normalizeForDisplay(possibleDrop);
+                ItemStack displayStack = LootTableResolver.normalizeForDisplay(possibleDrop.stack);
+                if (displayStack.isEmpty()) continue;
+
                 displayStack.setCount(1);
 
                 String aggregationKey = LootTableResolver.createAggregationKey(displayStack);
@@ -776,12 +789,19 @@ public class StructureJeiRecipe implements IRecipeWrapper {
                         aggregationKey,
                         k -> new LootDisplayEntry(displayStack));
 
-                if (seenInEntry.add(aggregationKey)) displayEntry.sourceCount++;
+                displayEntry.addContribution(
+                    possibleDrop.dropCount,
+                    seenInEntry.add(aggregationKey),
+                    lootEntry.kind == LootEntryKind.FIXED_ITEMS
+                );
             }
         }
 
         List<LootDisplayEntry> lootEntries = new ArrayList<>(lootByKey.values());
         lootEntries.sort((first, second) -> {
+            int dropOrder = Integer.compare(second.totalDropCount, first.totalDropCount);
+            if (dropOrder != 0) return dropOrder;
+
             int sourceOrder = Integer.compare(second.sourceCount, first.sourceCount);
             if (sourceOrder != 0) return sourceOrder;
 
@@ -796,39 +816,24 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         cachedLootOutputs = Collections.unmodifiableList(lootOutputs);
     }
 
-    private List<ItemStack> resolveLootDisplayStacks(LootEntry lootEntry, @Nullable World world) {
-        if (lootEntry.kind == LootEntryKind.LOOT_TABLE && lootEntry.lootTableId != null && world != null) {
-            List<ItemStack> resolvedStacks = new ArrayList<>();
-
-            ResourceLocation lootTable = lootEntry.lootTableId;
-            EntityPlayer player = Minecraft.getMinecraft().player;
-            for (LootItem lootItem : LootTableResolver.resolveLootTableWithSimulation(world, lootTable, player)) {
-                if (lootItem.stack.isEmpty()) continue;
-
-                resolvedStacks.add(lootItem.stack.copy());
-            }
-
-            if (!resolvedStacks.isEmpty()) return resolvedStacks;
-        }
-
-        if (lootEntry.kind == LootEntryKind.GENERATED_ITEMS && lootEntry.sourceStack != null && world != null) {
-            List<ItemStack> resolvedStacks = new ArrayList<>();
-            for (LootItem lootItem : RecurrentComplexLootResolver.resolveGeneratedLootWithSimulation(world, lootEntry.sourceStack)) {
-                if (lootItem.stack.isEmpty()) continue;
-
-                resolvedStacks.add(lootItem.stack.copy());
-            }
-
-            if (!resolvedStacks.isEmpty()) return resolvedStacks;
-        }
+    private List<LootItem> resolveLootDisplayItems(LootEntry lootEntry, @Nullable World world,
+            int simulationCount) {
+        List<LootItem> resolvedLoot = StructureJeiRecipes.getResolvedLootItems(lootEntry, world);
+        if (!resolvedLoot.isEmpty()) return resolvedLoot;
 
         if (lootEntry.possibleDrops == null || lootEntry.possibleDrops.isEmpty()) return Collections.emptyList();
 
-        List<ItemStack> fallbackStacks = new ArrayList<>(lootEntry.possibleDrops.size());
+        List<LootItem> fallbackStacks = new ArrayList<>(lootEntry.possibleDrops.size());
         for (ItemStack possibleDrop : lootEntry.possibleDrops) {
             if (possibleDrop == null || possibleDrop.isEmpty()) continue;
 
-            fallbackStacks.add(possibleDrop.copy());
+            int dropCount = possibleDrop.getCount();
+            ItemStack fallbackStack = possibleDrop.copy();
+            fallbackStack.setCount(1);
+
+            if (lootEntry.kind == LootEntryKind.FIXED_ITEMS) dropCount *= simulationCount;
+
+            fallbackStacks.add(new LootItem(fallbackStack, dropCount));
         }
 
         return fallbackStacks;
@@ -962,13 +967,12 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         }
     }
 
-    // TODO: loot is normalized to 1, but it should mirror the display of the main GUI (3.1 = 310%, 50% = 50%)
     private void drawLootCountOverlays(Minecraft minecraft, StructureInfo structureInfo, int offsetX, int offsetY) {
         for (int slotIndex = 0; slotIndex < PAGE_SIZE; slotIndex++) {
             LootDisplayEntry entry = getDisplayedLootEntry(slotIndex, structureInfo);
-            if (entry == null || entry.sourceCount <= 1) continue;
+            if (entry == null) continue;
 
-            drawSlotCount(minecraft.fontRenderer, formatCount(entry.sourceCount), offsetX + getSlotX(slotIndex), offsetY + getSlotY(slotIndex));
+            drawSlotCount(minecraft.fontRenderer, entry.formatMetric(), offsetX + getSlotX(slotIndex), offsetY + getSlotY(slotIndex));
         }
     }
 
@@ -1041,12 +1045,6 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         GlStateManager.enableDepth();
         GlStateManager.enableLighting();
         fontRenderer.setUnicodeFlag(unicodeFlag);
-    }
-
-    private static String formatCount(int count) {
-        if (count >= 1000) return String.format("%.1f%s", count / 1000.0, I18n.format("gui.structurescanner.k"));
-
-        return String.valueOf(count);
     }
 
     /**
@@ -1166,10 +1164,47 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     private static class LootDisplayEntry {
         private final ItemStack stack;
         private int sourceCount;
+        private int totalDropCount;
+        private boolean fixedContribution;
+        private boolean dynamicContribution;
 
         private LootDisplayEntry(ItemStack stack) {
             this.stack = stack;
             this.sourceCount = 0;
+            this.totalDropCount = 0;
+        }
+
+        private void addContribution(int dropCount, boolean newSource, boolean fixed) {
+            if (dropCount <= 0) return;
+
+            totalDropCount += dropCount;
+            if (newSource) sourceCount++;
+
+            if (fixed) fixedContribution = true;
+            else dynamicContribution = true;
+        }
+
+        private String formatMetric() {
+            if (totalDropCount <= 0) return "";
+
+            if (isFixedOnly()) return String.valueOf(getFixedCount());
+
+            return LootTableResolver.formatDropRate(totalDropCount, LootTableResolver.getSimulationCount());
+        }
+
+        private int getFixedCount() {
+            int simulationCount = LootTableResolver.getSimulationCount();
+            if (simulationCount <= 0) return totalDropCount;
+
+            return totalDropCount / simulationCount;
+        }
+
+        private boolean isFixedOnly() {
+            return fixedContribution && !dynamicContribution;
+        }
+
+        private boolean hasFixedContribution() {
+            return fixedContribution;
         }
     }
 }

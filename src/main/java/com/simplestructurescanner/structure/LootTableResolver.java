@@ -128,21 +128,25 @@ public class LootTableResolver {
         }
 
         public String formatDropRate(int simulationCount) {
-            double rate = (double) dropCount / simulationCount;
-            double percent = rate * 100.0;
-
-            if (rate >= 1.0) return String.format("%.1f", rate);
-
-            if (percent >= 10.0) return String.format("%.0f%%", percent);
-
-            if (percent >= 0.1) return String.format("%.1f%%", percent);
-
-            if (percent >= 0.01) return String.format("%.2f%%", percent);
-
-            if (percent > 0.0) return "<0.01%";
-
-            return "0%";
+            return LootTableResolver.formatDropRate(dropCount, simulationCount);
         }
+    }
+
+    public static String formatDropRate(int dropCount, int simulationCount) {
+        double rate = (double) dropCount / simulationCount;
+        double percent = rate * 100.0;
+
+        if (rate >= 1.0) return String.format("%.1f", rate);
+
+        if (percent >= 10.0) return String.format("%.0f%%", percent);
+
+        if (percent >= 0.1) return String.format("%.1f%%", percent);
+
+        if (percent >= 0.01) return String.format("%.2f%%", percent);
+
+        if (percent > 0.0) return "<0.01%";
+
+        return "0%";
     }
 
     /**

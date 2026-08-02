@@ -75,8 +75,8 @@ final class StructureJeiRecipes {
     /** Last observed StructureInfo reference for each structure id. */
     private static final Map<ResourceLocation, StructureInfo> INFO_REFERENCES = new LinkedHashMap<>();
 
-    /** Per-session cache of resolved dynamic loot outputs, deduplicated by logical loot source. */
-    private static final Map<LootSourceKey, List<ItemStack>> RESOLVED_LOOT_SOURCE_CACHE = new ConcurrentHashMap<>();
+    /** Per-session cache of resolved dynamic loot payloads, deduplicated by logical loot source. */
+    private static final Map<LootSourceKey, List<LootItem>> RESOLVED_LOOT_SOURCE_CACHE = new ConcurrentHashMap<>();
 
     @Nullable
     private static volatile VisibleState visibleState = null;
@@ -148,6 +148,17 @@ final class StructureJeiRecipes {
         if (state == null) return Collections.emptyList();
 
         return state.getLootItemMatches(StructureJeiIngredientKeys.itemLookupKey(stack));
+    }
+
+    static List<LootItem> getResolvedLootItems(LootEntry lootEntry, @Nullable World lootResolutionWorld) {
+        LootSourceKey sourceKey = createDynamicLootSource(lootEntry);
+        if (sourceKey == null) return Collections.emptyList();
+
+        List<LootItem> resolvedLoot = RESOLVED_LOOT_SOURCE_CACHE.get(sourceKey);
+        if (resolvedLoot != null) return resolvedLoot;
+        if (lootResolutionWorld == null) return Collections.emptyList();
+
+        return cacheResolvedLootItems(sourceKey, lootResolutionWorld);
     }
 
     public static void onWorldLoad() {
@@ -427,7 +438,7 @@ final class StructureJeiRecipes {
             if (dynamicSource != null) {
                 if (!seenDynamicSources.add(dynamicSource)) continue;
 
-                List<ItemStack> cachedOutputs = RESOLVED_LOOT_SOURCE_CACHE.get(dynamicSource);
+                List<LootItem> cachedOutputs = RESOLVED_LOOT_SOURCE_CACHE.get(dynamicSource);
                 if (cachedOutputs != null) {
                     addResolvedLootOutputs(staticLootOutputs, cachedOutputs, seed.lootRecipe);
                     continue;
@@ -491,11 +502,9 @@ final class StructureJeiRecipes {
 
             long sourceStartTime = System.nanoTime();
 
-            List<ItemStack> resolvedOutputs = RESOLVED_LOOT_SOURCE_CACHE.get(task.sourceKey);
+            List<LootItem> resolvedOutputs = RESOLVED_LOOT_SOURCE_CACHE.get(task.sourceKey);
             if (resolvedOutputs == null) {
-                resolvedOutputs = Collections.unmodifiableList(resolveLootOutputs(task.sourceKey, lootResolutionWorld));
-                RESOLVED_LOOT_SOURCE_CACHE.putIfAbsent(task.sourceKey, resolvedOutputs);
-                resolvedOutputs = RESOLVED_LOOT_SOURCE_CACHE.get(task.sourceKey);
+                resolvedOutputs = cacheResolvedLootItems(task.sourceKey, lootResolutionWorld);
             }
 
             addResolvedLootOutputs(state.lootItemOutputs, resolvedOutputs, task.recipes);
@@ -572,38 +581,43 @@ final class StructureJeiRecipes {
         return Math.round(nanos / 100_000.0D) / 10.0D;
     }
 
-    private static List<ItemStack> resolveLootOutputs(LootSourceKey sourceKey, World lootResolutionWorld) {
-        Map<StructureJeiIngredientKeys.IngredientKey, ItemStack> outputsByKey = new HashMap<>();
+    private static List<LootItem> cacheResolvedLootItems(LootSourceKey sourceKey, World lootResolutionWorld) {
+        List<LootItem> cachedLoot = RESOLVED_LOOT_SOURCE_CACHE.get(sourceKey);
+        if (cachedLoot != null) return cachedLoot;
 
+        List<LootItem> resolvedLoot = freezeResolvedLootItems(resolveLootItems(sourceKey, lootResolutionWorld));
+        List<LootItem> existingLoot = RESOLVED_LOOT_SOURCE_CACHE.putIfAbsent(sourceKey, resolvedLoot);
+        return existingLoot != null ? existingLoot : resolvedLoot;
+    }
+
+    private static List<LootItem> resolveLootItems(LootSourceKey sourceKey, World lootResolutionWorld) {
         if (sourceKey.kind == LootSourceKind.LOOT_TABLE && sourceKey.lootTableId != null) {
             EntityPlayer player = Minecraft.getMinecraft().player;
-            for (LootItem lootItem : LootTableResolver.resolveLootTableWithSimulation(
-                    lootResolutionWorld, sourceKey.lootTableId, player)) {
-                addResolvedLootOutput(outputsByKey, lootItem.stack);
-            }
-
-            return new ArrayList<>(outputsByKey.values());
+            return LootTableResolver.resolveLootTableWithSimulation(
+                lootResolutionWorld, sourceKey.lootTableId, player);
         }
 
         if (sourceKey.kind == LootSourceKind.GENERATED_ITEMS && sourceKey.sourceStack != null) {
-            for (LootItem lootItem : RecurrentComplexLootResolver.resolveGeneratedLootWithSimulation(
-                    lootResolutionWorld, sourceKey.sourceStack.copy())) {
-                addResolvedLootOutput(outputsByKey, lootItem.stack);
-            }
+            return RecurrentComplexLootResolver.resolveGeneratedLootWithSimulation(
+                lootResolutionWorld, sourceKey.sourceStack.copy());
         }
 
-        return new ArrayList<>(outputsByKey.values());
+        return Collections.emptyList();
     }
 
-    private static void addResolvedLootOutput(Map<StructureJeiIngredientKeys.IngredientKey, ItemStack> outputsByKey,
-            ItemStack stack) {
-        if (stack.isEmpty()) return;
+    private static List<LootItem> freezeResolvedLootItems(List<LootItem> resolvedLoot) {
+        if (resolvedLoot.isEmpty()) return Collections.emptyList();
 
-        ItemStack displayStack = LootTableResolver.normalizeForDisplay(stack);
-        if (displayStack.isEmpty()) return;
+        List<LootItem> frozenLoot = new ArrayList<>(resolvedLoot.size());
+        for (LootItem lootItem : resolvedLoot) {
+            if (lootItem == null || lootItem.stack.isEmpty() || lootItem.dropCount <= 0) continue;
 
-        displayStack.setCount(1);
-        outputsByKey.putIfAbsent(StructureJeiIngredientKeys.itemStorageKey(displayStack), displayStack);
+            frozenLoot.add(new LootItem(lootItem.stack.copy(), lootItem.dropCount));
+        }
+
+        if (frozenLoot.isEmpty()) return Collections.emptyList();
+
+        return Collections.unmodifiableList(frozenLoot);
     }
 
     @Nullable
@@ -642,21 +656,21 @@ final class StructureJeiRecipes {
 
     private static void addResolvedLootOutputs(
             Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> lootOutputs,
-            List<ItemStack> resolvedOutputs, StructureJeiRecipe recipe) {
+            List<LootItem> resolvedOutputs, StructureJeiRecipe recipe) {
         if (resolvedOutputs.isEmpty()) return;
 
-        for (ItemStack output : resolvedOutputs) {
-            addIndexedRecipe(lootOutputs, StructureJeiIngredientKeys.itemStorageKey(output), recipe);
+        for (LootItem output : resolvedOutputs) {
+            addIndexedRecipe(lootOutputs, StructureJeiIngredientKeys.itemStorageKey(output.stack), recipe);
         }
     }
 
     private static void addResolvedLootOutputs(
             Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> lootOutputs,
-            List<ItemStack> resolvedOutputs, List<StructureJeiRecipe> recipes) {
+            List<LootItem> resolvedOutputs, List<StructureJeiRecipe> recipes) {
         if (resolvedOutputs.isEmpty() || recipes.isEmpty()) return;
 
-        for (ItemStack output : resolvedOutputs) {
-            StructureJeiIngredientKeys.IngredientKey key = StructureJeiIngredientKeys.itemStorageKey(output);
+        for (LootItem output : resolvedOutputs) {
+            StructureJeiIngredientKeys.IngredientKey key = StructureJeiIngredientKeys.itemStorageKey(output.stack);
 
             for (StructureJeiRecipe recipe : recipes) {
                 addIndexedRecipe(lootOutputs, key, recipe);
