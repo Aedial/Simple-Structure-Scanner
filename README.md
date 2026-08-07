@@ -22,8 +22,8 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
   - Some specific structures from AbyssalCraft.
   - Ice and Fire's structures (none can be searched for, due to being non-determinstic).
   - Unseen's Dungeon Additions structures.
-  - Custom structures from the Pillar mod.
-  - Default and custom structures from Recurrent Complex.
+  - Custom structures from the Pillar mod. Due to how search works, any change to the structure's list will break search for already generated structures, as it changes the structure's index in the search process. This is a limitation of the mod, not a bug.
+  - Default and custom structures from Recurrent Complex (none can be searched for, due to the complex generation logic).
   - Default and custom structures from Chocolate Quest Repoured.
 
 
@@ -109,7 +109,7 @@ The filter box matches both localized and unlocalized structure names. This mean
 Due to how complex the process is, structures from a mod may prevent or overlap with other structures from another mod. In this case, you should try searching for another structure of the same type. Use the arrows in the right panel to cycle through multiple results.
 
 ### Some structure previews seem broken, looking like scattered rooms.
-Some structures are generated procedurally (e.g., Recurrent Complex, Unseen's Dungeon Additions, and Chocolate Quest Repoured), which means the structure is not a single static layout. In these cases, the preview may be dynamically generated from possible static templates, stitched together in a way that may not match an actual generated structure. Most structures from these mods should be generated using the real generation logic (stitching acting as a fallback), but underground structures may lack corridors or other hallways, as they use the surrounding terrain for this purpose, which can give the impression of a broken structure.
+Some structures are generated procedurally (e.g., Recurrent Complex, Unseen's Dungeon Additions, and Chocolate Quest Repoured), which means the structure is not a single static layout. In these cases, the preview should generate the structure dynamically. If it fails, it may be generated from possible static templates as a fallback, stitched together in a way that may not match an actual generated structure. In underground structures, corridors or other hallways may be extruded from the surrounding terrain, which can give the impression of a broken structure when there is no such terrain.
 
 
 ## Building

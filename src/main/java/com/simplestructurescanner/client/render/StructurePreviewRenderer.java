@@ -30,6 +30,7 @@ import net.minecraft.client.renderer.vertex.VertexBuffer;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.BlockRenderLayer;
+import net.minecraft.util.EnumFacing;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -393,10 +394,12 @@ public class StructurePreviewRenderer {
         long tLoopTotal = 0L;
         long tTileEntity = 0L;
         long tActualState = 0L;
+        long tInteriorCull = 0L;
         long tLayerDispatch = 0L;
         long tLayerBufferBuild = 0L;
         int loopCount = previewSnapshot.getBlocks().size();
         int tileEntityCount = 0;
+        int culledInteriorCount = 0;
 
         if (previewSnapshot.isEmpty()) return new PreparedPreview(
                 new DummyWorld(),
@@ -450,8 +453,27 @@ public class StructurePreviewRenderer {
 
             if (shouldSkipPreviewBlock(state)) continue;
 
+            // TODO: We conservatively skip fully hidden opaque cubes, but the preview build
+            //       could still prune more aggressively.
+            //       The biggest structures often contain a huge amount of enclosed geometry,
+            //       which we could cut further to decrease the rendering load.
+            //       A solution for that would be to keep a set of solid blocks in the SOLID pass,
+            //       and then remove matching blocks from other layers and a second SOLID pass.
+            //       - First solid pass
+            //       - Second solid pass just to remove fully enclosed blocks
+            //       - Other layers pass with eager removal of fully enclosed blocks
+            //       But idk how much it would actually help from the current solution.
+            if (PROFILE_PREPARE_PREVIEW) t = System.nanoTime();
+            if (shouldCullInteriorPreviewBlock(buildWorld, entry.pos, state)) {
+                if (PROFILE_PREPARE_PREVIEW) tInteriorCull += System.nanoTime() - t;
+                culledInteriorCount++;
+                continue;
+            }
+
+            if (PROFILE_PREPARE_PREVIEW) tInteriorCull += System.nanoTime() - t;
+
             // Separate blocks into their render layers for efficient render dispatch
-            // TODO: This step is the most expensive part of the loop and could easily be cached into bitmasks.
+            // TODO: This step could easily be cached into bitmasks.
             //       But it is fairly minor, as the whole build *before VBO upload* is still < 1s for 100k blocks.
             if (PROFILE_PREPARE_PREVIEW) t = System.nanoTime();
             addBlockToPreviewLayers(buildLayerEntries, entry.pos, state);
@@ -500,12 +522,16 @@ public class StructurePreviewRenderer {
                 "  - Loop:             {} ms (count: {}, {} ms per)\n" +
                 "    -> Tile Entities: {} ms (count: {}, {} ms per)\n" +
                 "    -> actualState:   {} ms\n" +
+                "    -> interiorCull:  {} ms (count: {})\n" +
                 "    -> layerDispatch: {} ms\n" +
                 "  - layerBuffers:     {} ms\n",
                 totalMs, addBlocksMs,
                 loopMs, loopCount, loopCount > 0 ? loopMs / loopCount : 0.0,
                 tileEntityMs, tileEntityCount, tileEntityCount > 0 ? tileEntityMs / tileEntityCount : 0.0,
-                actualStateMs, layerDispatchMs, layerBufferBuildMs);
+                actualStateMs,
+                tInteriorCull / 1_000_000.0, culledInteriorCount,
+                layerDispatchMs,
+                layerBufferBuildMs);
         }
 
         return new PreparedPreview(buildWorld, buildLayerEntries, buildTileEntityEntries, buildLayerBufferData,
@@ -559,6 +585,21 @@ public class StructurePreviewRenderer {
         boolean isPowered = getBooleanPropertyValue(state, "powered");
         boolean isInverted = getBooleanPropertyValue(state, "inverted");
         return isPowered ^ isInverted;
+    }
+
+    // Full opaque cubes only contribute their outer faces. When vanilla face culling reports that
+    // all six sides are hidden, skip the block entirely so the preview does not spend time
+    // building dead layer entries and VBO data for it.
+    private boolean shouldCullInteriorPreviewBlock(DummyWorld previewWorld, BlockPos pos, IBlockState state) {
+        if (state.getBlock().hasTileEntity(state)) return false;
+        if (!state.isOpaqueCube()) return false;
+        if (!state.isFullCube()) return false;
+
+        for (EnumFacing side : EnumFacing.VALUES) {
+            if (state.shouldSideBeRendered(previewWorld, pos, side)) return false;
+        }
+
+        return true;
     }
 
     private boolean getBooleanPropertyValue(IBlockState state, String propertyName) {

@@ -40,6 +40,9 @@ public class ItemStructureCaptureTool extends Item {
     }
 
     // TODO: Add something to adjust the bounds on the fly instead of re-doing the 2 corners
+    //       An idea would be to use arrows to adjust the bounds when looking at a side
+    //       (using quadrants to determine which side to adjust). Center would be to move
+    //       the whole box. Maybe something like | 25% | 50% | 25% | for the limits.
 
     @Nonnull
     @Override

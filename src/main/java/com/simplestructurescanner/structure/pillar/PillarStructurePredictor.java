@@ -51,6 +51,18 @@ public class PillarStructurePredictor {
      * Replicates Pillar's {@code WorldGenerator.generate()} loop: shuffle schemas,
      * iterate, and call generateStructure for each. Only performs expensive terrain
      * verification for the target structure.
+     * <p>
+     * TODO: Any structure that was generated before the list of schemas was changed cannot be
+     *       predicted back, because the order of iteration is different. This is a limitation
+     *       of the Pillar mod, not this scanner. One possible workaround is to store the schemas
+     *       on post-init (if it changed) alongside an incremental "version" number, and then
+     *       save this version number in the chunk's NBT. The scanner would check the version
+     *       number of the chunk against the current version of the schemas, and if they differ,
+     *       load the old schemas from disk and use them for prediction.
+     *       This is quite a significant amount of work, and would require careful handling of
+     *       schema changes (schemas can be changed at runtime), and Pillar is not a huge part
+     *       of the mod.
+     *       Idk, may implement it whenever I feel like stress testing it.
      *
      * @param world The world (used for seed and dimension info, never modified)
      * @param chunkX Chunk X coordinate
