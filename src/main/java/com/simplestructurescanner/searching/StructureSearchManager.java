@@ -83,7 +83,7 @@ public class StructureSearchManager {
 
     private static SearchCacheKey lastSearchContext = null;
 
-    private static final int MAX_CACHE_RESULTS = 100;
+    private static final int MAX_CACHE_RESULTS = 10;
 
     // Predefined colors for searched structures (cycling)
     private static final int[] COLORS = {
@@ -157,6 +157,16 @@ public class StructureSearchManager {
 
         cache.remove(id);
         if (cache.isEmpty()) sortedCache.remove(cacheKey);
+    }
+
+    private static void removeLocationCacheEntry(SearchCacheKey cacheKey, ResourceLocation id) {
+        if (cacheKey == null) return;
+
+        Map<ResourceLocation, List<BlockPos>> cache = locationCache.get(cacheKey);
+        if (cache == null) return;
+
+        cache.remove(id);
+        if (cache.isEmpty()) locationCache.remove(cacheKey);
     }
 
     private static void queueSearchIfAllowed(ResourceLocation id) {
@@ -258,12 +268,14 @@ public class StructureSearchManager {
 
     /**
      * Refreshes the search for a structure.
-     * Clears sorted cache to force re-sort based on current player position.
+     * Clears all cached data to force a fresh fetch from the provider.
      */
     public static void refreshSearch(ResourceLocation id) {
         skipOffsets.put(id, 0);
         lastKnownLocations.remove(id);
-        removeSortedCacheEntry(getCurrentCacheKey(), id);  // Force re-sort on next search
+        SearchCacheKey cacheKey = getCurrentCacheKey();
+        removeSortedCacheEntry(cacheKey, id);
+        removeLocationCacheEntry(cacheKey, id);
         requestSearch(id);
     }
 
@@ -406,21 +418,11 @@ public class StructureSearchManager {
         SearchCacheKey cacheKey = getCacheKey(world);
         int skipOffset = skipOffsets.getOrDefault(id, 0);
 
-        // Check if we have a sorted cache we can use
-        List<BlockPos> sorted = getSortedPositions(cacheKey, id);
-        if (sorted != null && skipOffset < sorted.size()) {
-            updateLocationFromSortedCache(id, cacheKey);
-            return;
-        }
-
-        // Check if we have a location cache that needs sorting
-        Map<ResourceLocation, List<BlockPos>> worldCache = getLocationCache(cacheKey);
-        if (worldCache != null && worldCache.containsKey(id)) {
-            // Sort and use
-            updateSortedCache(id, playerPos, cacheKey);
-            updateLocationFromSortedCache(id, cacheKey);
-            return;
-        }
+        // Always invalidate cached results so every queued search fetches fresh data.
+        // This prevents stale results after teleporting or exploring new terrain.
+        // The cache is still useful between searches for skip/previous navigation.
+        removeLocationCacheEntry(cacheKey, id);
+        removeSortedCacheEntry(cacheKey, id);
 
         // No cache available, need to fetch from world
         Minecraft mc = Minecraft.getMinecraft();
@@ -633,6 +635,7 @@ public class StructureSearchManager {
      */
     public static void clearCaches() {
         sortedCache.clear();
+        locationCache.clear();
         lastKnownLocations.clear();
         nonBatchStructures.clear();
         lastSearchContext = null;

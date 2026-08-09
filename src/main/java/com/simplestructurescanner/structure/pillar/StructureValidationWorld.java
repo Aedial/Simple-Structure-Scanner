@@ -1,7 +1,5 @@
 package com.simplestructurescanner.structure.pillar;
 
-import com.simplestructurescanner.SimpleStructureScanner;
-
 import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.profiler.Profiler;
@@ -16,8 +14,6 @@ import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraft.world.storage.WorldInfo;
 
 import javax.annotation.Nonnull;
-import javax.annotation.Nullable;
-import java.lang.reflect.Field;
 
 /**
  * A fake world used for validating structure placement with actual terrain data.
@@ -38,40 +34,9 @@ import java.lang.reflect.Field;
  */
 public class StructureValidationWorld extends World {
 
-    private static final Field BIOME_PROVIDER_FIELD = findBiomeProviderField();
-
-    // TODO: Clean the reflection code. It has no business being this complex,
-    //       We're targeting only 1.12.2 (dunno what the implementer was thinking).
-    //       I didn't implement this, just cleaned it up.
-
-    @Nullable
-    private static Field findBiomeProviderField() {
-        String[] possibleNames = {
-            "biomeProvider",  // Deobfuscated/MCP
-            "field_72961_K",  // 1.12.2 obfuscated (older mappings)
-            "field_201672_v", // 1.12+ obfuscated (newer mappings)
-            "field_184135_t"  // Alternative obfuscated name
-        };
-
-        for (String fieldName : possibleNames) {
-            try {
-                Field field = World.class.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                SimpleStructureScanner.LOGGER.info("Successfully accessed biomeProvider field as: {}", fieldName);
-
-                return field;
-            } catch (NoSuchFieldException e) {
-                // Try next name.
-            }
-        }
-
-        // If all names fail, log warning but do not crash.
-        // Validation still works, just without forced BiomeProvider synchronization.
-        SimpleStructureScanner.LOGGER.warn("Could not find biomeProvider field in World class using any known name.");
-        SimpleStructureScanner.LOGGER.warn("BiomeProvider synchronization will not be available - validation may have biome mismatches.");
-
-        return null;
-    }
+    // NOTE: World does NOT have a biomeProvider field. All biome queries route
+    // through WorldProvider.biomeProvider (field_76578_c), which ValidationContextManager
+    // already finds and restores after construction. No field override needed here.
 
     private final IChunkGenerator chunkGenerator;
 
@@ -98,36 +63,22 @@ public class StructureValidationWorld extends World {
             worldInfo,  // Use real world's WorldInfo for identical terrain generation
             worldProvider,
             new Profiler(),
-            true  // isRemote (client-side)
+            false  // isRemote=false: matches real server-side generation so event handlers run their full logic
         );
 
         this.chunkGenerator = chunkGenerator;
 
         // Set up the world with proper initialization
-        initializeWorld(biomeProvider);
+        initializeWorld();
     }
 
     /**
      * Initializes the world with the provided providers.
      */
-    private void initializeWorld(BiomeProvider biomeProvider) {
+    private void initializeWorld() {
         // CRITICAL: Do NOT modify the shared WorldProvider or BiomeProvider!
         // These are shared with the real world, and modifying them would cause
         // the real world to reference the validation world, leading to crashes.
-
-        // Override the BiomeProvider with the real world's BiomeProvider
-        // The WorldProvider creates its own BiomeProvider, which causes biome mismatches.
-        // We use reflection to set the biomeProvider field to ensure identical biomes.
-        if (BIOME_PROVIDER_FIELD != null) {
-            try {
-                BIOME_PROVIDER_FIELD.set(this, biomeProvider);
-            } catch (IllegalAccessException e) {
-                SimpleStructureScanner.LOGGER.warn("Failed to set biomeProvider field via reflection: {}", e.getMessage());
-                SimpleStructureScanner.LOGGER.warn("BiomeProvider synchronization will not be available - validation may have biome mismatches.");
-            }
-        } else {
-            SimpleStructureScanner.LOGGER.debug("BiomeProvider field not available - using WorldProvider's default BiomeProvider");
-        }
 
         // Create the chunk provider with terrain generation
         this.chunkProvider = createValidationChunkProvider();

@@ -1,0 +1,16 @@
+{
+    "package": "com.simplestructurescanner.mixin.rcv",
+    "refmap": "mixins.simplestructurescanner.refmap.json",
+    "target": "@env(DEFAULT)",
+    "minVersion": "0.8",
+    "compatibilityLevel": "JAVA_8",
+    "mixins": [
+        "MixinRCForgeEventHandler",
+        "MixinStructureLocator"
+    ],
+    "server": [
+        "MixinRCForgeEventHandler",
+        "MixinStructureLocator"
+    ],
+    "client": []
+}

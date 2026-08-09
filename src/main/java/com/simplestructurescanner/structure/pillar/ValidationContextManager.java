@@ -1,5 +1,6 @@
 package com.simplestructurescanner.structure.pillar;
 
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
@@ -10,12 +11,15 @@ import net.minecraft.world.gen.ChunkProviderServer;
 import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.fml.common.FMLCommonHandler;
+import net.minecraftforge.fml.common.Loader;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
+
+import com.simplestructurescanner.SimpleStructureScanner;
 
 /**
  * Manages the lifecycle of structure validation worlds.
@@ -43,6 +47,12 @@ public class ValidationContextManager {
 
     private static final Field CHUNK_GENERATOR_FIELD = findChunkGeneratorField();
 
+    @Nullable
+    private static final Field BIOME_PROVIDER_FIELD_WP = findWorldProviderBiomeProviderField();
+
+    @Nullable
+    private static final Field WP_WORLD_FIELD = findWorldProviderWorldField();
+
     private ValidationContextManager() {
     }
 
@@ -64,6 +74,69 @@ public class ValidationContextManager {
         throw new RuntimeException("Failed to find chunkGenerator field in ChunkProviderServer");
     }
 
+    @Nullable
+    private static Field findWorldProviderBiomeProviderField() {
+        String[] fieldNames = {"biomeProvider", "field_201645_s"};
+
+        for (String fieldName : fieldNames) {
+            try {
+                Field field = WorldProvider.class.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                SimpleStructureScanner.LOGGER.info("Successfully accessed WorldProvider.biomeProvider field as: {}", fieldName);
+                return field;
+            } catch (NoSuchFieldException e) {
+                // Try next name
+            }
+        }
+
+        // Type-based fallback: find the first BiomeProvider-typed field
+        try {
+            for (Field field : WorldProvider.class.getDeclaredFields()) {
+                if (field.getType() == BiomeProvider.class) {
+                    field.setAccessible(true);
+                    SimpleStructureScanner.LOGGER.info("Found WorldProvider.biomeProvider field by type: {}", field.getName());
+                    return field;
+                }
+            }
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn("Type-based search for WorldProvider.biomeProvider failed", e);
+        }
+
+        SimpleStructureScanner.LOGGER.warn("Could not find WorldProvider.biomeProvider field — biome queries on validation world may be incorrect");
+        return null;
+    }
+
+    @Nullable
+    private static Field findWorldProviderWorldField() {
+        String[] fieldNames = {"world", "field_76579_a"};
+
+        for (String fieldName : fieldNames) {
+            try {
+                Field field = WorldProvider.class.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field;
+            } catch (NoSuchFieldException e) {
+                // Try next name
+            }
+        }
+
+        // Type-based fallback
+        try {
+            for (Field field : WorldProvider.class.getDeclaredFields()) {
+                if (field.getType() == World.class) {
+                    field.setAccessible(true);
+                    SimpleStructureScanner.LOGGER.info("Found WorldProvider.world field by type: {}", field.getName());
+                    return field;
+                }
+            }
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn("Type-based search for WorldProvider.world failed", e);
+        }
+
+        SimpleStructureScanner.LOGGER.warn("Could not find WorldProvider.world field");
+        return null;
+    }
+
     /**
      * Creates a safe copy of WorldInfo to prevent modifications to the original.
      * <p>
@@ -83,7 +156,9 @@ public class ValidationContextManager {
             original.getTerrainType()
         );
         settings.setGeneratorOptions(original.getGeneratorOptions());
-        return new WorldInfo(settings, original.getWorldName());
+        WorldInfo cloned = new WorldInfo(settings, original.getWorldName());
+        cloned.setSpawn(new BlockPos(original.getSpawnX(), original.getSpawnY(), original.getSpawnZ()));
+        return cloned;
     }
 
     /**
@@ -223,7 +298,36 @@ public class ValidationContextManager {
         WorldProvider worldProvider = realWorld.provider;
         IChunkGenerator chunkGenerator = getChunkGenerator(realWorld);
 
-        return new StructureValidationWorld(worldInfo, biomeProvider, worldProvider, chunkGenerator);
+        // Save the real biome provider and world reference BEFORE construction.
+        // The World constructor calls provider.setWorld(this) -> provider.init(),
+        // which creates a NEW BiomeProvider and repoints provider.world to the validation world.
+        BiomeProvider savedBiomeProvider = worldProvider.getBiomeProvider();
+        World savedProviderWorld = null;
+        try {
+            if (WP_WORLD_FIELD != null) {
+                savedProviderWorld = (World) WP_WORLD_FIELD.get(worldProvider);
+            }
+        } catch (IllegalAccessException e) {
+            SimpleStructureScanner.LOGGER.warn("Failed to read WorldProvider.world field before validation world creation", e);
+        }
+
+        StructureValidationWorld validationWorld = new StructureValidationWorld(worldInfo, biomeProvider, worldProvider, chunkGenerator);
+
+        // Restore the real biome provider and world reference on the shared WorldProvider.
+        // This ensures event handlers that query biomes or access provider.getWorld()
+        // see the same results as during real generation.
+        try {
+            if (BIOME_PROVIDER_FIELD_WP != null) {
+                BIOME_PROVIDER_FIELD_WP.set(worldProvider, savedBiomeProvider);
+            }
+            if (WP_WORLD_FIELD != null && savedProviderWorld != null) {
+                WP_WORLD_FIELD.set(worldProvider, savedProviderWorld);
+            }
+        } catch (IllegalAccessException e) {
+            SimpleStructureScanner.LOGGER.warn("Failed to restore WorldProvider fields after validation world creation", e);
+        }
+
+        return validationWorld;
     }
 
     @Nullable

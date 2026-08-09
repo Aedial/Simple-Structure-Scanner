@@ -66,6 +66,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private static final String BLOCK_POSITIONS_CLASS = "ivorius.ivtoolkit.blocks.BlockPositions";
     private static final String NATURAL_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.NaturalGeneration";
     private static final String STATIC_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.StaticGeneration";
+    private static final String VANILLA_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.VanillaGeneration";
     private static final String LIST_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.ListGeneration";
     private static final String MAZE_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.MazeGeneration";
 
@@ -990,6 +991,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         Set<DimensionInfo> dimensions = new HashSet<>();
         boolean hasNaturalGeneration = false;
         boolean hasStaticGeneration = false;
+        boolean vanillaViable = false;
 
         for (Object generationType : generationTypes) {
             String className = generationType.getClass().getName();
@@ -1005,10 +1007,24 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
                 hasStaticGeneration = true;
                 dimensions.addAll(resolveStaticDimensions(generationType));
             }
+
+            if (VANILLA_GENERATION_CLASS.equals(className)) {
+                try {
+                    Double weight = (Double) ReflectionHelper.getField(
+                        generationType, generationType.getClass(), "generationWeight");
+                    if (weight == null || weight > 0.0) vanillaViable = true;
+                } catch (ReflectionException e) {
+                    vanillaViable = true;
+                }
+            }
         }
 
-        if (!hasNaturalGeneration && !hasStaticGeneration) {
+        if (!hasNaturalGeneration && !hasStaticGeneration && !vanillaViable) {
             return GenerationMetadata.skip();
+        }
+
+        if (vanillaViable && !hasNaturalGeneration && !hasStaticGeneration) {
+            dimensions.add(DimensionInfo.OVERWORLD);
         }
 
         return new GenerationMetadata(
@@ -1126,14 +1142,20 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
     @Override
     public boolean canBeSearched(ResourceLocation structureId) {
-        return false;
+        return structureInfos.containsKey(structureId);
     }
 
     @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {
-        return null;
+        return RecurrentComplexStructureSearcher.findNearest(world, structureId, pos, skipCount, locationFilter);
+    }
+
+    @Override
+    @Nullable
+    public List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
+        return RecurrentComplexStructureSearcher.findAllNearby(world, structureId, pos, maxResults);
     }
 
     private static final class PreviewTransform {

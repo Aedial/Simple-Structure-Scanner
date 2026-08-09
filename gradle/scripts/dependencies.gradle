@@ -57,4 +57,10 @@ dependencies {
 
     // ---- Optional: JEI ----
     devOnlyNonPublishable rfg.deobf("curse.maven:jei-238222:3043174")
+
+    // ---- Optional: Recurrent Complex Volts (for RCV mixin targets) ----
+    def rcvJar = file('libs/RecurrentComplexVolts-1.12.2-2.0.0.9.jar')
+    if (rcvJar.exists()) {
+        devOnlyNonPublishable rfg.deobf(files(rcvJar))
+    }
 }

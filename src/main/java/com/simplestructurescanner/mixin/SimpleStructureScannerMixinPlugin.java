@@ -23,6 +23,8 @@ public class SimpleStructureScannerMixinPlugin implements ILateMixinLoader {
 
         if (Loader.isModLoaded("jei")) configs.add("mixins.simplestructurescanner.jei.json");
 
+        if (Loader.isModLoaded("reccomplex")) configs.add("mixins.simplestructurescanner.rcv.json");
+
         return configs;
     }
 }
