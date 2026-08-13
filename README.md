@@ -13,7 +13,7 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
   - Use the "x" button to blacklist a found location (per structure, per world).
   - Teleport to the found structure (op only) using the TP button.
   - X/Y/Z coordinates are shown for the location, if found.
-  - A [M]ap button will create a waypoint at the structure's coordinates, if a map mod is installed (currently only JourneyMap and Xaero's Minimap are supported).
+  - A [M]ap button will create a waypoint at the structure's coordinates, if a map mod is installed (currently only JourneyMap, Voxel Map, and Xaero's Minimap are supported).
 
 
 ### List of supported structures :

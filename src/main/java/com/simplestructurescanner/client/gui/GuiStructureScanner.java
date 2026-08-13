@@ -35,6 +35,7 @@ import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.client.ClientSettings;
 import com.simplestructurescanner.client.integration.GameStagesIntegration;
 import com.simplestructurescanner.client.integration.JourneyMapIntegration;
+import com.simplestructurescanner.client.integration.VoxelMapIntegration;
 import com.simplestructurescanner.client.integration.XaeroMinimapIntegration;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.config.ModConfig;
@@ -135,7 +136,9 @@ public class GuiStructureScanner extends GuiScreen {
     }
 
     private boolean hasMapWaypointSupport() {
-        return JourneyMapIntegration.isJourneyMapAvailable() || XaeroMinimapIntegration.isXaeroMinimapAvailable();
+        return JourneyMapIntegration.isJourneyMapAvailable()
+            || VoxelMapIntegration.isVoxelMapAvailable()
+            || XaeroMinimapIntegration.isXaeroMinimapAvailable();
     }
 
     private String getI18nButtonString() {
@@ -1121,22 +1124,35 @@ public class GuiStructureScanner extends GuiScreen {
         StructureLocation location = StructureSearchManager.getLastKnownLocation(selected);
         if (location == null) return;
 
+        BlockPos waypointPos = location.getPosition();
+        int dimensionId = mc.world.provider.getDimension();
+        int waypointColor = StructureSearchManager.getColor(selected);
+
         String waypointName = selectedInfo != null
             ? ClientTextResolver.resolve(selectedInfo.getDisplayName())
             : selected.getPath();
 
         boolean opened = JourneyMapIntegration.openWaypointEditor(
             waypointName,
-            location.getPosition(),
-            mc.world.provider.getDimension(),
-            StructureSearchManager.getColor(selected),
+            waypointPos,
+            dimensionId,
+            waypointColor,
             location.isYAgnostic());
+
+        if (!opened) {
+            opened = VoxelMapIntegration.addWaypoint(
+                waypointName,
+                waypointPos,
+                dimensionId,
+                waypointColor,
+                location.isYAgnostic());
+        }
 
         if (!opened) {
             opened = XaeroMinimapIntegration.addWaypoint(
                 waypointName,
-                location.getPosition(),
-                StructureSearchManager.getColor(selected),
+                waypointPos,
+                waypointColor,
                 location.isYAgnostic());
         }
 

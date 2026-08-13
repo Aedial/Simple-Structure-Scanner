@@ -8,6 +8,11 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
+## [1.4.0] - 2026-??-??
+### Added
+- Add optional VoxelMap waypoint creation to the Structure Scanner Map button, reusing the located structure's coordinates and color.
+
+
 ## [1.3.0] - 2026-07-30
 ### Added
 - Add optional GameStages-aware blacklist entries for structure visibility and searching. The player's stages are snapshotted when the Structure Scanner GUI opens, so `stage` and `nostage` rules can gate what that session may view or search.

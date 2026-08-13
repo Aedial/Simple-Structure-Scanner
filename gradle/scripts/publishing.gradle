@@ -100,6 +100,8 @@ if (propertyBool('publish_to_curseforge')) {
         mainFile.addRelation('xaeros-minimap', 'optionalDependency')
         // Optional: Xaero's World Map
         // mainFile.addRelation('xaeros-world-map', 'optionalDependency')
+        // Optional: Voxel Map
+        mainFile.addRelation('voxelmap', 'optionalDependency')
         // Optional: Game Stages
         mainFile.addRelation('game-stages', 'optionalDependency')
     }

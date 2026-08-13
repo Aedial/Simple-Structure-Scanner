@@ -51,6 +51,9 @@ dependencies {
     // ---- Optional: JourneyMap ----
     devOnlyNonPublishable rfg.deobf("curse.maven:journeymap-32274:5172461")
 
+    // ---- Optional: Voxel Map ----
+    devOnlyNonPublishable rfg.deobf("curse.maven:voxelmap-225179:3029445")
+
     // ---- Optional: Xaero ----
     devOnlyNonPublishable rfg.deobf("curse.maven:xaeros-minimap-263420:8231176")
     // devOnlyNonPublishable rfg.deobf("curse.maven:xaeros-world-map-317780:8298661")
@@ -58,9 +61,7 @@ dependencies {
     // ---- Optional: JEI ----
     devOnlyNonPublishable rfg.deobf("curse.maven:jei-238222:3043174")
 
-    // ---- Optional: Recurrent Complex Volts (for RCV mixin targets) ----
-    def rcvJar = file('libs/RecurrentComplexVolts-1.12.2-2.0.0.9.jar')
-    if (rcvJar.exists()) {
-        devOnlyNonPublishable rfg.deobf(files(rcvJar))
-    }
+    // ---- Optional: Recurrent Complex Volts (for mixin targets) ----
+    devOnlyNonPublishable rfg.deobf("curse.maven:recurrent-complex-volts-1505551:8543203")
+
 }
