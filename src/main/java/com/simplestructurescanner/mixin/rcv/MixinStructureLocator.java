@@ -26,7 +26,7 @@ public class MixinStructureLocator {
     private static boolean loggedFirstHit = false;
 
     @Inject(method = "populationRandom", at = @At("RETURN"), cancellable = true, remap = false)
-    public static void simplestructurescanner$useCachedRandom(long worldSeed, ChunkPos chunkPos, CallbackInfoReturnable<Random> cir) {
+    private static void simplestructurescanner$useCachedRandom(long worldSeed, ChunkPos chunkPos, CallbackInfoReturnable<Random> cir) {
         long cachedSeed = RCVRandomCache.get(worldSeed, chunkPos.x, chunkPos.z);
         if (cachedSeed == Long.MIN_VALUE) return;
 

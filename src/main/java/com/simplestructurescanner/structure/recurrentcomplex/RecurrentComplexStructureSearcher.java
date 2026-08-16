@@ -17,6 +17,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
+import net.minecraft.world.WorldProvider;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.gen.IChunkGenerator;
 
@@ -27,6 +28,7 @@ import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.rcv.RCVRandomCache;
 import com.simplestructurescanner.rcv.RCVPredictionContext;
 import com.simplestructurescanner.structure.StructureLocation;
+import com.simplestructurescanner.structure.pillar.StructureValidationWorld;
 import com.simplestructurescanner.structure.pillar.ValidationContextManager;
 import com.simplestructurescanner.structure.util.PositionHelper;
 
@@ -37,26 +39,27 @@ import com.simplestructurescanner.structure.util.PositionHelper;
  * ARCHITECTURE — Prediction-based search:
  * <p>
  * The search predicts which structures will be selected in each chunk by
- * replicating RCV's candidate-selection pipeline using the cached event
- * Random (captured by {@link com.simplestructurescanner.mixin.rcv.MixinRCForgeEventHandler}
- * and replayed by {@link com.simplestructurescanner.mixin.rcv.MixinStructureLocator}).
+ * replicating RCV's candidate-selection pipeline. The population Random is
+ * captured by simulating {@code PopulateChunkEvent.Pre} on the real Forge event
+ * bus (so handlers registered before RC consume the Random in true
+ * registration order), with {@link com.simplestructurescanner.mixin.rcv.MixinRCForgeEventHandler}
+ * capturing the post-consumption state RC actually receives.
  * <p>
- * Unlike {@code StructureLocator.locateInChunk()}, which calls {@code test()}
- * (and fails on already-generated chunks due to the structure overlap check
- * and terrain validation), the prediction pipeline skips {@code test()}
- * entirely. It only checks whether the target structure is among the
- * candidates selected for this chunk, then computes the position from the
- * deterministic seed.
+ * Matching candidates are validated by running RC's {@code test()} on a
+ * simulated validation world (populated terrain, overlap check disabled via
+ * {@code allowOverlaps(true)}), yielding the structure's real center position.
  * <p>
- * This approach works for both generated and ungenerated chunks (Phase A and
- * Phase B), with the only requirement being a cached Random entry in
- * {@link RCVRandomCache}.
+ * For chunks that are already generated and recorded in RC's persisted
+ * generation ledger ({@code WorldStructureGenerationData}), the ledger's ground
+ * truth is used directly instead of simulation: predictions come from the real
+ * recorded bounding box, and chunks where RC decided not to generate are skipped.
  */
 public class RecurrentComplexStructureSearcher {
 
     // ========== Configuration ==========
 
     private static final int SEARCH_RADIUS_CHUNKS = 64;
+    private static final int VILLAGE_SEARCH_RADIUS_CHUNKS = 128;
     private static final long MAX_SCAN_TIME_MS = 10000;
 
     // ========== Reflection: class names ==========
@@ -112,9 +115,9 @@ public class RecurrentComplexStructureSearcher {
     @Nullable
     private static Method sgFromCenterMethod;
     @Nullable
-    private static Method sgPartiallyMethod;
-    @Nullable
     private static Method sgBoundingBoxMethod;
+    @Nullable
+    private static Method sgStructureSizeMethod;
     @Nullable
     private static Field sgWorldField;
     private static long sgWorldFieldOffset;
@@ -123,6 +126,20 @@ public class RecurrentComplexStructureSearcher {
     private static Method placerMethod;
     @Nullable
     private static Method blockSurfacePosFromMethod;
+    @Nullable
+    private static Method sgTestMethod;
+    @Nullable
+    private static Method sgAllowOverlapsMethod;
+    @Nullable
+    private static Method sgEnvironmentMethod;
+    @Nullable
+    private static Method grSucceededMethod;
+    @Nullable
+    private static Field failureDescriptionField;
+    @Nullable
+    private static Field envBiomeField;
+    @Nullable
+    private static Method ngGetGenerationWeightMethod;
     @Nullable
     private static Object generateMaturitySuggest;
     @Nullable
@@ -135,6 +152,25 @@ public class RecurrentComplexStructureSearcher {
     private static Object rcHandlerInstance;
     @Nullable
     private static Method rcHandlerMethod;
+
+    // Ground-truth ledger reflection (WorldStructureGenerationData — RC's persisted
+    // record of which chunks it processed and what it generated there)
+    @Nullable
+    private static Method wsgdGetMethod;
+    @Nullable
+    private static Method wsgdIsChunkCheckedMethod;
+    @Nullable
+    private static Method wsgdStructureEntriesInMethod;
+    @Nullable
+    private static Method wsgdGetStructureIDMethod;
+    @Nullable
+    private static Method entryGetBoundingBoxMethod;
+    @Nullable
+    private static Method streamIteratorMethod;
+
+    // Set after a real event-bus post for capture fails (handler crashed on the
+    // validation world); all subsequent captures use direct invocation fallback.
+    private static volatile boolean busPostBroken = false;
 
     // Village search reflection
     @Nullable
@@ -329,10 +365,10 @@ public class RecurrentComplexStructureSearcher {
         int centerChunkZ = origin.getZ() >> 4;
 
         // Iterate grid cells overlapping the search radius
-        int minCellX = Math.floorDiv(centerChunkX - SEARCH_RADIUS_CHUNKS, VILLAGE_DISTANCE);
-        int maxCellX = Math.floorDiv(centerChunkX + SEARCH_RADIUS_CHUNKS, VILLAGE_DISTANCE);
-        int minCellZ = Math.floorDiv(centerChunkZ - SEARCH_RADIUS_CHUNKS, VILLAGE_DISTANCE);
-        int maxCellZ = Math.floorDiv(centerChunkZ + SEARCH_RADIUS_CHUNKS, VILLAGE_DISTANCE);
+        int minCellX = Math.floorDiv(centerChunkX - VILLAGE_SEARCH_RADIUS_CHUNKS, VILLAGE_DISTANCE);
+        int maxCellX = Math.floorDiv(centerChunkX + VILLAGE_SEARCH_RADIUS_CHUNKS, VILLAGE_DISTANCE);
+        int minCellZ = Math.floorDiv(centerChunkZ - VILLAGE_SEARCH_RADIUS_CHUNKS, VILLAGE_DISTANCE);
+        int maxCellZ = Math.floorDiv(centerChunkZ + VILLAGE_SEARCH_RADIUS_CHUNKS, VILLAGE_DISTANCE);
 
         int villagesChecked = 0;
         int villagesWithTarget = 0;
@@ -472,6 +508,39 @@ public class RecurrentComplexStructureSearcher {
                     (boolean) diagMayGenerateMethod.invoke(null, worldServer, chunkPos);
             if (!mayGen) return null;
 
+            // --- Ground-truth filter for already-generated chunks ---
+            // If the chunk is loaded and RC's persisted ledger marks it as processed,
+            // RC has already made its final decision — simulation is pointless.
+            // Entry present → predict from the REAL bounding box; absent → skip.
+            boolean realChunkLoaded = worldServer.getChunkProvider()
+                    .getLoadedChunk(chunkPos.x, chunkPos.z) != null;
+            if (realChunkLoaded && wsgdGetMethod != null) {
+                Object ledger = wsgdGetMethod.invoke(null, worldServer);
+                boolean chunkChecked = (boolean) wsgdIsChunkCheckedMethod.invoke(ledger, chunkPos);
+                if (chunkChecked) {
+                    for (Object entry : entriesIn(ledger, chunkPos)) {
+                        String id = (String) wsgdGetStructureIDMethod.invoke(entry);
+                        if (id.equalsIgnoreCase(structureId)) {
+                            Object bb = entryGetBoundingBoxMethod.invoke(entry);
+                            BlockPos center = new BlockPos(
+                                    (sbbMinXField.getInt(bb) + sbbMaxXField.getInt(bb)) / 2,
+                                    (sbbMinYField.getInt(bb) + sbbMaxYField.getInt(bb)) / 2,
+                                    (sbbMinZField.getInt(bb) + sbbMaxZField.getInt(bb)) / 2);
+                            SimpleStructureScanner.LOGGER.debug(
+                                    "LEDGER_CONFIRMED '{}' at chunk({},{}) — real BB center={} (ground truth, no simulation)",
+                                    structureId, chunkPos.x, chunkPos.z, center);
+                            return center;
+                        }
+                    }
+                    SimpleStructureScanner.LOGGER.debug(
+                            "SKIP_LOADED_CHUNK '{}' at chunk({},{}) — chunk generated + RC processed, no ledger entry (RC decided not to generate)",
+                            structureId, chunkPos.x, chunkPos.z);
+                    return null;
+                }
+                // Loaded but not checked: RC never processed this chunk (e.g. generated
+                // before RC ran, or pending complementation) — fall through to simulation.
+            }
+
             boolean cached = RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z);
 
             if (!cached) {
@@ -485,6 +554,8 @@ public class RecurrentComplexStructureSearcher {
             diagSeedCandidatesMethod.invoke(null, statics, random);
 
             List<?> candidates = (List<?>) diagNaturalCandidatesMethod.invoke(null, worldServer, chunkPos, random);
+
+            if (candidates.isEmpty()) return null;
 
             for (Object candidate : candidates) {
                 long seed = random.nextLong();
@@ -501,14 +572,15 @@ public class RecurrentComplexStructureSearcher {
                                     structureId, chunkPos.x, chunkPos.z);
                             continue;
                         }
+
                         SimpleStructureScanner.LOGGER.info(
                                 "Predicted structure '{}' at chunk({},{}), position={}",
                                 structureId, chunkPos.x, chunkPos.z, validated);
                         return validated;
                     } catch (Exception e) {
-                        SimpleStructureScanner.LOGGER.debug(
-                                "Placer check failed for '{}' at chunk ({},{}) — using unvalidated position",
-                                structureId, chunkPos.x, chunkPos.z, e);
+                        SimpleStructureScanner.LOGGER.warn(
+                                "Validation threw for '{}' at chunk ({},{}): {}: {}",
+                                structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
                         BlockPos pos = computeSurfacePos(chunkPos, seed);
                         return pos;
                     }
@@ -530,11 +602,28 @@ public class RecurrentComplexStructureSearcher {
      * Simulates RC's PopulateChunkEvent.Pre handler to capture the event Random
      * state for chunks without a cache entry.
      * <p>
-     * Creates the decoration Random using the exact vanilla formula from
-     * ChunkGeneratorOverworld.populate(), then invokes RC's handler directly
-     * (bypassing the Forge event bus). The Mixin on RC's handler captures the
-     * Random state at HEAD and cancels the method body (via
-     * RCVPredictionContext flag), preventing RC's decorate() from executing.
+     * Bytecode analysis proved RC's handler passes the EVENT's Random directly to
+     * WorldGenStructures.decorate — and that Random is shared across all Pre
+     * handlers in registration order. Mods registered before RC (CoFHWorld,
+     * NuclearCraft, ...) consume rand calls, so RC receives it in an ADVANCED
+     * state. Invoking RC's handler directly with a pristine formula rand caused
+     * seed divergence and false positives (8/8 failed verifications had
+     * seedMatch=FALSE).
+     * <p>
+     * Therefore: post the event on the REAL Forge event bus (validation world +
+     * formula rand, predicting=true). Handlers registered before RC consume the
+     * validation rand in true registration order, exactly as in real generation.
+     * When the bus reaches RC's handler, MixinRCForgeEventHandler captures the
+     * post-consumption seed (what RC actually receives) into RCVRandomCache and
+     * cancels RC's body.
+     * <p>
+     * If a pre-RC handler throws on the validation world (ClassCastException etc.),
+     * fall back to direct RC handler invocation with the formula rand (old
+     * behavior) for this and all subsequent chunks, logged once.
+     * <p>
+     * Note: if a pre-RC handler CANCELS the event, RC's mixin never fires and no
+     * seed is captured — the chunk yields no prediction. This is correct: in real
+     * generation, a cancelling handler also prevents RC from generating there.
      */
     private static void captureRandomViaEvent(WorldServer worldServer, ChunkPos chunkPos, long worldSeed) {
         try {
@@ -552,10 +641,23 @@ public class RecurrentComplexStructureSearcher {
 
             RCVPredictionContext.setPredicting(true);
             try {
-                if (rcHandlerInstance != null && rcHandlerMethod != null) {
+                boolean busPosted = false;
+                if (!busPostBroken) {
+                    try {
+                        MinecraftForge.EVENT_BUS.post(event);
+                        busPosted = true;
+                    } catch (Throwable t) {
+                        busPostBroken = true;
+                        StackTraceElement[] st = t.getStackTrace();
+                        SimpleStructureScanner.LOGGER.warn(
+                                "Event-bus capture failed for chunk ({},{}): {} at {} — "
+                                        + "falling back to direct invocation for all future chunks",
+                                chunkPos.x, chunkPos.z, t.getClass().getSimpleName(),
+                                st.length > 0 ? st[0] : "?");
+                    }
+                }
+                if (!busPosted && rcHandlerInstance != null && rcHandlerMethod != null) {
                     rcHandlerMethod.invoke(rcHandlerInstance, event);
-                } else {
-                    MinecraftForge.EVENT_BUS.post(event);
                 }
             } finally {
                 RCVPredictionContext.setPredicting(false);
@@ -581,9 +683,14 @@ public class RecurrentComplexStructureSearcher {
     }
 
     /**
-     * Validates a predicted candidate by running the placer check on validation world terrain.
-     * Returns null if the placer rejects the terrain (false positive), or a BlockPos with
-     * the real center coordinates (including Y) if accepted.
+     * Validates a predicted candidate by running RC's test() on validation world terrain.
+     * Returns null if test() fails (placement, outOfBounds) or the biome-edge weight is 0.
+     * Overlap check is disabled via allowOverlaps(true) since the validation world
+     * has no structure data.
+     * <p>
+     * Before running test(), the chunks overlapping the structure's bounding box
+     * are populated (full decoration pass) on the validation world to match the
+     * terrain state RC sees during real generation.
      *
      * @param validationWorld The validation world (StructureValidationWorld)
      * @param structure       The Structure object from the registry
@@ -591,8 +698,8 @@ public class RecurrentComplexStructureSearcher {
      * @param structureId     The structure ID string
      * @param seed            The candidate seed
      * @param chunkPos        The chunk position
-     * @return Validated center position with real Y, or null if placer rejected
-     * @throws Exception if the placer check itself fails (caller should fall back to unvalidated)
+     * @return Validated center position with real Y, or null if rejected
+     * @throws Exception if the validation itself fails (caller should fall back to unvalidated)
      */
     @Nullable
     private static BlockPos validateWithPlacer(Object validationWorld, Object structure,
@@ -610,10 +717,45 @@ public class RecurrentComplexStructureSearcher {
         Object placer = placerMethod.invoke(generation);
         sgRandomPositionMethod.invoke(generator, blockSurfacePos, placer);
         sgFromCenterMethod.invoke(generator, true);
-        sgPartiallyMethod.invoke(generator, true, chunkPos);
+
+        // --- Populate chunks overlapping the structure BB on the validation world ---
+        // Compute preliminary BB to determine which chunks need population.
+        // structureSize() doesn't need the world (only seed+transform).
+        if (sgStructureSizeMethod != null && validationWorld instanceof StructureValidationWorld) {
+            try {
+                int[] size = (int[]) sgStructureSizeMethod.invoke(generator);
+                int centerX = surfaceBlockPos.getX();
+                int centerZ = surfaceBlockPos.getZ();
+                // fromCenter=true: BB starts at center - size/2
+                int bbMinX = centerX - size[0] / 2;
+                int bbMinZ = centerZ - size[2] / 2;
+                int bbMaxX = bbMinX + size[0];
+                int bbMaxZ = bbMinZ + size[2];
+
+                StructureValidationWorld svw = (StructureValidationWorld) validationWorld;
+                svw.populateChunkRange(bbMinX, bbMinZ, bbMaxX, bbMaxZ);
+            } catch (Exception e) {
+                SimpleStructureScanner.LOGGER.debug(
+                        "Populate skipped for '{}' at chunk({},{}) — {}: {}",
+                        structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
+            }
+        }
 
         unsafeInstance.putObject(generator, sgWorldFieldOffset, validationWorld);
+        sgAllowOverlapsMethod.invoke(generator, true);
 
+        // Run RC's full test() validation (placement + spawn + outOfBounds), overlap disabled
+        Object testResult = sgTestMethod.invoke(generator);
+        if (testResult == null) return null;
+        boolean succeeded = (boolean) grSucceededMethod.invoke(testResult);
+        if (!succeeded) {
+            SimpleStructureScanner.LOGGER.debug(
+                    "test() rejected structure '{}' at chunk ({},{}) — failure: [{}]",
+                    structureId, chunkPos.x, chunkPos.z, extractFailureDescription(testResult));
+            return null;
+        }
+
+        // test() succeeded — boundingBox() is cached and guaranteed non-empty
         Object resultObj = sgBoundingBoxMethod.invoke(generator);
         if (resultObj == null) return null;
 
@@ -628,7 +770,52 @@ public class RecurrentComplexStructureSearcher {
         int maxY = sbbMaxYField.getInt(bb);
         int maxZ = sbbMaxZField.getInt(bb);
 
+        // Biome-edge re-check: reject if the biome at the BB center has generation weight 0
+        Object env = sgEnvironmentMethod.invoke(generator);
+        Biome bbBiome = (Biome) envBiomeField.get(env);
+        if (bbBiome != null) {
+            WorldProvider provider = ((World) validationWorld).provider;
+            double weight = (double) ngGetGenerationWeightMethod.invoke(generation, provider, bbBiome);
+            if (weight <= 0) {
+                SimpleStructureScanner.LOGGER.debug(
+                        "Biome-edge rejected '{}' at chunk({},{}) — biome={}, weight={}",
+                        structureId, chunkPos.x, chunkPos.z, bbBiome.getRegistryName(), weight);
+                return null;
+            }
+        }
+
         return new BlockPos((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+    }
+
+    @Nullable
+    private static String extractFailureDescription(Object testResult) {
+        if (failureDescriptionField != null) {
+            try {
+                Object desc = failureDescriptionField.get(testResult);
+                return desc != null ? desc.toString() : "null";
+            } catch (Exception ignored) {
+            }
+        }
+        return testResult.toString();
+    }
+
+    // ========== RC generation ledger access ==========
+    //
+    // WorldStructureGenerationData is RC's persisted record of which chunks its
+    // pipeline processed and which structures it actually generated in them.
+    // The ground-truth filter in searchInChunk() consults it to skip simulation
+    // for chunks whose outcome RC has already decided.
+
+    /** Lists RC ledger entry objects for the given chunk. */
+    private static List<Object> entriesIn(Object data, ChunkPos chunkPos) throws Exception {
+        List<Object> out = new ArrayList<>();
+        Object stream = wsgdStructureEntriesInMethod.invoke(data, chunkPos);
+        if (stream == null) return out;
+        java.util.Iterator<?> it = (java.util.Iterator<?>) streamIteratorMethod.invoke(stream);
+        while (it.hasNext()) {
+            out.add(it.next());
+        }
+        return out;
     }
 
     @Nullable
@@ -731,8 +918,8 @@ public class RecurrentComplexStructureSearcher {
             sgMaturityMethod = structureGeneratorClass.getMethod("maturity", generateMaturityClass2);
             sgRandomPositionMethod = structureGeneratorClass.getMethod("randomPosition", blockSurfacePosClass2, placerClass2);
             sgFromCenterMethod = structureGeneratorClass.getMethod("fromCenter", boolean.class);
-            sgPartiallyMethod = structureGeneratorClass.getMethod("partially", boolean.class, ChunkPos.class);
             sgBoundingBoxMethod = structureGeneratorClass.getMethod("boundingBox");
+            sgStructureSizeMethod = structureGeneratorClass.getMethod("structureSize");
             sgWorldField = structureGeneratorClass.getDeclaredField("world");
             sgWorldField.setAccessible(true);
             // Use Unsafe to bypass Field.set()'s type check (WorldServer vs World).
@@ -758,6 +945,36 @@ public class RecurrentComplexStructureSearcher {
                 f.setAccessible(true);
             }
 
+            // test() + allowOverlaps + environment on StructureGenerator
+            sgTestMethod = structureGeneratorClass.getDeclaredMethod("test");
+            sgAllowOverlapsMethod = structureGeneratorClass.getDeclaredMethod("allowOverlaps", boolean.class);
+            sgEnvironmentMethod = structureGeneratorClass.getDeclaredMethod("environment");
+
+            // GenerationResult.succeeded()
+            Class<?> generationResultClass = Class.forName(
+                "ivorius.reccomplex.world.gen.feature.StructureGenerator$GenerationResult");
+            grSucceededMethod = generationResultClass.getDeclaredMethod("succeeded");
+
+            // Failure.description (public field on the Failure subclass)
+            try {
+                Class<?> failureClass = Class.forName(
+                    "ivorius.reccomplex.world.gen.feature.StructureGenerator$GenerationResult$Failure");
+                failureDescriptionField = failureClass.getField("description");
+            } catch (Exception e) {
+                SimpleStructureScanner.LOGGER.warn("Could not access Failure.description field", e);
+            }
+
+            // Environment.biome (public field)
+            Class<?> environmentClass = Class.forName(
+                "ivorius.reccomplex.world.gen.feature.structure.Environment");
+            envBiomeField = environmentClass.getField("biome");
+
+            // NaturalGeneration.getGenerationWeight(WorldProvider, Biome) → double
+            Class<?> naturalGenClass = Class.forName(
+                "ivorius.reccomplex.world.gen.feature.structure.generic.generation.NaturalGeneration");
+            ngGetGenerationWeightMethod = naturalGenClass.getDeclaredMethod(
+                "getGenerationWeight", WorldProvider.class, Biome.class);
+
             SimpleStructureScanner.LOGGER.info("Recurrent Complex search initialized");
 
             // Cache RC's Forge event handler instance + method for direct invocation.
@@ -770,6 +987,24 @@ public class RecurrentComplexStructureSearcher {
                 SimpleStructureScanner.LOGGER.info("Cached Recurrent Complex event handler for direct invocation");
             } catch (Exception e) {
                 SimpleStructureScanner.LOGGER.warn("Failed to cache Recurrent Complex event handler — falling back to event bus", e);
+            }
+
+            // ========== Generation ledger reflection (ground-truth filter) ==========
+            try {
+                Class<?> wsgdClass = Class.forName("ivorius.reccomplex.world.gen.feature.WorldStructureGenerationData");
+                wsgdGetMethod = wsgdClass.getMethod("get", World.class);
+                wsgdIsChunkCheckedMethod = wsgdClass.getMethod("isChunkChecked", ChunkPos.class);
+                wsgdStructureEntriesInMethod = wsgdClass.getMethod("structureEntriesIn", ChunkPos.class);
+                Class<?> structureEntryClass = Class.forName(
+                        "ivorius.reccomplex.world.gen.feature.WorldStructureGenerationData$StructureEntry");
+                wsgdGetStructureIDMethod = structureEntryClass.getMethod("getStructureID");
+                Class<?> entryClass = Class.forName(
+                        "ivorius.reccomplex.world.gen.feature.WorldStructureGenerationData$Entry");
+                entryGetBoundingBoxMethod = entryClass.getMethod("getBoundingBox");
+                streamIteratorMethod = Class.forName("java.util.stream.BaseStream").getMethod("iterator");
+                SimpleStructureScanner.LOGGER.info("Recurrent Complex generation ledger reflection initialized");
+            } catch (Exception e) {
+                SimpleStructureScanner.LOGGER.warn("Generation ledger reflection init failed — ground-truth filter disabled", e);
             }
 
             // ========== Village search reflection ==========

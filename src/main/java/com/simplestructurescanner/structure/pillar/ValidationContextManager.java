@@ -9,6 +9,7 @@ import net.minecraft.world.WorldSettings;
 import net.minecraft.world.biome.BiomeProvider;
 import net.minecraft.world.gen.ChunkProviderServer;
 import net.minecraft.world.gen.IChunkGenerator;
+import net.minecraft.world.storage.MapStorage;
 import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.fml.common.Loader;
@@ -291,16 +292,16 @@ public class ValidationContextManager {
      * @return A new validation world with the same generation parameters
      */
     private static StructureValidationWorld createValidationWorld(World realWorld) {
-        // Clone the WorldInfo to prevent modifications from affecting the actual world
-        // This prevents corruption with mods like BiomesOPlenty + Lost Cities
         WorldInfo worldInfo = cloneWorldInfo(realWorld.getWorldInfo());
-        BiomeProvider biomeProvider = realWorld.getBiomeProvider();
         WorldProvider worldProvider = realWorld.provider;
         IChunkGenerator chunkGenerator = getChunkGenerator(realWorld);
+        int dimension = worldProvider.getDimension();
 
-        // Save the real biome provider and world reference BEFORE construction.
-        // The World constructor calls provider.setWorld(this) -> provider.init(),
-        // which creates a NEW BiomeProvider and repoints provider.world to the validation world.
+        // Save the real provider's biomeProvider and world reference BEFORE construction.
+        // The World constructor calls provider.registerWorld(this) + provider.init(),
+        // which may overwrite the biome provider and repoint the provider's world field
+        // at the validation world. We must restore them after construction so that
+        // mods accessing provider.getWorld() during normal gameplay see the real world.
         BiomeProvider savedBiomeProvider = worldProvider.getBiomeProvider();
         World savedProviderWorld = null;
         try {
@@ -311,11 +312,10 @@ public class ValidationContextManager {
             SimpleStructureScanner.LOGGER.warn("Failed to read WorldProvider.world field before validation world creation", e);
         }
 
-        StructureValidationWorld validationWorld = new StructureValidationWorld(worldInfo, biomeProvider, worldProvider, chunkGenerator);
+        StructureValidationWorld validationWorld = new StructureValidationWorld(
+                new ValidationSaveHandler(), worldInfo, worldProvider, chunkGenerator);
 
-        // Restore the real biome provider and world reference on the shared WorldProvider.
-        // This ensures event handlers that query biomes or access provider.getWorld()
-        // see the same results as during real generation.
+        // CRITICAL: Restore the real provider's world and biomeProvider references.
         try {
             if (BIOME_PROVIDER_FIELD_WP != null) {
                 BIOME_PROVIDER_FIELD_WP.set(worldProvider, savedBiomeProvider);
@@ -327,7 +327,40 @@ public class ValidationContextManager {
             SimpleStructureScanner.LOGGER.warn("Failed to restore WorldProvider fields after validation world creation", e);
         }
 
+        // Copy mapStorage from the real world. The World constructor may leave
+        // mapStorage null. Some decoration code during populate might call
+        // getMapStorage() and NPE without this.
+        copyMapStorage(realWorld, validationWorld);
+
+        SimpleStructureScanner.LOGGER.info("Created StructureValidationWorld for dimension {}", dimension);
+
         return validationWorld;
+    }
+
+    /**
+     * Copies the mapStorage from the real world to the validation world via reflection.
+     * The World constructor may leave mapStorage null. Some decoration code
+     * during populate might call getMapStorage() and NPE without this.
+     */
+    private static void copyMapStorage(World realWorld, StructureValidationWorld validationWorld) {
+        try {
+            MapStorage realStorage = realWorld.getMapStorage();
+            if (realStorage == null) {
+                SimpleStructureScanner.LOGGER.warn("Real world mapStorage is null — cannot copy to validation world");
+                return;
+            }
+            for (Field f : World.class.getDeclaredFields()) {
+                if (f.getType() == MapStorage.class) {
+                    f.setAccessible(true);
+                    f.set(validationWorld, realStorage);
+                    SimpleStructureScanner.LOGGER.debug("Copied mapStorage to validation world (field: {})", f.getName());
+                    return;
+                }
+            }
+            SimpleStructureScanner.LOGGER.warn("Could not find mapStorage field on World to copy");
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn("Failed to copy mapStorage to validation world", e);
+        }
     }
 
     @Nullable
@@ -364,11 +397,7 @@ public class ValidationContextManager {
     }
 
     private static int getCachedChunkCountForWorld(StructureValidationWorld world) {
-        if (world.getChunkProvider() instanceof ValidationChunkProvider) {
-            return ((ValidationChunkProvider) world.getChunkProvider()).getCachedChunkCount();
-        }
-
-        return 0;
+        return world.getValidationChunkProvider().getCachedChunkCount();
     }
 
     /**

@@ -6,11 +6,13 @@
     "compatibilityLevel": "JAVA_8",
     "mixins": [
         "MixinRCForgeEventHandler",
-        "MixinStructureLocator"
+        "MixinStructureLocator",
+        "MixinMapGenStructureHook"
     ],
     "server": [
         "MixinRCForgeEventHandler",
-        "MixinStructureLocator"
+        "MixinStructureLocator",
+        "MixinMapGenStructureHook"
     ],
     "client": []
 }

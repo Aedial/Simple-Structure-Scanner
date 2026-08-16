@@ -10,7 +10,7 @@ import net.minecraft.util.math.ChunkPos;
  */
 public final class RCVRandomCache {
 
-    private static final int MAX_ENTRIES = 16384;
+    private static final int MAX_ENTRIES = 20000;
 
     private static final ConcurrentHashMap<Long, Long> seedCache = new ConcurrentHashMap<>();
     private static final ConcurrentLinkedDeque<Long> insertionOrder = new ConcurrentLinkedDeque<>();

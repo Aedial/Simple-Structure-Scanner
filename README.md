@@ -23,7 +23,7 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
   - Ice and Fire's structures (none can be searched for, due to being non-determinstic).
   - Unseen's Dungeon Additions structures.
   - Custom structures from the Pillar mod. Due to how search works, any change to the structure's list will break search for already generated structures, as it changes the structure's index in the search process. This is a limitation of the mod, not a bug.
-  - Default and custom structures from Recurrent Complex (none can be searched for, due to the complex generation logic).
+  - Default and custom structures from Recurrent Complex. Locations are predicted by simulating the mod's generation, so a location may very rarely be wrong when the structure ends up not generating (e.g. blocked by another structure spawning first).
   - Default and custom structures from Chocolate Quest Repoured.
 
 
