@@ -38,6 +38,7 @@ public class MixinRCForgeEventHandler {
             long worldSeed = event.getWorld().getSeed();
 
             RCVRandomCache.store(worldSeed, event.getChunkX(), event.getChunkZ(), internalSeed);
+            RCVPredictionContext.signalCaptured();
 
             if (!RCVPredictionContext.isPredicting()) {
                 SimpleStructureScanner.LOGGER.debug("Captured Recurrent Complex random seed for chunk({},{}) cacheSize={}",

@@ -1,19 +1,27 @@
 package com.simplestructurescanner.rcv;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
+import it.unimi.dsi.fastutil.longs.Long2LongLinkedOpenHashMap;
 
 import net.minecraft.util.math.ChunkPos;
 
 /**
  * Thread-safe cache of Recurrent Complex random seeds keyed by world seed and chunk position.
+ * <p>
+ * Sized to hold several full search radii (a 64-chunk radius spans 16,641 chunks)
+ * so repeat scans of the same area hit the cache. Insertion-ordered with FIFO
+ * eviction beyond {@link #MAX_ENTRIES}. Synchronized because writes happen from
+ * both the scan thread (simulated captures) and the server thread (real
+ * generation captures via the mixin).
  */
 public final class RCVRandomCache {
 
-    private static final int MAX_ENTRIES = 20000;
+    private static final int MAX_ENTRIES = 100_000;
 
-    private static final ConcurrentHashMap<Long, Long> seedCache = new ConcurrentHashMap<>();
-    private static final ConcurrentLinkedDeque<Long> insertionOrder = new ConcurrentLinkedDeque<>();
+    private static final Long2LongLinkedOpenHashMap SEEDS = new Long2LongLinkedOpenHashMap(MAX_ENTRIES);
+
+    static {
+        SEEDS.defaultReturnValue(Long.MIN_VALUE);
+    }
 
     private RCVRandomCache() {}
 
@@ -21,33 +29,29 @@ public final class RCVRandomCache {
         return worldSeed * 0x9E3779B97F4A7C15L ^ ChunkPos.asLong(chunkX, chunkZ);
     }
 
-    public static void store(long worldSeed, int chunkX, int chunkZ, long randomInternalSeed) {
+    public static synchronized void store(long worldSeed, int chunkX, int chunkZ, long randomInternalSeed) {
         long k = key(worldSeed, chunkX, chunkZ);
-        Long existing = seedCache.get(k);
-        if (existing != null) return;
+        if (SEEDS.containsKey(k)) return;
 
-        seedCache.put(k, randomInternalSeed);
-        insertionOrder.addLast(k);
-        while (insertionOrder.size() > MAX_ENTRIES) {
-            Long oldest = insertionOrder.pollFirst();
-            if (oldest != null) seedCache.remove(oldest);
+        if (SEEDS.size() >= MAX_ENTRIES) {
+            SEEDS.remove(SEEDS.firstLongKey());
         }
+        SEEDS.put(k, randomInternalSeed);
     }
 
-    public static long get(long worldSeed, int chunkX, int chunkZ) {
-        return seedCache.getOrDefault(key(worldSeed, chunkX, chunkZ), Long.MIN_VALUE);
+    public static synchronized long get(long worldSeed, int chunkX, int chunkZ) {
+        return SEEDS.get(key(worldSeed, chunkX, chunkZ));
     }
 
-    public static boolean has(long worldSeed, int chunkX, int chunkZ) {
-        return seedCache.containsKey(key(worldSeed, chunkX, chunkZ));
+    public static synchronized boolean has(long worldSeed, int chunkX, int chunkZ) {
+        return SEEDS.containsKey(key(worldSeed, chunkX, chunkZ));
     }
 
-    public static int size() {
-        return seedCache.size();
+    public static synchronized int size() {
+        return SEEDS.size();
     }
 
-    public static void clear() {
-        seedCache.clear();
-        insertionOrder.clear();
+    public static synchronized void clear() {
+        SEEDS.clear();
     }
 }

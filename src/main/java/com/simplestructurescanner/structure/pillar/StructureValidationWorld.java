@@ -206,4 +206,23 @@ public class StructureValidationWorld extends World {
 
         return count;
     }
+
+    /**
+     * Generates (without decorating) all chunks in the given block-coordinate
+     * range — used for raw-terrain placement checks before paying full
+     * population cost.
+     */
+    public void provideChunkRange(int minX, int minZ, int maxX, int maxZ) {
+        if (validationChunkProvider == null) return;
+
+        int minCX = minX >> 4;
+        int maxCX = maxX >> 4;
+        int minCZ = minZ >> 4;
+        int maxCZ = maxZ >> 4;
+        for (int cx = minCX; cx <= maxCX; cx++) {
+            for (int cz = minCZ; cz <= maxCZ; cz++) {
+                validationChunkProvider.provideChunk(cx, cz);
+            }
+        }
+    }
 }

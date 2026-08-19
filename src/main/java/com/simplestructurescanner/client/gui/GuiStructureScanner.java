@@ -47,6 +47,7 @@ import com.simplestructurescanner.util.WorldUtils;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureSearchOverrides;
+import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexStructureProvider;
 import com.simplestructurescanner.searching.StructureSearchManager;
 
 
@@ -1114,8 +1115,17 @@ public class GuiStructureScanner extends GuiScreen {
         // For known Y locations, use the structure Y as starting point
         int startY = location.isYAgnostic() ? 64 : pos.getY();
 
-        // Send packet to server - it will find safe Y and teleport
-        NetworkHandler.INSTANCE.sendToServer(new PacketRequestSafeTeleport(pos.getX(), pos.getZ(), startY));
+        // Recurrent Complex destinations only: the server populates the
+        // destination chunk first and lands bottom-up inside the structure.
+        // Other providers (Pillar, vanilla, ...) keep the legacy search — their
+        // structures may be underground or floating, where the bottom-up
+        // heuristic does not apply.
+        boolean fromStructure = !location.isYAgnostic()
+                && StructureProviderRegistry.getProviderForStructure(selected)
+                        instanceof RecurrentComplexStructureProvider;
+
+        NetworkHandler.INSTANCE.sendToServer(new PacketRequestSafeTeleport(
+                pos.getX(), pos.getZ(), startY, fromStructure));
     }
 
     private void openMapWaypoint() {

@@ -70,6 +70,52 @@ public class WorldUtils {
     }
 
     /**
+     * Finds a landing Y for a structure destination, preferring the first open
+     * standing spot at the bottom of the structure (its ground floor for hollow
+     * builds, its top surface for solid ones).
+     * <p>
+     * Walks down from the structure's center Y to the first solid, non-fluid
+     * block — the structure's base in this column — then scans upward for the
+     * first position with passable feet + head and solid ground. Never lands
+     * above a floating island or overhang, since the lowest safe spot at or
+     * above the base always wins.
+     * <p>
+     * Requires the destination chunk to be populated (the caller guarantees
+     * this); falls back to the legacy {@link #findSafeTeleportY} search when
+     * the column yields nothing.
+     *
+     * @param world   The populated destination world
+     * @param x       X coordinate
+     * @param z       Z coordinate
+     * @param centerY The structure's center Y (search starts here, downward)
+     * @return Safe Y coordinate, or -1 if none found
+     */
+    public static int findStructureTeleportY(World world, int x, int z, int centerY) {
+        int start = Math.max(1, Math.min(centerY, 255));
+
+        // Step 1: find the structure's base — first solid, non-fluid block at
+        // or below the center Y in this column.
+        int baseY = -1;
+        for (int y = start; y >= 1; y--) {
+            IBlockState state = world.getBlockState(new BlockPos(x, y, z));
+            if (!isPassable(state) && !isFluid(state)) {
+                baseY = y;
+                break;
+            }
+        }
+
+        // Step 2: first standing spot at or above the base.
+        if (baseY >= 0) {
+            for (int y = baseY; y <= 254; y++) {
+                if (canTeleport(world, x, y, z, true)) return y;
+            }
+        }
+
+        // Column had no base or no safe spot — legacy nearest-to-Y search.
+        return findSafeTeleportY(world, x, z, centerY);
+    }
+
+    /**
      * Checks if the player can teleport to the given position safely.
      * @param world The world to check
      * @param x X coordinate

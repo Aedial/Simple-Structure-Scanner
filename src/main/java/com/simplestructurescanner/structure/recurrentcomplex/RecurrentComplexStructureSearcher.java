@@ -1,16 +1,22 @@
 package com.simplestructurescanner.structure.recurrentcomplex;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
+
+import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
@@ -19,10 +25,14 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraft.world.WorldProvider;
 import net.minecraft.world.biome.Biome;
+import net.minecraft.world.chunk.Chunk;
+import net.minecraft.world.gen.ChunkProviderServer;
 import net.minecraft.world.gen.IChunkGenerator;
 
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.terraingen.PopulateChunkEvent;
+import net.minecraftforge.fml.common.eventhandler.EventBus;
+import net.minecraftforge.fml.common.eventhandler.IEventListener;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.rcv.RCVRandomCache;
@@ -40,10 +50,19 @@ import com.simplestructurescanner.structure.util.PositionHelper;
  * <p>
  * The search predicts which structures will be selected in each chunk by
  * replicating RCV's candidate-selection pipeline. The population Random is
- * captured by simulating {@code PopulateChunkEvent.Pre} on the real Forge event
- * bus (so handlers registered before RC consume the Random in true
- * registration order), with {@link com.simplestructurescanner.mixin.rcv.MixinRCForgeEventHandler}
- * capturing the post-consumption state RC actually receives.
+ * captured by dispatching {@code PopulateChunkEvent.Pre} to the real Forge
+ * event bus's registered listeners in order (so handlers registered before RC
+ * consume the Random in true registration order), stopping as soon as RC's
+ * handler is reached — {@link com.simplestructurescanner.mixin.rcv.MixinRCForgeEventHandler}
+ * captures the post-consumption state RC actually receives and cancels RC's
+ * body. Handlers registered after RC are skipped: they cannot influence the
+ * Random state RC receives, so this is behavior-identical while avoiding
+ * their cost.
+ * <p>
+ * Before any event dispatch, a per-biome weight filter rejects chunks whose
+ * biome gives the target structure a generation weight of zero — RC's
+ * StructureSelector never admits such entries into its selection, so the
+ * chunk cannot contain the target.
  * <p>
  * Matching candidates are validated by running RC's {@code test()} on a
  * simulated validation world (populated terrain, overlap check disabled via
@@ -97,6 +116,22 @@ public class RecurrentComplexStructureSearcher {
     @Nullable
     private static Method pairGetRightMethod;
 
+    // MethodHandle fast paths for the per-chunk hot reflection call sites.
+    // Built via Method.unreflect() from the resolved Methods; null = that call
+    // site keeps using Method.invoke (fail-open, logged once at debug).
+    @Nullable
+    private static MethodHandle mhPopulationRandom;
+    @Nullable
+    private static MethodHandle mhStaticCandidates;
+    @Nullable
+    private static MethodHandle mhSeedCandidates;
+    @Nullable
+    private static MethodHandle mhNaturalCandidates;
+    @Nullable
+    private static MethodHandle mhPairGetLeft;
+    @Nullable
+    private static MethodHandle mhPairGetRight;
+
     // Placer check reflection
     @Nullable
     private static Class<?> structureGeneratorClass;
@@ -147,11 +182,24 @@ public class RecurrentComplexStructureSearcher {
     @Nullable
     private static Field sbbMaxXField, sbbMaxYField, sbbMaxZField;
 
-    // Direct RC handler invocation (bypasses Forge event bus)
+    // Partial event dispatch (stop at RC's handler instead of running the whole bus)
     @Nullable
-    private static Object rcHandlerInstance;
+    private static Field eventBusBusIdField;
+    private static int forgeBusId = -1;
+
+    // Per-biome weight filter
     @Nullable
-    private static Method rcHandlerMethod;
+    private static Class<?> naturalGenerationClass;
+    @Nullable
+    private static Method rcTweakedSpawnRateMethod;
+
+    // Memoized mayGenerateNaturally (RCConfig checks are per-biome constants)
+    @Nullable
+    private static Method rcGenEnabledBiomeMethod;
+    @Nullable
+    private static Method rcGenEnabledProviderMethod;
+    @Nullable
+    private static java.lang.reflect.Field rcMinDistToSpawnField;
 
     // Ground-truth ledger reflection (WorldStructureGenerationData — RC's persisted
     // record of which chunks it processed and what it generated there)
@@ -171,6 +219,30 @@ public class RecurrentComplexStructureSearcher {
     // Set after a real event-bus post for capture fails (handler crashed on the
     // validation world); all subsequent captures use direct invocation fallback.
     private static volatile boolean busPostBroken = false;
+
+    /**
+     * Listener (wrapper toString() prefix) allow-list for capture-time skipping.
+     * A listener may be listed here ONLY if bytecode analysis proves both:
+     * <ul>
+     *   <li>it never consumes the event's Random (no rand reads anywhere in the
+     *       handler — skipping cannot change the seed RC receives), and</li>
+     *   <li>its world effects cannot reach the chunks being scanned (so the
+     *       validation terrain stays identical to what real generation produces
+     *       for those chunks).</li>
+     * </ul>
+     * Pinned to this modpack's mod versions; re-verify if a listed mod updates.
+     * <ul>
+     *   <li>{@code AbyssalCraftEventHooks} (AbyssalCraft 1.12.2-1.11.3):
+     *       {@code populateChunk} performs zero Random calls — it scans the
+     *       chunk's block storages (y>=60) and replaces stone with abyssal
+     *       stone only in the darklands_mountains biome (an Abyssal Craft
+     *       dimension biome, unreachable in overworld scans). Its ~2ms/chunk
+     *       biome lookups otherwise dominate the entire capture phase.</li>
+     * </ul>
+     */
+    private static final String[] RAND_INDEPENDENT_LISTENER_PREFIXES = {
+            "ASM: com.shinoow.abyssalcraft.common.handlers.AbyssalCraftEventHooks",
+    };
 
     // Village search reflection
     @Nullable
@@ -256,6 +328,16 @@ public class RecurrentComplexStructureSearcher {
             return searchVillages(worldServer, structureId, structure, origin, maxResults);
         }
 
+        // Structures without NaturalGeneration types can never be selected by
+        // the natural candidate pipeline — no chunk can contain them.
+        ScanContext ctx = new ScanContext();
+        if (!prepareNaturalWeightFilter(ctx, structure, structureId)) {
+            SimpleStructureScanner.LOGGER.info(
+                    "Skipping search for '{}': structure has no NaturalGeneration types — cannot generate naturally",
+                    structureId);
+            return new ArrayList<>();
+        }
+
         List<ChunkPos> chunks = chunksByDistance(origin, SEARCH_RADIUS_CHUNKS);
         if (chunks == null) return new ArrayList<>();
 
@@ -291,7 +373,7 @@ public class RecurrentComplexStructureSearcher {
                 eventsFired++;
             }
 
-            BlockPos found = searchInChunk(worldServer, structureId, structure, origin, chunkPos);
+            BlockPos found = searchInChunk(worldServer, structureId, structure, origin, chunkPos, ctx);
             if (found != null && foundPositions.add(found)) {
                 results.add(found);
             }
@@ -306,6 +388,225 @@ public class RecurrentComplexStructureSearcher {
                 structureId, chunksSearched, cacheHits, eventsFired, results.size(), elapsed);
 
         return results;
+    }
+
+    // ========== MethodHandle fast paths for hot reflection ==========
+    //
+    // Method.invoke pays per-call access checks; MethodHandle skips them. These
+    // helpers prefer the handle and fall back to the Method when the handle
+    // could not be built. Throwable from handle invocation is wrapped so call
+    // sites keep the same 'throws Exception' shape as Method.invoke.
+
+    @Nullable
+    private static MethodHandle unreflectOrNull(@Nullable Method method) {
+        if (method == null) return null;
+        try {
+            return MethodHandles.publicLookup().unreflect(method);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                    "MethodHandle unavailable for {} — using Method.invoke",
+                    method.getName(), e);
+            return null;
+        }
+    }
+
+    /** Invokes a 1-arg method via handle (preferred) or reflective fallback. */
+    private static Object invoke1(@Nullable MethodHandle mh, Method m, @Nullable Object target, Object a) throws Exception {
+        if (mh != null) {
+            try {
+                return mh.invoke(a);
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+        }
+        return m.invoke(target, a);
+    }
+
+    /** Invokes a 2-arg method via handle (preferred) or reflective fallback. */
+    private static Object invoke2(@Nullable MethodHandle mh, Method m, @Nullable Object target, Object a, Object b) throws Exception {
+        if (mh != null) {
+            try {
+                return mh.invoke(a, b);
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+        }
+        return m.invoke(target, a, b);
+    }
+
+    /** Invokes a 3-arg method via handle (preferred) or reflective fallback. */
+    private static Object invoke3(@Nullable MethodHandle mh, Method m, @Nullable Object target, Object a, Object b, Object c) throws Exception {
+        if (mh != null) {
+            try {
+                return mh.invoke(a, b, c);
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+        }
+        return m.invoke(target, a, b, c);
+    }
+
+    /** Per-search state: memoized filters shared across the chunks of one search. */
+    private static final class ScanContext {
+        /** Maximum natural generation weight of the target per biome (dimension fixed per search). */
+        final Map<Biome, Double> weightByBiome = new HashMap<>();
+        /** The target's NaturalGeneration entries; null = weight filter unavailable (fail open). */
+        @Nullable
+        List<?> naturalTypes;
+        /** RCConfig.tweakedSpawnRate for the target structure ID (RC multiplies it into weights). */
+        double spawnRateTweak = 1.0;
+        /** Memoized RCConfig.isGenerationEnabled per biome (config is constant within a search). */
+        final Map<Biome, Boolean> rcBiomeEnabled = new HashMap<>();
+        /** Memoized RCConfig.isGenerationEnabled(provider) — constant within a search. */
+        boolean rcProviderEnabledComputed = false;
+        boolean rcProviderEnabled = false;
+        /** Hoisted spawn-distance inputs (dimension 0 only; lazy on first use). */
+        boolean spawnInfoComputed = false;
+        int spawnX;
+        int spawnZ;
+        double minDistSq;
+    }
+
+    // ========== Biome weight pre-filter ==========
+
+    /**
+     * Global per-chunk biome memo. Biome values are deterministic per world
+     * (the biome layer never changes), so each chunk's center biome is fetched
+     * from {@code WorldServer.getBiome} — the exact path RC's selection code
+     * uses — once, then reused by every subsequent search. Keyed by world
+     * seed, dimension, and chunk position; FIFO eviction beyond
+     * {@link #BIOME_MEMO_MAX}. Synchronized like {@link RCVRandomCache}
+     * (client-thread scans, server-thread safety margin).
+     */
+    private static final int BIOME_MEMO_MAX = 100_000;
+    private static final Long2ObjectLinkedOpenHashMap<Biome> BIOME_MEMO = new Long2ObjectLinkedOpenHashMap<>();
+
+    /** Reusable chunk-center position for biome lookups (scan-thread only). */
+    private static final BlockPos.MutableBlockPos BIOME_LOOKUP_POS = new BlockPos.MutableBlockPos();
+
+    /** Returns the chunk-center biome via the global memo (single fetch per chunk ever). */
+    private static Biome biomeAt(WorldServer worldServer, ChunkPos chunkPos) {
+        long worldSeed = worldServer.getSeed();
+        int dim = worldServer.provider.getDimension();
+        long key = worldSeed * 0x9E3779B97F4A7C15L ^ ((long) dim * 0xC2B2AE3D27D4EB4FL)
+                ^ ChunkPos.asLong(chunkPos.x, chunkPos.z);
+        synchronized (BIOME_MEMO) {
+            Biome cached = BIOME_MEMO.get(key);
+            if (cached != null) return cached;
+            BIOME_LOOKUP_POS.setPos(chunkPos.x * 16 + 8, 0, chunkPos.z * 16 + 8);
+            Biome biome = worldServer.getBiome(BIOME_LOOKUP_POS);
+            if (BIOME_MEMO.size() >= BIOME_MEMO_MAX) {
+                BIOME_MEMO.remove(BIOME_MEMO.firstLongKey());
+            }
+            BIOME_MEMO.put(key, biome);
+            return biome;
+        }
+    }
+
+    /**
+     * Prepares the per-search biome weight filter. Returns false if the target
+     * has no NaturalGeneration types at all — the search can be skipped
+     * entirely because RC's natural candidate selection can never pick it.
+     * <p>
+     * On reflection failure the filter is disabled (fail open) and the search
+     * proceeds unfiltered, exactly as before this filter existed.
+     */
+    private static boolean prepareNaturalWeightFilter(ScanContext ctx, Object structure, String structureId) {
+        if (naturalGenerationClass == null || structureGenerationTypesMethod == null) return true;
+
+        try {
+            List<?> types = (List<?>) structureGenerationTypesMethod.invoke(structure, naturalGenerationClass);
+            ctx.naturalTypes = types != null ? types : new ArrayList<>();
+            if (ctx.naturalTypes.isEmpty()) return false;
+
+            if (rcTweakedSpawnRateMethod != null) {
+                ctx.spawnRateTweak = (float) rcTweakedSpawnRateMethod.invoke(null, structureId);
+            }
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                    "NaturalGeneration weight filter unavailable — searching unfiltered", e);
+            ctx.naturalTypes = null;
+        }
+        return true;
+    }
+
+    /**
+     * Returns the maximum weight any of the target's NaturalGeneration entries
+     * has in the given biome, multiplied by the structure's spawn-rate tweak —
+     * the exact quantity RC's StructureSelector requires to be positive before
+     * admitting an entry into its selection multimap. Fails open (positive
+     * infinity) on reflection errors so the filter can never cause a miss.
+     */
+    private static double maxNaturalWeight(ScanContext ctx, WorldProvider provider, Biome biome) {
+        if (ctx.naturalTypes == null || ngGetGenerationWeightMethod == null) {
+            return Double.POSITIVE_INFINITY;
+        }
+        double max = 0;
+        try {
+            for (Object type : ctx.naturalTypes) {
+                double weight = (double) ngGetGenerationWeightMethod.invoke(type, provider, biome);
+                if (weight > max) max = weight;
+            }
+        } catch (Exception e) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return max * ctx.spawnRateTweak;
+    }
+
+    // ========== Memoized mayGenerateNaturally ==========
+
+    /**
+     * Replicates RC's {@code StructureLocator.mayGenerateNaturally} (bytecode-verified)
+     * with its per-biome RCConfig checks memoized: the biome is fetched for the
+     * chunk center, {@code RCConfig.isGenerationEnabled(biome/provider)} results
+     * are cached per search, and the spawn-distance test is plain arithmetic.
+     * Fails open (true) when the RCConfig reflection is unavailable, falling back
+     * to the direct method invocation.
+     */
+    private static boolean mayGenerateNaturallyCached(WorldServer worldServer, ChunkPos chunkPos, ScanContext ctx) {
+        if (rcGenEnabledBiomeMethod == null || rcGenEnabledProviderMethod == null) {
+            try {
+                return diagMayGenerateMethod != null &&
+                        (boolean) diagMayGenerateMethod.invoke(null, worldServer, chunkPos);
+            } catch (Exception e) {
+                return true;
+            }
+        }
+
+        try {
+            Biome biome = biomeAt(worldServer, chunkPos);
+            Boolean biomeEnabled = ctx.rcBiomeEnabled.get(biome);
+            if (biomeEnabled == null) {
+                biomeEnabled = (boolean) rcGenEnabledBiomeMethod.invoke(null, biome);
+                ctx.rcBiomeEnabled.put(biome, biomeEnabled);
+            }
+            if (!biomeEnabled) return false;
+
+            if (!ctx.rcProviderEnabledComputed) {
+                ctx.rcProviderEnabled = (boolean) rcGenEnabledProviderMethod.invoke(null, worldServer.provider);
+                ctx.rcProviderEnabledComputed = true;
+            }
+            if (!ctx.rcProviderEnabled) return false;
+
+            // Dim 0 only: require chunk center outside the min spawn distance
+            // (spawn point + minDist^2 hoisted into ctx on first use)
+            if (worldServer.provider.getDimension() == 0 && rcMinDistToSpawnField != null) {
+                if (!ctx.spawnInfoComputed) {
+                    float minDist = rcMinDistToSpawnField.getFloat(null);
+                    BlockPos spawn = worldServer.getSpawnPoint();
+                    ctx.spawnX = spawn.getX();
+                    ctx.spawnZ = spawn.getZ();
+                    ctx.minDistSq = (double) minDist * (double) minDist;
+                    ctx.spawnInfoComputed = true;
+                }
+                double dx = chunkPos.x * 16 + 8 - ctx.spawnX;
+                double dz = chunkPos.z * 16 + 8 - ctx.spawnZ;
+                return dx * dx + dz * dz >= ctx.minDistSq;
+            }
+            return true;
+        } catch (Exception e) {
+            return true;
+        }
     }
 
     // ========== Village search (VanillaGeneration structures) ==========
@@ -495,26 +796,37 @@ public class RecurrentComplexStructureSearcher {
      * @param structure    The Structure object from the registry
      * @param origin       The search origin position
      * @param chunkPos     The chunk to search
+     * @param ctx          Per-search context (weight/memo caches)
      * @return Validated center position with real Y, or null if not found / rejected
      */
     @Nullable
     private static BlockPos searchInChunk(WorldServer worldServer, String structureId,
-            Object structure, BlockPos origin, ChunkPos chunkPos) {
+            Object structure, BlockPos origin, ChunkPos chunkPos, ScanContext ctx) {
 
         long worldSeed = worldServer.getSeed();
 
         try {
-            boolean mayGen = diagMayGenerateMethod != null &&
-                    (boolean) diagMayGenerateMethod.invoke(null, worldServer, chunkPos);
-            if (!mayGen) return null;
+            if (!mayGenerateNaturallyCached(worldServer, chunkPos, ctx)) return null;
 
             // --- Ground-truth filter for already-generated chunks ---
-            // If the chunk is loaded and RC's persisted ledger marks it as processed,
-            // RC has already made its final decision — simulation is pointless.
+            // If RC's persisted ledger marks a GENERATED chunk as processed, RC has
+            // already made its final decision — simulation is pointless (and wrong:
+            // the real decision depended on cross-chunk state we cannot reproduce).
             // Entry present → predict from the REAL bounding box; absent → skip.
-            boolean realChunkLoaded = worldServer.getChunkProvider()
-                    .getLoadedChunk(chunkPos.x, chunkPos.z) != null;
-            if (realChunkLoaded && wsgdGetMethod != null) {
+            // <p>
+            // Applies to loaded chunks AND to on-disk-but-unloaded chunks (probed
+            // via ChunkProviderServer.isChunkGeneratedAt — a cached region-file
+            // header check, no chunk loading). Simulation only ever runs on chunks
+            // that have never been generated.
+            Chunk loadedChunk = worldServer.getChunkProvider()
+                    .getLoadedChunk(chunkPos.x, chunkPos.z);
+            boolean realChunkLoaded = loadedChunk != null;
+            boolean generatedOnDisk = false;
+            if (!realChunkLoaded && worldServer.getChunkProvider() instanceof ChunkProviderServer) {
+                generatedOnDisk = ((ChunkProviderServer) worldServer.getChunkProvider())
+                        .isChunkGeneratedAt(chunkPos.x, chunkPos.z);
+            }
+            if ((realChunkLoaded || generatedOnDisk) && wsgdGetMethod != null) {
                 Object ledger = wsgdGetMethod.invoke(null, worldServer);
                 boolean chunkChecked = (boolean) wsgdIsChunkCheckedMethod.invoke(ledger, chunkPos);
                 if (chunkChecked) {
@@ -533,35 +845,74 @@ public class RecurrentComplexStructureSearcher {
                         }
                     }
                     SimpleStructureScanner.LOGGER.debug(
-                            "SKIP_LOADED_CHUNK '{}' at chunk({},{}) — chunk generated + RC processed, no ledger entry (RC decided not to generate)",
+                            "SKIP_{} '{}' at chunk({},{}) — chunk generated + RC processed, no ledger entry (RC decided not to generate)",
+                            realChunkLoaded ? "LOADED_CHUNK" : "DISK_CHUNK",
                             structureId, chunkPos.x, chunkPos.z);
                     return null;
                 }
-                // Loaded but not checked: RC never processed this chunk (e.g. generated
-                // before RC ran, or pending complementation) — fall through to simulation.
+                // Generated but not checked by RC:
+                if (realChunkLoaded) {
+                    // Loaded: if fully populated, RC's decorate can never run there
+                    // (population fires exactly once; re-populate only re-runs
+                    // generateStructures). Simulating would predict structures that
+                    // can never appear — guaranteed false positives. Unpopulated +
+                    // unchecked (complementation pending) falls through: population
+                    // is yet to happen.
+                    if (loadedChunk.isTerrainPopulated()) {
+                        SimpleStructureScanner.LOGGER.debug(
+                                "SKIP_POPULATED_UNCHECKED '{}' at chunk({},{}) — chunk populated but RC never processed it; RC cannot generate there",
+                                structureId, chunkPos.x, chunkPos.z);
+                        return null;
+                    }
+                    // Loaded, unchecked, unpopulated — fall through to simulation.
+                } else {
+                    // On disk but unchecked: population already happened (or will
+                    // complete on load) without RC recording a check — either way RC's
+                    // decorate will never (re)run in a way simulation could predict
+                    // better than the ledger. Conservative skip trades a rare false
+                    // negative for eliminating guaranteed false positives.
+                    SimpleStructureScanner.LOGGER.debug(
+                            "SKIP_DISK_UNCHECKED '{}' at chunk({},{}) — chunk generated on disk, RC unchecked; skipping conservatively",
+                            structureId, chunkPos.x, chunkPos.z);
+                    return null;
+                }
             }
 
-            boolean cached = RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z);
+            // --- Biome weight pre-filter ---
+            // RC's StructureSelector admits a NaturalGeneration entry into its
+            // selection multimap only when getGenerationWeight(provider, biome)
+            // * tweakedSpawnRate(id) > 0 (bytecode-verified). Weight depends only
+            // on (dimension, biome), so it is memoized per biome per search.
+            // This is the same chunk-center (8,0,8) biome lookup RC uses.
+            if (ctx.naturalTypes != null) {
+                Biome chunkBiome = biomeAt(worldServer, chunkPos);
+                Double weight = ctx.weightByBiome.get(chunkBiome);
+                if (weight == null) {
+                    weight = maxNaturalWeight(ctx, worldServer.provider, chunkBiome);
+                    ctx.weightByBiome.put(chunkBiome, weight);
+                }
+                if (weight <= 0) return null;
+            }
 
-            if (!cached) {
+            if (!RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z)) {
                 captureRandomViaEvent(worldServer, chunkPos, worldSeed);
                 if (!RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z)) return null;
             }
 
-            Random random = (Random) diagPopulationRandomMethod.invoke(null, worldSeed, chunkPos);
+            Random random = (Random) invoke2(mhPopulationRandom, diagPopulationRandomMethod, null, worldSeed, chunkPos);
 
-            List<?> statics = (List<?>) diagStaticCandidatesMethod.invoke(null, worldServer, chunkPos);
-            diagSeedCandidatesMethod.invoke(null, statics, random);
+            List<?> statics = (List<?>) invoke2(mhStaticCandidates, diagStaticCandidatesMethod, null, worldServer, chunkPos);
+            invoke2(mhSeedCandidates, diagSeedCandidatesMethod, null, statics, random);
 
-            List<?> candidates = (List<?>) diagNaturalCandidatesMethod.invoke(null, worldServer, chunkPos, random);
+            List<?> candidates = (List<?>) invoke3(mhNaturalCandidates, diagNaturalCandidatesMethod, null, worldServer, chunkPos, random);
 
             if (candidates.isEmpty()) return null;
 
             for (Object candidate : candidates) {
                 long seed = random.nextLong();
-                Object structObj = pairGetLeftMethod.invoke(candidate);
+                Object structObj = invoke1(mhPairGetLeft, pairGetLeftMethod, candidate, candidate);
                 if (structObj == structure) {
-                    Object generation = pairGetRightMethod.invoke(candidate);
+                    Object generation = invoke1(mhPairGetRight, pairGetRightMethod, candidate, candidate);
                     World validationWorld = ValidationContextManager.getValidationWorld(worldServer);
                     try {
                         BlockPos validated = validateWithPlacer(
@@ -610,22 +961,28 @@ public class RecurrentComplexStructureSearcher {
      * seed divergence and false positives (8/8 failed verifications had
      * seedMatch=FALSE).
      * <p>
-     * Therefore: post the event on the REAL Forge event bus (validation world +
-     * formula rand, predicting=true). Handlers registered before RC consume the
-     * validation rand in true registration order, exactly as in real generation.
-     * When the bus reaches RC's handler, MixinRCForgeEventHandler captures the
+     * Therefore: dispatch the event to the REAL Forge event bus listeners in
+     * registration order (validation world + formula rand, predicting=true), but
+     * only up to and including RC's handler — see
+     * {@link #dispatchUntilRcCaptured(PopulateChunkEvent.Pre)}.
+     * Handlers registered before RC consume the validation rand in true
+     * registration order, exactly as in real generation. When the dispatch
+     * reaches RC's handler, MixinRCForgeEventHandler captures the
      * post-consumption seed (what RC actually receives) into RCVRandomCache and
      * cancels RC's body.
      * <p>
-     * If a pre-RC handler throws on the validation world (ClassCastException etc.),
-     * fall back to direct RC handler invocation with the formula rand (old
-     * behavior) for this and all subsequent chunks, logged once.
+     * If a listener throws on the validation world, event dispatch is disabled
+     * for the rest of the search session (logged once) and affected chunks
+     * yield no prediction. There is deliberately NO fallback to direct RC
+     * handler invocation: a direct invocation with the pristine formula rand
+     * produces wrong seeds (see above), so skipping is strictly safer.
      * <p>
      * Note: if a pre-RC handler CANCELS the event, RC's mixin never fires and no
      * seed is captured — the chunk yields no prediction. This is correct: in real
      * generation, a cancelling handler also prevents RC from generating there.
      */
-    private static void captureRandomViaEvent(WorldServer worldServer, ChunkPos chunkPos, long worldSeed) {
+    private static void captureRandomViaEvent(WorldServer worldServer, ChunkPos chunkPos,
+            long worldSeed) {
         try {
             Random rand = new Random(worldSeed);
             long k = rand.nextLong() / 2L * 2L + 1L;
@@ -641,23 +998,18 @@ public class RecurrentComplexStructureSearcher {
 
             RCVPredictionContext.setPredicting(true);
             try {
-                boolean busPosted = false;
                 if (!busPostBroken) {
                     try {
-                        MinecraftForge.EVENT_BUS.post(event);
-                        busPosted = true;
+                        dispatchUntilRcCaptured(event);
                     } catch (Throwable t) {
                         busPostBroken = true;
                         StackTraceElement[] st = t.getStackTrace();
                         SimpleStructureScanner.LOGGER.warn(
                                 "Event-bus capture failed for chunk ({},{}): {} at {} — "
-                                        + "falling back to direct invocation for all future chunks",
+                                        + "disabling capture for all future chunks (affected chunks yield no prediction)",
                                 chunkPos.x, chunkPos.z, t.getClass().getSimpleName(),
                                 st.length > 0 ? st[0] : "?");
                     }
-                }
-                if (!busPosted && rcHandlerInstance != null && rcHandlerMethod != null) {
-                    rcHandlerMethod.invoke(rcHandlerInstance, event);
                 }
             } finally {
                 RCVPredictionContext.setPredicting(false);
@@ -666,6 +1018,51 @@ public class RecurrentComplexStructureSearcher {
             SimpleStructureScanner.LOGGER.debug("Event simulation failed for chunk ({},{})",
                     chunkPos.x, chunkPos.z, e);
         }
+    }
+
+    /**
+     * Dispatches a PopulateChunkEvent.Pre to the Forge event bus's registered
+     * listeners manually, replicating {@code EventBus.post()} exactly (same
+     * priority-ordered listener array, same per-listener invocation, exceptions
+     * propagate) — but STOPS as soon as RC's handler has been reached and its
+     * seed captured, signalled via
+     * {@link RCVPredictionContext#wasCapturedThisPost()}.
+     * <p>
+     * Handlers registered after RC never run. They cannot influence the Random
+     * state RC receives (RC's mixin cancels its body immediately after capture),
+     * so skipping them is behavior-identical for prediction while avoiding
+     * their cost — some, like Battle Towers, generate whole structures into
+     * the validation world.
+     * <p>
+     * Additionally, pre-RC listeners proven rand-independent and
+     * scan-unreachable (see {@link #RAND_INDEPENDENT_LISTENER_PREFIXES}) are
+     * skipped outright — their invocation is pure cost with no effect on the
+     * captured seed or the validation terrain.
+     * <p>
+     * If RC's handler is not registered on the bus, the full array is walked,
+     * matching {@code EventBus.post()} behavior.
+     */
+    private static void dispatchUntilRcCaptured(PopulateChunkEvent.Pre event) {
+        if (forgeBusId < 0) {
+            MinecraftForge.EVENT_BUS.post(event);
+            return;
+        }
+
+        IEventListener[] listeners = event.getListenerList().getListeners(forgeBusId);
+        RCVPredictionContext.resetCaptureSignal();
+        for (IEventListener listener : listeners) {
+            if (isRandIndependentSkippable(listener.toString())) continue;
+            listener.invoke(event);
+            if (RCVPredictionContext.wasCapturedThisPost()) break;
+        }
+    }
+
+    /** True if the listener is on the proven-rand-independent skip list. */
+    private static boolean isRandIndependentSkippable(String listenerName) {
+        for (String prefix : RAND_INDEPENDENT_LISTENER_PREFIXES) {
+            if (listenerName.startsWith(prefix)) return true;
+        }
+        return false;
     }
 
     /**
@@ -688,9 +1085,15 @@ public class RecurrentComplexStructureSearcher {
      * Overlap check is disabled via allowOverlaps(true) since the validation world
      * has no structure data.
      * <p>
-     * Before running test(), the chunks overlapping the structure's bounding box
-     * are populated (full decoration pass) on the validation world to match the
-     * terrain state RC sees during real generation.
+     * Two-stage check for speed: first {@code test()} runs against RAW generated
+     * terrain (no decoration) — a separate generator instance so no state leaks
+     * into the populated check. Only candidates that pass raw placement pay for
+     * the full decoration pass, after which {@code test()} runs again exactly as
+     * before. For surface-placed structures this is monotone (decoration adds
+     * foliage/liquids that the placer rays either exclude or that cannot rescue
+     * a failed conformity check), so raw-fail implies populated-fail; exotic
+     * custom placers could theoretically violate this, hence the populated
+     * re-check still runs on every raw pass.
      *
      * @param validationWorld The validation world (StructureValidationWorld)
      * @param structure       The Structure object from the registry
@@ -705,18 +1108,45 @@ public class RecurrentComplexStructureSearcher {
     private static BlockPos validateWithPlacer(Object validationWorld, Object structure,
             Object generation, String structureId, long seed, ChunkPos chunkPos) throws Exception {
 
-        Object generator = sgConstructor.newInstance(structure);
-
-        sgGenerationInfoMethod.invoke(generator, generation);
-        sgSeedMethod.invoke(generator, (Long) seed);
-        sgStructureIDMethod.invoke(generator, structureId);
-        sgMaturityMethod.invoke(generator, generateMaturitySuggest);
-
         BlockPos surfaceBlockPos = computeSurfacePos(chunkPos, seed);
-        Object blockSurfacePos = blockSurfacePosFromMethod.invoke(null, surfaceBlockPos);
-        Object placer = placerMethod.invoke(generation);
-        sgRandomPositionMethod.invoke(generator, blockSurfacePos, placer);
-        sgFromCenterMethod.invoke(generator, true);
+
+        Object generator = sgConstructor.newInstance(structure);
+        setupGenerator(generator, generation, structureId, seed, surfaceBlockPos);
+
+        // --- Raw-terrain pre-screen ---
+        // Generate (undecorated) the BB chunks and run test() against raw terrain.
+        // Fail-open: any exception here proceeds to the full populated validation.
+        if (sgStructureSizeMethod != null && validationWorld instanceof StructureValidationWorld) {
+            try {
+                int[] size = (int[]) sgStructureSizeMethod.invoke(generator);
+                int bbMinX = surfaceBlockPos.getX() - size[0] / 2;
+                int bbMinZ = surfaceBlockPos.getZ() - size[2] / 2;
+                int bbMaxX = bbMinX + size[0];
+                int bbMaxZ = bbMinZ + size[2];
+
+                StructureValidationWorld svw = (StructureValidationWorld) validationWorld;
+                svw.provideChunkRange(bbMinX, bbMinZ, bbMaxX, bbMaxZ);
+
+                Object rawGenerator = sgConstructor.newInstance(structure);
+                setupGenerator(rawGenerator, generation, structureId, seed, surfaceBlockPos);
+                unsafeInstance.putObject(rawGenerator, sgWorldFieldOffset, validationWorld);
+                sgAllowOverlapsMethod.invoke(rawGenerator, true);
+
+                Object rawResult = sgTestMethod.invoke(rawGenerator);
+                boolean rawOk = rawResult != null && (boolean) grSucceededMethod.invoke(rawResult);
+                if (!rawOk) {
+                    SimpleStructureScanner.LOGGER.debug(
+                            "Raw pre-screen rejected '{}' at chunk ({},{}) — failure: [{}]",
+                            structureId, chunkPos.x, chunkPos.z,
+                            rawResult != null ? extractFailureDescription(rawResult) : "null-result");
+                    return null;
+                }
+            } catch (Exception e) {
+                SimpleStructureScanner.LOGGER.debug(
+                        "Raw pre-screen skipped for '{}' at chunk({},{}) — {}: {}",
+                        structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
+            }
+        }
 
         // --- Populate chunks overlapping the structure BB on the validation world ---
         // Compute preliminary BB to determine which chunks need population.
@@ -785,6 +1215,26 @@ public class RecurrentComplexStructureSearcher {
         }
 
         return new BlockPos((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
+    }
+
+    /**
+     * Configures a StructureGenerator with the scan-time parameters: generation
+     * info, seed, structure ID, maturity, random surface position (from the
+     * structure's placer), and fromCenter=true.
+     *
+     * @param surfaceBlockPos The precomputed surface position (computeSurfacePos(chunkPos, seed))
+     */
+    private static void setupGenerator(Object generator, Object generation,
+            String structureId, long seed, BlockPos surfaceBlockPos) throws Exception {
+        sgGenerationInfoMethod.invoke(generator, generation);
+        sgSeedMethod.invoke(generator, (Long) seed);
+        sgStructureIDMethod.invoke(generator, structureId);
+        sgMaturityMethod.invoke(generator, generateMaturitySuggest);
+
+        Object blockSurfacePos = blockSurfacePosFromMethod.invoke(null, surfaceBlockPos);
+        Object placer = placerMethod.invoke(generation);
+        sgRandomPositionMethod.invoke(generator, blockSurfacePos, placer);
+        sgFromCenterMethod.invoke(generator, true);
     }
 
     @Nullable
@@ -900,6 +1350,14 @@ public class RecurrentComplexStructureSearcher {
             pairGetLeftMethod = Class.forName("org.apache.commons.lang3.tuple.Pair").getMethod("getLeft");
             pairGetRightMethod = Class.forName("org.apache.commons.lang3.tuple.Pair").getMethod("getRight");
 
+            // MethodHandle fast paths for the per-chunk hot call sites
+            mhPopulationRandom = unreflectOrNull(diagPopulationRandomMethod);
+            mhStaticCandidates = unreflectOrNull(diagStaticCandidatesMethod);
+            mhSeedCandidates = unreflectOrNull(diagSeedCandidatesMethod);
+            mhNaturalCandidates = unreflectOrNull(diagNaturalCandidatesMethod);
+            mhPairGetLeft = unreflectOrNull(pairGetLeftMethod);
+            mhPairGetRight = unreflectOrNull(pairGetRightMethod);
+
             // ========== Placer check reflection ==========
             String sgClassName = "ivorius.reccomplex.world.gen.feature.StructureGenerator";
             structureGeneratorClass = Class.forName(sgClassName);
@@ -970,9 +1428,9 @@ public class RecurrentComplexStructureSearcher {
             envBiomeField = environmentClass.getField("biome");
 
             // NaturalGeneration.getGenerationWeight(WorldProvider, Biome) → double
-            Class<?> naturalGenClass = Class.forName(
+            naturalGenerationClass = Class.forName(
                 "ivorius.reccomplex.world.gen.feature.structure.generic.generation.NaturalGeneration");
-            ngGetGenerationWeightMethod = naturalGenClass.getDeclaredMethod(
+            ngGetGenerationWeightMethod = naturalGenerationClass.getDeclaredMethod(
                 "getGenerationWeight", WorldProvider.class, Biome.class);
 
             SimpleStructureScanner.LOGGER.info("Recurrent Complex search initialized");
@@ -980,13 +1438,27 @@ public class RecurrentComplexStructureSearcher {
             // Cache RC's Forge event handler instance + method for direct invocation.
             // This bypasses MinecraftForge.EVENT_BUS.post(), which would iterate ALL
             // registered handlers for PopulateChunkEvent.Pre across 423 mods.
+            // RCConfig.tweakedSpawnRate(String) — per-structure multiplier RC applies
+            // to natural generation weights. Missing method = filter ignores tweaks.
             try {
-                Class<?> handlerClass = Class.forName("ivorius.reccomplex.events.handlers.RCForgeEventHandler");
-                rcHandlerInstance = handlerClass.newInstance();
-                rcHandlerMethod = handlerClass.getMethod("onPreChunkDecoration", PopulateChunkEvent.Pre.class);
-                SimpleStructureScanner.LOGGER.info("Cached Recurrent Complex event handler for direct invocation");
+                Class<?> rcConfigClass = Class.forName("ivorius.reccomplex.RCConfig");
+                rcTweakedSpawnRateMethod = rcConfigClass.getMethod("tweakedSpawnRate", String.class);
+                // Memoized mayGenerateNaturally support
+                rcGenEnabledBiomeMethod = rcConfigClass.getMethod("isGenerationEnabled", Biome.class);
+                rcGenEnabledProviderMethod = rcConfigClass.getMethod("isGenerationEnabled", WorldProvider.class);
+                rcMinDistToSpawnField = rcConfigClass.getField("minDistToSpawnForGeneration");
             } catch (Exception e) {
-                SimpleStructureScanner.LOGGER.warn("Failed to cache Recurrent Complex event handler — falling back to event bus", e);
+                SimpleStructureScanner.LOGGER.debug("RCConfig reflection incomplete — weight tweaks / memoized mayGen unavailable", e);
+            }
+
+            // EventBus.busID — needed to fetch the Forge bus's listener array for
+            // partial dispatch. Missing = fall back to full event posts.
+            try {
+                eventBusBusIdField = EventBus.class.getDeclaredField("busID");
+                eventBusBusIdField.setAccessible(true);
+                forgeBusId = eventBusBusIdField.getInt(MinecraftForge.EVENT_BUS);
+            } catch (Exception e) {
+                SimpleStructureScanner.LOGGER.debug("EventBus.busID unavailable — using full event posts", e);
             }
 
             // ========== Generation ledger reflection (ground-truth filter) ==========
