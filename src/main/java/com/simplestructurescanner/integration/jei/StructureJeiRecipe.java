@@ -38,6 +38,7 @@ import mezz.jei.api.recipe.IFocus;
 import mezz.jei.api.recipe.IRecipeWrapper;
 
 import com.simplestructurescanner.client.ClientTextResolver;
+import com.simplestructurescanner.client.gui.SmallVanillaButton;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.integration.JEIHelper;
 import com.simplestructurescanner.item.ModItems;
@@ -85,6 +86,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     private static final int NEXT_PAGE_BUTTON_X = INNER_FRAME_X + INNER_FRAME_W - BUTTON_SIZE;
     private static final int PREV_PAGE_BUTTON_X = NEXT_PAGE_BUTTON_X - BUTTON_SIZE - 2;
     private static final int SCANNER_BUTTON_X = INNER_FRAME_X + INNER_FRAME_W - BUTTON_SIZE;
+    private static final int CENTER_Y = INNER_FRAME_Y + INNER_FRAME_H / 2 - 4;
     private static final int PANEL_BACKGROUND_COLOR = 0x80F0F0F0;
     private static final int PANEL_LIGHT_BORDER_COLOR = 0xFFF5F5F5;
     private static final int PANEL_DARK_BORDER_COLOR = 0xFF8A8A8A;
@@ -112,6 +114,23 @@ public class StructureJeiRecipe implements IRecipeWrapper {
 
     /** Current page for the grid-based blocks and loot tabs. */
     private int page = 0;
+
+    private SmallVanillaButton prevPageButton = new SmallVanillaButton(
+        0, PREV_PAGE_BUTTON_X, PAGE_BUTTON_Y, BUTTON_SIZE, "<");
+    private SmallVanillaButton nextPageButton = new SmallVanillaButton(
+        1, NEXT_PAGE_BUTTON_X, PAGE_BUTTON_Y, BUTTON_SIZE, ">");
+    private SmallVanillaButton scannerButton = new SmallVanillaButton(
+        2, SCANNER_BUTTON_X, INNER_TAB_Y, BUTTON_SIZE, "S");
+    private SmallVanillaButton previewButton = new SmallVanillaButton(
+        3, getTabX(StructureJeiView.PREVIEW), INNER_TAB_Y, BUTTON_SIZE, StructureJeiView.PREVIEW.getButtonLabel());
+    private SmallVanillaButton blocksButton = new SmallVanillaButton(
+        4, getTabX(StructureJeiView.BLOCKS), INNER_TAB_Y, BUTTON_SIZE, StructureJeiView.BLOCKS.getButtonLabel());
+    private SmallVanillaButton lootButton = new SmallVanillaButton(
+        5, getTabX(StructureJeiView.LOOT), INNER_TAB_Y, BUTTON_SIZE, StructureJeiView.LOOT.getButtonLabel());
+
+    private SmallVanillaButton[] BUTTONS = new SmallVanillaButton[] {
+        prevPageButton, nextPageButton, scannerButton, previewButton, blocksButton, lootButton
+    };
 
     @Nullable
     private StructureInfo cachedPreviewInfo;
@@ -142,6 +161,39 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     public StructureJeiRecipe(ResourceLocation structureId, StructureJeiView view) {
         this.structureId = structureId;
         this.view = view;
+
+        prevPageButton.setStaticTooltip(I18n.format("jei.structurescanner.button.prevPage"));
+        nextPageButton.setStaticTooltip(I18n.format("jei.structurescanner.button.nextPage"));
+        scannerButton.setStaticTooltip(I18n.format("jei.structurescanner.button.scanner"));
+        previewButton.setStaticTooltip(I18n.format("jei.structurescanner.button.preview"));
+        blocksButton.setStaticTooltip(I18n.format("jei.structurescanner.button.blocks"));
+        lootButton.setStaticTooltip(I18n.format("jei.structurescanner.button.loot"));
+
+        // Update the tooltips and visibility of all tab buttons, based on the current config and the current tab
+        for (StructureJeiView tabView : StructureJeiView.values()) {
+            SmallVanillaButton tabButton = getTabButton(tabView);
+            if (tabButton != null) {
+                tabButton.setStaticTooltip(I18n.format(getTabTooltipKey(tabView)));
+
+                if (!StructureJeiVisibility.isCategoryEnabled(tabView)) {
+                    tabButton.enabled = false;
+                    tabButton.setStaticTooltip(I18n.format("jei.structurescanner.button.disabled"));
+                }
+            }
+        }
+
+        // Disable the button for the current tab, so it doesn't look like a clickable button
+        SmallVanillaButton currentButton = getTabButton(view);
+        if (currentButton != null) currentButton.enabled = false;
+    }
+
+    private SmallVanillaButton getTabButton(StructureJeiView tabView) {
+        switch (tabView) {
+            case PREVIEW: return previewButton;
+            case BLOCKS: return blocksButton;
+            case LOOT: return lootButton;
+            default: return null;
+        }
     }
 
     public ResourceLocation getStructureId() {
@@ -209,18 +261,21 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         drawBackgroundLayer(minecraft, mouseX, mouseY);
 
         if (!StructureJeiVisibility.isCategoryEnabled(view)) {
-            drawCenteredFrameText(minecraft, I18n.format("jei.structurescanner.disabledByConfig"), INNER_FRAME_Y + INNER_FRAME_H / 2 - 4, 0xFF8888);
+            String disabledText = I18n.format("jei.structurescanner.disabledByConfig");
+            drawCenteredFrameText(minecraft, disabledText, CENTER_Y, 0xFF8888);
             return;
         }
 
         if (!StructureJeiVisibility.isStructureVisible(structureId)) {
-            drawCenteredFrameText(minecraft, I18n.format("jei.structurescanner.hidden"), INNER_FRAME_Y + INNER_FRAME_H / 2 - 4, 0xFF8888);
+            String hiddenText = I18n.format("jei.structurescanner.hidden");
+            drawCenteredFrameText(minecraft, hiddenText, CENTER_Y, 0xFF8888);
             return;
         }
 
         StructureInfo structureInfo = getStructureInfo();
         if (structureInfo == null) {
-            drawCenteredFrameText(minecraft, I18n.format("jei.structurescanner.hidden"), INNER_FRAME_Y + INNER_FRAME_H / 2 - 4, 0xFF8888);
+            String hiddenText = I18n.format("jei.structurescanner.hidden");
+            drawCenteredFrameText(minecraft, hiddenText, CENTER_Y, 0xFF8888);
             return;
         }
 
@@ -246,26 +301,9 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         if (!StructureJeiVisibility.isCategoryEnabled(view)) return Collections.emptyList();
         if (!StructureJeiVisibility.isStructureVisible(structureId)) return Collections.emptyList();
 
-        for (StructureJeiView tabView : StructureJeiView.values()) {
-            if (isInButtonRect(mouseX, mouseY, getTabX(tabView), INNER_TAB_Y)) {
-                if (!StructureJeiVisibility.isCategoryEnabled(tabView)) {
-                    return Collections.singletonList(I18n.format("jei.structurescanner.button.disabled"));
-                }
-
-                return Collections.singletonList(I18n.format(getTabTooltipKey(tabView)));
-            }
-        }
-
-        if (isInButtonRect(mouseX, mouseY, SCANNER_BUTTON_X, INNER_TAB_Y)) {
-            return Collections.singletonList(I18n.format("jei.structurescanner.button.scanner"));
-        }
-
-        if (hasMultiplePages() && isInButtonRect(mouseX, mouseY, PREV_PAGE_BUTTON_X, PAGE_BUTTON_Y)) {
-            return Collections.singletonList(I18n.format("jei.structurescanner.button.prevPage"));
-        }
-
-        if (hasMultiplePages() && isInButtonRect(mouseX, mouseY, NEXT_PAGE_BUTTON_X, PAGE_BUTTON_Y)) {
-            return Collections.singletonList(I18n.format("jei.structurescanner.button.nextPage"));
+        for (SmallVanillaButton button : BUTTONS) {
+            List<String> tooltip = button.getTooltipHovered();
+            if (!tooltip.isEmpty()) return tooltip;
         }
 
         return Collections.emptyList();
@@ -280,30 +318,32 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         if (!StructureJeiVisibility.isStructureVisible(structureId)) return false;
 
         for (StructureJeiView tabView : StructureJeiView.values()) {
-            if (!isInButtonRect(mouseX, mouseY, getTabX(tabView), INNER_TAB_Y)) continue;
-            if (!StructureJeiVisibility.isCategoryEnabled(tabView)) return false;
-
-            return JEIHelper.showStructureCategory(structureId, tabView);
+            SmallVanillaButton tabButton = getTabButton(tabView);
+            if (tabButton.mousePressed(minecraft, mouseX, mouseY)) {
+                return JEIHelper.showStructureCategory(structureId, tabView);
+            }
         }
 
-        if (isInButtonRect(mouseX, mouseY, SCANNER_BUTTON_X, INNER_TAB_Y)) {
+        if (scannerButton.mousePressed(minecraft, mouseX, mouseY)) {
             return JEIHelper.openStructureScanner(structureId);
         }
 
         if (view == StructureJeiView.BLOCKS || view == StructureJeiView.LOOT) {
-            if (hasMultiplePages() && isInButtonRect(mouseX, mouseY, PREV_PAGE_BUTTON_X, PAGE_BUTTON_Y)) {
+            if (hasMultiplePages() && prevPageButton.mousePressed(minecraft, mouseX, mouseY)) {
                 if (page > 0) {
                     page--;
                     invalidateJeiLayout();
                 }
+
                 return true;
             }
 
-            if (hasMultiplePages() && isInButtonRect(mouseX, mouseY, NEXT_PAGE_BUTTON_X, PAGE_BUTTON_Y)) {
+            if (hasMultiplePages() && nextPageButton.mousePressed(minecraft, mouseX, mouseY)) {
                 if (page < getPageCount() - 1) {
                     page++;
                     invalidateJeiLayout();
                 }
+
                 return true;
             }
         }
@@ -385,7 +425,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     }
 
     /**
-     * Draws the frame, title, tab strip, and scanner button shared by every tab.
+     * Draws all the static background elements of the JEI panel.
      */
     private void drawBackgroundLayer(Minecraft minecraft, int mouseX, int mouseY) {
         FontRenderer fontRenderer = minecraft.fontRenderer;
@@ -395,16 +435,23 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         String displayName = fontRenderer.trimStringToWidth(getDisplayName(), INNER_FRAME_W - 4);
         fontRenderer.drawString(displayName, INNER_FRAME_X, STRUCTURE_TITLE_Y, PRIMARY_TEXT_COLOR);
 
-        for (StructureJeiView tabView : StructureJeiView.values()) {
-            int tabX = getTabX(tabView);
-            boolean enabled = StructureJeiVisibility.isCategoryEnabled(tabView);
-            boolean active = tabView == view;
-            drawBasicButton(minecraft, tabX, INNER_TAB_Y, tabView.getButtonLabel(), active, enabled, mouseX, mouseY);
+        drawFramedPanel(INNER_FRAME_X, INNER_FRAME_Y, INNER_FRAME_W, INNER_FRAME_H, CONTENT_BACKGROUND_COLOR);
+
+        int totalPages = getPageCount();
+        prevPageButton.visible = totalPages > 1;
+        prevPageButton.enabled = page > 0;
+
+        if (totalPages > 1) {
+            String pageText = I18n.format("jei.structurescanner.page", page + 1, totalPages);
+            int pageTextWidth = fontRenderer.getStringWidth(pageText);
+            int pageTextX = PREV_PAGE_BUTTON_X - pageTextWidth - 4;
+            fontRenderer.drawString(pageText, pageTextX, PAGE_BUTTON_Y + 2, SECONDARY_TEXT_COLOR);
         }
 
-        drawBasicButton(minecraft, SCANNER_BUTTON_X, INNER_TAB_Y, "S", false, true, mouseX, mouseY);
+        nextPageButton.visible = totalPages > 1;
+        nextPageButton.enabled = page < totalPages - 1;
 
-        drawFramedPanel(INNER_FRAME_X, INNER_FRAME_Y, INNER_FRAME_W, INNER_FRAME_H, CONTENT_BACKGROUND_COLOR);
+        for (SmallVanillaButton button : BUTTONS) button.drawButton(minecraft, mouseX, mouseY, 0.0F);
     }
 
     private void drawPreview(Minecraft minecraft, StructureInfo structureInfo) {
@@ -433,10 +480,12 @@ public class StructureJeiRecipe implements IRecipeWrapper {
 
         if (!blockEntries.isEmpty()) drawBlockSlotBackgrounds(minecraft, structureInfo);
 
-        drawFooter(minecraft, I18n.format("gui.structurescanner.blocks.count", blockEntries.size()), totalPages, mouseX, mouseY);
+        String footerText = I18n.format("gui.structurescanner.blocks.count", blockEntries.size());
+        drawFooter(minecraft, footerText, totalPages, mouseX, mouseY);
 
         if (blockEntries.isEmpty()) {
-            drawCenteredFrameText(minecraft, I18n.format("jei.structurescanner.blocks.empty"), INNER_FRAME_Y + INNER_FRAME_H / 2 - 4, EMPTY_TEXT_COLOR);
+            String emptyText = I18n.format("gui.structurescanner.blocks.empty");
+            drawCenteredFrameText(minecraft, emptyText, CENTER_Y, EMPTY_TEXT_COLOR);
         }
     }
 
@@ -450,10 +499,12 @@ public class StructureJeiRecipe implements IRecipeWrapper {
 
         if (!lootEntries.isEmpty()) drawLootSlotBackgrounds(minecraft, structureInfo);
 
-        drawFooter(minecraft, I18n.format("jei.structurescanner.loot.uniqueCount", lootEntries.size()), totalPages, mouseX, mouseY);
+        String footerText = I18n.format("jei.structurescanner.loot.uniqueCount", lootEntries.size());
+        drawFooter(minecraft, footerText, totalPages, mouseX, mouseY);
 
         if (lootEntries.isEmpty()) {
-            drawCenteredFrameText(minecraft, I18n.format("jei.structurescanner.loot.empty"), INNER_FRAME_Y + INNER_FRAME_H / 2 - 4, EMPTY_TEXT_COLOR);
+            String emptyText = I18n.format("jei.structurescanner.loot.empty");
+            drawCenteredFrameText(minecraft, emptyText, CENTER_Y, EMPTY_TEXT_COLOR);
         }
     }
 
@@ -464,32 +515,6 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         FontRenderer fontRenderer = minecraft.fontRenderer;
         int footerY = PAGE_BUTTON_Y + (totalPages <= 1 ? 4 : 2);
         fontRenderer.drawString(footerText, INNER_FRAME_X, footerY, SECONDARY_TEXT_COLOR);
-
-        if (totalPages <= 1) return;
-
-        String pageText = I18n.format("jei.structurescanner.page", page + 1, totalPages);
-        int pageTextWidth = fontRenderer.getStringWidth(pageText);
-        int pageTextX = PREV_PAGE_BUTTON_X - pageTextWidth - 4;
-        fontRenderer.drawString(pageText, pageTextX, footerY, SECONDARY_TEXT_COLOR);
-
-        drawBasicButton(
-            minecraft,
-            PREV_PAGE_BUTTON_X,
-            PAGE_BUTTON_Y,
-            "<",
-            false,
-            true,
-            mouseX, mouseY
-        );
-        drawBasicButton(
-            minecraft,
-            NEXT_PAGE_BUTTON_X,
-            PAGE_BUTTON_Y,
-            ">",
-            false,
-            true,
-            mouseX, mouseY
-        );
     }
 
     private void syncJeiIngredientLayout(StructureInfo structureInfo) {
@@ -1019,10 +1044,6 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         return mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height;
     }
 
-    private static boolean isInButtonRect(int mouseX, int mouseY, int buttonX, int buttonY) {
-        return isInRect(mouseX, mouseY, buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
-    }
-
     private static void drawSlotCount(FontRenderer fontRenderer, String countText, int slotX, int slotY) {
         if (countText == null || countText.isEmpty()) return;
 
@@ -1101,7 +1122,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         return Math.round(getGuiTranslationFloat(matrixIndex));
     }
 
-    private int getTabX(StructureJeiView tabView) {
+    private static int getTabX(StructureJeiView tabView) {
         return INNER_FRAME_X + tabView.ordinal() * (BUTTON_SIZE + BUTTON_GAP);
     }
 
@@ -1118,37 +1139,6 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         Gui.drawRect(x, y, x + 1, y + height - 1, PANEL_LIGHT_BORDER_COLOR);
         Gui.drawRect(x + 1, y + height - 1, x + width, y + height, PANEL_DARK_BORDER_COLOR);
         Gui.drawRect(x + width - 1, y + 1, x + width, y + height, PANEL_DARK_BORDER_COLOR);
-    }
-
-    private static void drawButton(Minecraft minecraft, int x, int y, int width, int height, String label,
-            boolean active, boolean hovered, boolean enabled) {
-        int fillColor = !enabled ? 0xFF323232 : active ? 0xFF4D4D85 : hovered ? 0xFF5E5E5E : 0xFF474747;
-        int lightBorder = !enabled ? 0xFF5A5A5A : active ? 0xFF9A9AFF : 0xFF909090;
-        int darkBorder = !enabled ? 0xFF1A1A1A : active ? 0xFF1E1E50 : 0xFF262626;
-
-        Gui.drawRect(x + 1, y + 1, x + width - 1, y + height - 1, fillColor);
-        Gui.drawRect(x, y, x + width - 1, y + 1, lightBorder);
-        Gui.drawRect(x, y, x + 1, y + height - 1, lightBorder);
-        Gui.drawRect(x + 1, y + height - 1, x + width, y + height, darkBorder);
-        Gui.drawRect(x + width - 1, y + 1, x + width, y + height, darkBorder);
-
-        FontRenderer fontRenderer = minecraft.fontRenderer;
-        int textWidth = fontRenderer.getStringWidth(label);
-        int textX = x + (width - textWidth) / 2;
-        int textY = y + (height - 8) / 2;
-        int textColor = !enabled ? 0x888888 : active ? 0xFFFFCC : 0xFFFFFF;
-        fontRenderer.drawStringWithShadow(label, textX, textY, textColor);
-    }
-
-    private static void drawBasicButton(Minecraft minecraft, int x, int y, String label, boolean active,
-            boolean hovered, boolean enabled) {
-        drawButton(minecraft, x, y, BUTTON_SIZE, BUTTON_SIZE, label, active, hovered, enabled);
-    }
-
-    private static void drawBasicButton(Minecraft minecraft, int x, int y, String label, boolean active,
-            boolean enabled, int mouseX, int mouseY) {
-        boolean hovered = isInRect(mouseX, mouseY, x, y, BUTTON_SIZE, BUTTON_SIZE);
-        drawBasicButton(minecraft, x, y, label, active, hovered, enabled);
     }
 
     private void drawCenteredFrameText(Minecraft minecraft, String text, int y, int color) {
