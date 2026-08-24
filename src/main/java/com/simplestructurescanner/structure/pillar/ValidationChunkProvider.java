@@ -110,25 +110,26 @@ public class ValidationChunkProvider implements IChunkProvider {
     @Override
     public Chunk provideChunk(int x, int z) {
         long chunkKey = getChunkKey(x, z);
-        Chunk chunk = loadedChunks.get(chunkKey);
+        Chunk cachedChunk = loadedChunks.get(chunkKey);
 
-        if (chunk != null) return chunk;
+        if (cachedChunk != null) return cachedChunk;
 
         IChunkGenerator vGen = getOrCreateValidationGenerator();
         if (vGen != null) {
             boolean wasPredicting = RCVPredictionContext.isPredicting();
             RCVPredictionContext.setPredicting(true);
             try {
-                chunk = vGen.generateChunk(x, z);
+                cachedChunk = vGen.generateChunk(x, z);
             } finally {
                 RCVPredictionContext.setPredicting(wasPredicting);
             }
         } else {
-            chunk = realGenerator.generateChunk(x, z);
+            cachedChunk = realGenerator.generateChunk(x, z);
         }
-        loadedChunks.put(chunkKey, chunk);
 
-        return chunk;
+        loadedChunks.put(chunkKey, cachedChunk);
+
+        return cachedChunk;
     }
 
     @Override

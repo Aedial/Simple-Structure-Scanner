@@ -1,5 +1,12 @@
 package com.simplestructurescanner.structure.pillar;
 
+import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.WeakHashMap;
+
+import javax.annotation.Nullable;
+
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
@@ -12,15 +19,9 @@ import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraft.world.storage.MapStorage;
 import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.fml.common.FMLCommonHandler;
-import net.minecraftforge.fml.common.Loader;
-
-import javax.annotation.Nullable;
-import java.lang.reflect.Field;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.WeakHashMap;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+
 
 /**
  * Manages the lifecycle of structure validation worlds.

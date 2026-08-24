@@ -15,6 +15,7 @@ import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.rcv.RCVRandomCache;
 import com.simplestructurescanner.rcv.RCVPredictionContext;
 
+
 /**
  * Captures the Recurrent Complex decoration random seed at the HEAD of the
  * chunk-populate handler and cancels the original body during prediction.
@@ -53,8 +54,10 @@ public class MixinRCForgeEventHandler {
 
     private static Field getCachedSeedField() {
         if (seedFieldReady) return cachedSeedField;
+
         synchronized (MixinRCForgeEventHandler.class) {
             if (seedFieldReady) return cachedSeedField;
+
             seedFieldReady = true;
             try {
                 cachedSeedField = Random.class.getDeclaredField("seed");
@@ -63,6 +66,7 @@ public class MixinRCForgeEventHandler {
             } catch (Exception e) {
                 SimpleStructureScanner.LOGGER.warn("Failed to get Random.seed field for Recurrent Complex mixin", e);
             }
+
             return cachedSeedField;
         }
     }

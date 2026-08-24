@@ -1,14 +1,15 @@
 package com.simplestructurescanner.mixin.rcv;
 
+import net.minecraft.world.World;
+import net.minecraft.world.chunk.ChunkPrimer;
+
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.ChunkPrimer;
-
 import com.simplestructurescanner.rcv.RCVPredictionContext;
+
 
 /**
  * Skips Recurrent Complex's {@code MapGenStructureHook.generate()} during
@@ -39,8 +40,6 @@ public class MixinMapGenStructureHook {
 
     @Inject(method = {"func_186125_a", "generate"}, at = @At("HEAD"), cancellable = true, remap = false)
     private void simplestructurescanner$skipDuringPrediction(World world, int x, int z, ChunkPrimer primer, CallbackInfo ci) {
-        if (RCVPredictionContext.isPredicting()) {
-            ci.cancel();
-        }
+        if (RCVPredictionContext.isPredicting()) ci.cancel();
     }
 }

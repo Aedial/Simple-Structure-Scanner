@@ -2,14 +2,17 @@ package com.simplestructurescanner.structure.recurrentcomplex;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -17,6 +20,8 @@ import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+
+import sun.misc.Unsafe;
 
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
@@ -136,7 +141,7 @@ public class RecurrentComplexStructureSearcher {
     @Nullable
     private static Class<?> structureGeneratorClass;
     @Nullable
-    private static java.lang.reflect.Constructor<?> sgConstructor;
+    private static Constructor<?> sgConstructor;
     @Nullable
     private static Method sgGenerationInfoMethod;
     @Nullable
@@ -250,7 +255,7 @@ public class RecurrentComplexStructureSearcher {
     @Nullable
     private static Class<?> genericVillagePieceClass;
     @Nullable
-    private static java.lang.reflect.Constructor<?> villageStartConstructor;
+    private static Constructor<?> villageStartConstructor;
     @Nullable
     private static Field startComponentsField;
     @Nullable
@@ -260,7 +265,7 @@ public class RecurrentComplexStructureSearcher {
     @Nullable
     private static Method structureGenerationTypesMethod;
     @Nullable
-    private static java.util.List<Biome> villageSpawnBiomes;
+    private static List<Biome> villageSpawnBiomes;
 
     private static boolean reflectionInitialized = false;
 
@@ -410,7 +415,9 @@ public class RecurrentComplexStructureSearcher {
         }
     }
 
-    /** Invokes a 1-arg method via handle (preferred) or reflective fallback. */
+    /**
+     * Invokes a 1-arg method via handle (preferred) or reflective fallback.
+     */
     private static Object invoke1(@Nullable MethodHandle mh, Method m, @Nullable Object target, Object a) throws Exception {
         if (mh != null) {
             try {
@@ -422,7 +429,9 @@ public class RecurrentComplexStructureSearcher {
         return m.invoke(target, a);
     }
 
-    /** Invokes a 2-arg method via handle (preferred) or reflective fallback. */
+    /**
+     * Invokes a 2-arg method via handle (preferred) or reflective fallback.
+     */
     private static Object invoke2(@Nullable MethodHandle mh, Method m, @Nullable Object target, Object a, Object b) throws Exception {
         if (mh != null) {
             try {
@@ -431,10 +440,13 @@ public class RecurrentComplexStructureSearcher {
                 throw new RuntimeException(t);
             }
         }
+
         return m.invoke(target, a, b);
     }
 
-    /** Invokes a 3-arg method via handle (preferred) or reflective fallback. */
+    /**
+     * Invokes a 3-arg method via handle (preferred) or reflective fallback.
+     */
     private static Object invoke3(@Nullable MethodHandle mh, Method m, @Nullable Object target, Object a, Object b, Object c) throws Exception {
         if (mh != null) {
             try {
@@ -443,27 +455,40 @@ public class RecurrentComplexStructureSearcher {
                 throw new RuntimeException(t);
             }
         }
+
         return m.invoke(target, a, b, c);
     }
 
-    /** Per-search state: memoized filters shared across the chunks of one search. */
+    /**
+     * Per-search state: memoized filters shared across the chunks of one search.
+     */
     private static final class ScanContext {
+
         /** Maximum natural generation weight of the target per biome (dimension fixed per search). */
         final Map<Biome, Double> weightByBiome = new HashMap<>();
+
         /** The target's NaturalGeneration entries; null = weight filter unavailable (fail open). */
         @Nullable
         List<?> naturalTypes;
+
         /** RCConfig.tweakedSpawnRate for the target structure ID (RC multiplies it into weights). */
         double spawnRateTweak = 1.0;
+
         /** Memoized RCConfig.isGenerationEnabled per biome (config is constant within a search). */
         final Map<Biome, Boolean> rcBiomeEnabled = new HashMap<>();
+
         /** Memoized RCConfig.isGenerationEnabled(provider) — constant within a search. */
         boolean rcProviderEnabledComputed = false;
+
         boolean rcProviderEnabled = false;
+
         /** Hoisted spawn-distance inputs (dimension 0 only; lazy on first use). */
         boolean spawnInfoComputed = false;
+
         int spawnX;
+
         int spawnZ;
+
         double minDistSq;
     }
 
@@ -484,21 +509,24 @@ public class RecurrentComplexStructureSearcher {
     /** Reusable chunk-center position for biome lookups (scan-thread only). */
     private static final BlockPos.MutableBlockPos BIOME_LOOKUP_POS = new BlockPos.MutableBlockPos();
 
-    /** Returns the chunk-center biome via the global memo (single fetch per chunk ever). */
+    /**
+     * Returns the chunk-center biome via the global memo (single fetch per chunk ever).
+     */
     private static Biome biomeAt(WorldServer worldServer, ChunkPos chunkPos) {
         long worldSeed = worldServer.getSeed();
         int dim = worldServer.provider.getDimension();
         long key = worldSeed * 0x9E3779B97F4A7C15L ^ ((long) dim * 0xC2B2AE3D27D4EB4FL)
                 ^ ChunkPos.asLong(chunkPos.x, chunkPos.z);
+
         synchronized (BIOME_MEMO) {
             Biome cached = BIOME_MEMO.get(key);
             if (cached != null) return cached;
             BIOME_LOOKUP_POS.setPos(chunkPos.x * 16 + 8, 0, chunkPos.z * 16 + 8);
+
             Biome biome = worldServer.getBiome(BIOME_LOOKUP_POS);
-            if (BIOME_MEMO.size() >= BIOME_MEMO_MAX) {
-                BIOME_MEMO.remove(BIOME_MEMO.firstLongKey());
-            }
+            if (BIOME_MEMO.size() >= BIOME_MEMO_MAX) BIOME_MEMO.remove(BIOME_MEMO.firstLongKey());
             BIOME_MEMO.put(key, biome);
+
             return biome;
         }
     }
@@ -527,6 +555,7 @@ public class RecurrentComplexStructureSearcher {
                     "NaturalGeneration weight filter unavailable — searching unfiltered", e);
             ctx.naturalTypes = null;
         }
+
         return true;
     }
 
@@ -541,6 +570,7 @@ public class RecurrentComplexStructureSearcher {
         if (ctx.naturalTypes == null || ngGetGenerationWeightMethod == null) {
             return Double.POSITIVE_INFINITY;
         }
+
         double max = 0;
         try {
             for (Object type : ctx.naturalTypes) {
@@ -550,6 +580,7 @@ public class RecurrentComplexStructureSearcher {
         } catch (Exception e) {
             return Double.POSITIVE_INFINITY;
         }
+
         return max * ctx.spawnRateTweak;
     }
 
@@ -580,12 +611,14 @@ public class RecurrentComplexStructureSearcher {
                 biomeEnabled = (boolean) rcGenEnabledBiomeMethod.invoke(null, biome);
                 ctx.rcBiomeEnabled.put(biome, biomeEnabled);
             }
+
             if (!biomeEnabled) return false;
 
             if (!ctx.rcProviderEnabledComputed) {
                 ctx.rcProviderEnabled = (boolean) rcGenEnabledProviderMethod.invoke(null, worldServer.provider);
                 ctx.rcProviderEnabledComputed = true;
             }
+
             if (!ctx.rcProviderEnabled) return false;
 
             // Dim 0 only: require chunk center outside the min spawn distance
@@ -599,10 +632,12 @@ public class RecurrentComplexStructureSearcher {
                     ctx.minDistSq = (double) minDist * (double) minDist;
                     ctx.spawnInfoComputed = true;
                 }
+
                 double dx = chunkPos.x * 16 + 8 - ctx.spawnX;
                 double dz = chunkPos.z * 16 + 8 - ctx.spawnZ;
                 return dx * dx + dz * dz >= ctx.minDistSq;
             }
+
             return true;
         } catch (Exception e) {
             return true;
@@ -620,7 +655,6 @@ public class RecurrentComplexStructureSearcher {
     private static boolean hasVanillaGeneration(Object structure) {
         if (vanillaGenerationClass == null || structureGenerationTypesMethod == null) return false;
         try {
-            @SuppressWarnings("unchecked")
             List<?> types = (List<?>) structureGenerationTypesMethod.invoke(structure, vanillaGenerationClass);
             return types != null && !types.isEmpty();
         } catch (Exception e) {
@@ -749,9 +783,7 @@ public class RecurrentComplexStructureSearcher {
                     String pieceStructureId = (String) gvpStructureIDField.get(component);
                     if (structureId.equalsIgnoreCase(pieceStructureId)) {
                         Object bb = componentBoundingBoxField.get(component);
-                        if (bb != null) {
-                            return boundingBoxCenter(bb);
-                        }
+                        if (bb != null) return boundingBoxCenter(bb);
                     }
                 }
             }
@@ -776,6 +808,7 @@ public class RecurrentComplexStructureSearcher {
             int maxX = sbbMaxXField.getInt(bb);
             int maxY = sbbMaxYField.getInt(bb);
             int maxZ = sbbMaxZField.getInt(bb);
+
             return new BlockPos((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
         } catch (Exception e) {
             return BlockPos.ORIGIN;
@@ -818,14 +851,16 @@ public class RecurrentComplexStructureSearcher {
             // via ChunkProviderServer.isChunkGeneratedAt — a cached region-file
             // header check, no chunk loading). Simulation only ever runs on chunks
             // that have never been generated.
-            Chunk loadedChunk = worldServer.getChunkProvider()
-                    .getLoadedChunk(chunkPos.x, chunkPos.z);
+
+            Chunk loadedChunk = worldServer.getChunkProvider().getLoadedChunk(chunkPos.x, chunkPos.z);
             boolean realChunkLoaded = loadedChunk != null;
+
             boolean generatedOnDisk = false;
             if (!realChunkLoaded && worldServer.getChunkProvider() instanceof ChunkProviderServer) {
                 generatedOnDisk = ((ChunkProviderServer) worldServer.getChunkProvider())
                         .isChunkGeneratedAt(chunkPos.x, chunkPos.z);
             }
+
             if ((realChunkLoaded || generatedOnDisk) && wsgdGetMethod != null) {
                 Object ledger = wsgdGetMethod.invoke(null, worldServer);
                 boolean chunkChecked = (boolean) wsgdIsChunkCheckedMethod.invoke(ledger, chunkPos);
@@ -841,6 +876,7 @@ public class RecurrentComplexStructureSearcher {
                             SimpleStructureScanner.LOGGER.debug(
                                     "LEDGER_CONFIRMED '{}' at chunk({},{}) — real BB center={} (ground truth, no simulation)",
                                     structureId, chunkPos.x, chunkPos.z, center);
+
                             return center;
                         }
                     }
@@ -850,6 +886,7 @@ public class RecurrentComplexStructureSearcher {
                             structureId, chunkPos.x, chunkPos.z);
                     return null;
                 }
+
                 // Generated but not checked by RC:
                 if (realChunkLoaded) {
                     // Loaded: if fully populated, RC's decorate can never run there
@@ -891,6 +928,7 @@ public class RecurrentComplexStructureSearcher {
                     weight = maxNaturalWeight(ctx, worldServer.provider, chunkBiome);
                     ctx.weightByBiome.put(chunkBiome, weight);
                 }
+
                 if (weight <= 0) return null;
             }
 
@@ -1052,6 +1090,7 @@ public class RecurrentComplexStructureSearcher {
         RCVPredictionContext.resetCaptureSignal();
         for (IEventListener listener : listeners) {
             if (isRandIndependentSkippable(listener.toString())) continue;
+
             listener.invoke(event);
             if (RCVPredictionContext.wasCapturedThisPost()) break;
         }
@@ -1076,6 +1115,7 @@ public class RecurrentComplexStructureSearcher {
         Random posRandom = new Random(seed ^ 0x12048F0015F8B476L);
         int x = chunkPos.x * 16 + posRandom.nextInt(16) + 8;
         int z = chunkPos.z * 16 + posRandom.nextInt(16) + 8;
+
         return new BlockPos(x, 0, z);
     }
 
@@ -1139,6 +1179,7 @@ public class RecurrentComplexStructureSearcher {
                             "Raw pre-screen rejected '{}' at chunk ({},{}) — failure: [{}]",
                             structureId, chunkPos.x, chunkPos.z,
                             rawResult != null ? extractFailureDescription(rawResult) : "null-result");
+
                     return null;
                 }
             } catch (Exception e) {
@@ -1189,7 +1230,7 @@ public class RecurrentComplexStructureSearcher {
         Object resultObj = sgBoundingBoxMethod.invoke(generator);
         if (resultObj == null) return null;
 
-        java.util.Optional<?> opt = (java.util.Optional<?>) resultObj;
+        Optional<?> opt = (Optional<?>) resultObj;
         if (!opt.isPresent()) return null;
 
         Object bb = opt.get();
@@ -1246,6 +1287,7 @@ public class RecurrentComplexStructureSearcher {
             } catch (Exception ignored) {
             }
         }
+
         return testResult.toString();
     }
 
@@ -1256,15 +1298,18 @@ public class RecurrentComplexStructureSearcher {
     // The ground-truth filter in searchInChunk() consults it to skip simulation
     // for chunks whose outcome RC has already decided.
 
-    /** Lists RC ledger entry objects for the given chunk. */
+    /**
+     * Lists RC ledger entry objects for the given chunk.
+     */
     private static List<Object> entriesIn(Object data, ChunkPos chunkPos) throws Exception {
         List<Object> out = new ArrayList<>();
+
         Object stream = wsgdStructureEntriesInMethod.invoke(data, chunkPos);
         if (stream == null) return out;
-        java.util.Iterator<?> it = (java.util.Iterator<?>) streamIteratorMethod.invoke(stream);
-        while (it.hasNext()) {
-            out.add(it.next());
-        }
+
+        Iterator<?> it = (Iterator<?>) streamIteratorMethod.invoke(stream);
+        while (it.hasNext()) out.add(it.next());
+
         return out;
     }
 
@@ -1275,6 +1320,7 @@ public class RecurrentComplexStructureSearcher {
 
         SimpleStructureScanner.LOGGER.warn("Could not resolve WorldServer for Recurrent Complex search (got {})",
                 generationWorld == null ? "null" : generationWorld.getClass().getName());
+
         return null;
     }
 
@@ -1282,6 +1328,7 @@ public class RecurrentComplexStructureSearcher {
     @Nullable
     private static List<ChunkPos> chunksByDistance(BlockPos origin, int radius) {
         if (chunksByDistanceMethod == null) return null;
+
         try {
             return (List<ChunkPos>) chunksByDistanceMethod.invoke(null, origin, radius);
         } catch (Exception e) {
@@ -1294,6 +1341,7 @@ public class RecurrentComplexStructureSearcher {
     @SuppressWarnings("unchecked")
     private static Object getStructureFromRegistry(String structureId) {
         if (structureRegistryInstance == null || registryGetMethod == null) return null;
+
         try {
             Object result = registryGetMethod.invoke(structureRegistryInstance, structureId);
             if (result != null) return result;
@@ -1309,11 +1357,13 @@ public class RecurrentComplexStructureSearcher {
         } catch (Exception e) {
             // ignore
         }
+
         return null;
     }
 
     // ========== Reflection initialization ==========
 
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static boolean ensureReflectionInitialized() {
         if (reflectionInitialized) return locatorClass != null;
         reflectionInitialized = true;
@@ -1382,9 +1432,9 @@ public class RecurrentComplexStructureSearcher {
             sgWorldField.setAccessible(true);
             // Use Unsafe to bypass Field.set()'s type check (WorldServer vs World).
             // Unsafe.putObject writes directly to memory without checking instance-of.
-            Field unsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            Field unsafeField = Unsafe.class.getDeclaredField("theUnsafe");
             unsafeField.setAccessible(true);
-            unsafeInstance = (sun.misc.Unsafe) unsafeField.get(null);
+            unsafeInstance = (Unsafe) unsafeField.get(null);
             sgWorldFieldOffset = unsafeInstance.objectFieldOffset(sgWorldField);
 
             placerMethod = generationTypeClass.getMethod("placer");
@@ -1512,8 +1562,7 @@ public class RecurrentComplexStructureSearcher {
                 structureGenerationTypesMethod = structureClass.getMethod("generationTypes", Class.class);
 
                 // Read MapGenVillage.VILLAGE_SPAWN_BIOMES (SRG name field_75055_e at runtime)
-                @SuppressWarnings("unchecked")
-                java.util.List<Biome> biomes = (java.util.List<Biome>) Class.forName(
+                List<Biome> biomes = (List<Biome>) Class.forName(
                     "net.minecraft.world.gen.structure.MapGenVillage")
                     .getDeclaredField("field_75055_e").get(null);
                 villageSpawnBiomes = biomes;
@@ -1528,7 +1577,6 @@ public class RecurrentComplexStructureSearcher {
                 Class<?> vanillaDecoClass = Class.forName(
                     "ivorius.reccomplex.world.gen.feature.structure.generic.generation.VanillaDecorationGeneration");
                 Method getGenTypesMethod = registryClass.getMethod("getGenerationTypes", Class.class);
-                @SuppressWarnings("unchecked")
                 Collection<?> decoEntries = (Collection<?>) getGenTypesMethod.invoke(structureRegistryInstance, vanillaDecoClass);
                 if (decoEntries != null && !decoEntries.isEmpty()) {
                     SimpleStructureScanner.LOGGER.warn(

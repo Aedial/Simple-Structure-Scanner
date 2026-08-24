@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.longs.Long2LongLinkedOpenHashMap;
 
 import net.minecraft.util.math.ChunkPos;
 
+
 /**
  * Thread-safe cache of Recurrent Complex random seeds keyed by world seed and chunk position.
  * <p>
@@ -33,9 +34,8 @@ public final class RCVRandomCache {
         long k = key(worldSeed, chunkX, chunkZ);
         if (SEEDS.containsKey(k)) return;
 
-        if (SEEDS.size() >= MAX_ENTRIES) {
-            SEEDS.remove(SEEDS.firstLongKey());
-        }
+        if (SEEDS.size() >= MAX_ENTRIES) SEEDS.remove(SEEDS.firstLongKey());
+
         SEEDS.put(k, randomInternalSeed);
     }
 

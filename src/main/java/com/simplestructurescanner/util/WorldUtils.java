@@ -93,7 +93,7 @@ public class WorldUtils {
     public static int findStructureTeleportY(World world, int x, int z, int centerY) {
         int start = Math.max(1, Math.min(centerY, 255));
 
-        // Step 1: find the structure's base — first solid, non-fluid block at
+        // Step 1: find the structure's base. First solid, non-fluid block at
         // or below the center Y in this column.
         int baseY = -1;
         for (int y = start; y >= 1; y--) {
@@ -104,14 +104,14 @@ public class WorldUtils {
             }
         }
 
-        // Step 2: first standing spot at or above the base.
+        // Step 2: first standing spot at or above the base
         if (baseY >= 0) {
             for (int y = baseY; y <= 254; y++) {
                 if (canTeleport(world, x, y, z, true)) return y;
             }
         }
 
-        // Column had no base or no safe spot — legacy nearest-to-Y search.
+        // Column had no base or no safe spot, use nearest-to-Y search.
         return findSafeTeleportY(world, x, z, centerY);
     }
 

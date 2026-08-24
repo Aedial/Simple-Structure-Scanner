@@ -72,12 +72,10 @@ public class PacketRequestSafeTeleport implements IMessage {
                 int z = message.z;
                 int startY = message.startY;
 
-                if (message.fromStructure) {
-                    populateDestination(world, x, z);
-                }
+                if (message.fromStructure) populateDestination(world, x, z);
 
                 // Structure destinations search bottom-up from the structure's
-                // base; everything else uses the legacy nearest-to-Y search.
+                // base; everything else uses nearest-to-Y search.
                 int safeY = message.fromStructure
                         ? WorldUtils.findStructureTeleportY(world, x, z, startY)
                         : WorldUtils.findSafeTeleportY(world, x, z, startY);
@@ -94,9 +92,10 @@ public class PacketRequestSafeTeleport implements IMessage {
 
         /**
          * Force-generates and populates the destination chunk (plus generating
-         * its 3x3 neighbors, which population reads/writes) so structures built
-         * during population exist before any Y computation. This is the same
-         * generation that would run when the player arrives — just earlier.
+         * its 3x3 neighbors) so structures built  during population exist
+         * before any Y computation. This is the same  generation that would
+         * run when the player arrives, just earlier.
+         * <p>
          * Fail-open: on any error, fall through with whatever state exists.
          */
         private static void populateDestination(World world, int x, int z) {
@@ -107,9 +106,7 @@ public class PacketRequestSafeTeleport implements IMessage {
                 if (chunk.isTerrainPopulated()) return;
 
                 for (int dx = -1; dx <= 1; dx++) {
-                    for (int dz = -1; dz <= 1; dz++) {
-                        world.getChunk(cx + dx, cz + dz);
-                    }
+                    for (int dz = -1; dz <= 1; dz++) world.getChunk(cx + dx, cz + dz);
                 }
 
                 IChunkGenerator generator = ValidationContextManager.getGenerationChunkGenerator(world);

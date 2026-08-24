@@ -23,17 +23,23 @@ public class RCVPredictionContext {
         return predicting;
     }
 
-    /** Resets the capture signal before a partial event dispatch begins. */
+    /**
+     * Resets the capture signal before a partial event dispatch begins.
+     */
     public static void resetCaptureSignal() {
         capturedThisPost = false;
     }
 
-    /** Raised by the mixin after a seed has been captured and stored. */
+    /**
+     * Raised by the mixin after a seed has been captured and stored.
+     */
     public static void signalCaptured() {
         capturedThisPost = true;
     }
 
-    /** True if the mixin captured a seed since the last reset. */
+    /**
+     * True if the mixin captured a seed since the last reset.
+     */
     public static boolean wasCapturedThisPost() {
         return capturedThisPost;
     }
