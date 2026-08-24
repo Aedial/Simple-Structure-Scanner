@@ -15,6 +15,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Fixed
 - Fix Recurrent Complex structure search frequently pointing at locations where the structure never generated. The chunk-population event is now simulated on the real Forge event bus so other mods consume the decoration random in the same order as during real generation, and predicted candidates are validated against fully decorated in-memory terrain (including trees and lakes) instead of raw terrain.
 - Fix Recurrent Complex structure search predicting structures in already generated chunks where Recurrent Complex decided not to generate anything; such chunks are now resolved directly from Recurrent Complex's own persisted generation records instead of being simulated.
+- Fix the Structure Scanner list scrollbar so it can be dragged properly again, and make wheel scrolling advance by whole structure entries instead of fractional offsets.
 
 
 ## [1.3.0] - 2026-07-30

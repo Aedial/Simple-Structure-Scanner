@@ -484,7 +484,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         drawFooter(minecraft, footerText, totalPages, mouseX, mouseY);
 
         if (blockEntries.isEmpty()) {
-            String emptyText = I18n.format("gui.structurescanner.blocks.empty");
+            String emptyText = I18n.format("jei.structurescanner.blocks.empty");
             drawCenteredFrameText(minecraft, emptyText, CENTER_Y, EMPTY_TEXT_COLOR);
         }
     }

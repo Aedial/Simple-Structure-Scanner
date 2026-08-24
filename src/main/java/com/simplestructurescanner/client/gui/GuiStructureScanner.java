@@ -1294,14 +1294,17 @@ public class GuiStructureScanner extends GuiScreen {
         private final FontRenderer font;
         private final GuiStructureScanner parent;
         private final int entryHeight = 14;
+        private final int scrollbarWidth = 6;
 
         private List<ResourceLocation> allStructures;
         private List<ResourceLocation> filteredStructures;
         private String filter = "";
-        private float scrollOffset = 0;
-        private boolean isDragging = false;
+        private int scrollRow = 0;
+        private boolean isDraggingList = false;
+        private boolean isDraggingScrollbar = false;
         private int dragStartY;
-        private float dragStartScroll;
+        private int dragStartScrollRow;
+        private int scrollbarDragOffsetY;
         @Nullable
         private Integer lastDimensionId;
         private boolean lastShowNonSearchable;
@@ -1383,9 +1386,7 @@ public class GuiStructureScanner extends GuiScreen {
             });
 
             // Clamp scroll
-            float maxScroll = getMaxScroll();
-            if (scrollOffset > maxScroll) scrollOffset = maxScroll;
-            if (scrollOffset < 0) scrollOffset = 0;
+            setScrollRow(scrollRow);
 
             lastDimensionId = currentDimensionId;
             lastShowNonSearchable = ClientSettings.showNonSearchable;
@@ -1403,23 +1404,106 @@ public class GuiStructureScanner extends GuiScreen {
             return id.toString();
         }
 
-        private float getMaxScroll() {
-            int contentHeight = filteredStructures.size() * entryHeight;
+        private int getVisibleRowCount() {
+            return Math.max(1, height / entryHeight);
+        }
 
-            return Math.max(0, contentHeight - height);
+        private int getMaxScrollRow() {
+            return Math.max(0, filteredStructures.size() - getVisibleRowCount());
+        }
+
+        private int getScrollOffsetPixels() {
+            return scrollRow * entryHeight;
+        }
+
+        private void setScrollRow(int newScrollRow) {
+            scrollRow = Math.max(0, Math.min(newScrollRow, getMaxScrollRow()));
+        }
+
+        private boolean hasScrollbar() {
+            return getMaxScrollRow() > 0;
+        }
+
+        private int getScrollbarX() {
+            return x + width - scrollbarWidth;
+        }
+
+        private int getScrollbarThumbHeight() {
+            int totalRows = filteredStructures.size();
+
+            if (totalRows <= 0) return height;
+
+            return Math.max(20, Math.round((float) getVisibleRowCount() / totalRows * height));
+        }
+
+        private int getScrollbarThumbY() {
+            int maxScrollRow = getMaxScrollRow();
+
+            if (maxScrollRow <= 0) return y;
+
+            int thumbHeight = getScrollbarThumbHeight();
+
+            return y + Math.round((float) scrollRow / maxScrollRow * (height - thumbHeight));
+        }
+
+        private boolean isMouseOverScrollbar(int mouseX, int mouseY) {
+            if (!hasScrollbar()) return false;
+
+            return mouseX >= getScrollbarX()
+                    && mouseX <= x + width
+                    && mouseY >= y
+                    && mouseY <= y + height;
+        }
+
+        private void setScrollFromScrollbar(int thumbY) {
+            int thumbHeight = getScrollbarThumbHeight();
+            int trackHeight = height - thumbHeight;
+
+            if (trackHeight <= 0) {
+                setScrollRow(0);
+
+                return;
+            }
+
+            int clampedThumbY = Math.max(y, Math.min(thumbY, y + trackHeight));
+            int maxScrollRow = getMaxScrollRow();
+            int newScrollRow = Math.round((float) (clampedThumbY - y) / trackHeight * maxScrollRow);
+
+            setScrollRow(newScrollRow);
+        }
+
+        private void scrollByRows(int rowDelta) {
+            if (rowDelta == 0) return;
+
+            setScrollRow(scrollRow + rowDelta);
         }
 
         public void handleScroll(int wheel) {
-            scrollOffset -= wheel * 0.25f;
-            float maxScroll = getMaxScroll();
-            if (scrollOffset < 0) scrollOffset = 0;
-            if (scrollOffset > maxScroll) scrollOffset = maxScroll;
+            if (wheel == 0) return;
+
+            scrollByRows(wheel > 0 ? -1 : 1);
         }
 
         public void handleClick(int mouseX, int mouseY) {
             if (mouseX < x || mouseX > x + width || mouseY < y || mouseY > y + height) return;
 
-            int relativeY = mouseY - y + (int) scrollOffset;
+            if (isMouseOverScrollbar(mouseX, mouseY)) {
+                int thumbY = getScrollbarThumbY();
+                int thumbHeight = getScrollbarThumbHeight();
+
+                isDraggingScrollbar = true;
+
+                if (mouseY < thumbY || mouseY > thumbY + thumbHeight) {
+                    scrollbarDragOffsetY = thumbHeight / 2;
+                    setScrollFromScrollbar(mouseY - scrollbarDragOffsetY);
+                } else {
+                    scrollbarDragOffsetY = mouseY - thumbY;
+                }
+
+                return;
+            }
+
+            int relativeY = mouseY - y + getScrollOffsetPixels();
             int index = relativeY / entryHeight;
 
             if (index >= 0 && index < filteredStructures.size()) {
@@ -1445,24 +1529,28 @@ public class GuiStructureScanner extends GuiScreen {
                 }
             }
 
-            isDragging = true;
+            isDraggingList = true;
             dragStartY = mouseY;
-            dragStartScroll = scrollOffset;
+            dragStartScrollRow = scrollRow;
         }
 
         public void handleDrag(int mouseX, int mouseY) {
-            if (!isDragging) return;
+            if (isDraggingScrollbar) {
+                setScrollFromScrollbar(mouseY - scrollbarDragOffsetY);
 
-            int deltaY = dragStartY - mouseY;
-            scrollOffset = dragStartScroll + deltaY;
+                return;
+            }
 
-            float maxScroll = getMaxScroll();
-            if (scrollOffset < 0) scrollOffset = 0;
-            if (scrollOffset > maxScroll) scrollOffset = maxScroll;
+            if (!isDraggingList) return;
+
+            int deltaRows = (dragStartY - mouseY) / entryHeight;
+
+            setScrollRow(dragStartScrollRow + deltaRows);
         }
 
         public void handleRelease() {
-            isDragging = false;
+            isDraggingList = false;
+            isDraggingScrollbar = false;
         }
 
         public boolean handleKey(int keyCode) {
@@ -1486,24 +1574,27 @@ public class GuiStructureScanner extends GuiScreen {
         }
 
         private void ensureVisible(int index) {
-            int itemTop = index * entryHeight;
-            int itemBottom = itemTop + entryHeight;
+            if (index < scrollRow) {
+                setScrollRow(index);
 
-            if (itemTop < scrollOffset) {
-                scrollOffset = itemTop;
-            } else if (itemBottom > scrollOffset + height) {
-                scrollOffset = itemBottom - height;
+                return;
             }
+
+            int lastVisibleRow = scrollRow + getVisibleRowCount() - 1;
+            if (index <= lastVisibleRow) return;
+
+            setScrollRow(index - getVisibleRowCount() + 1);
         }
 
         public void draw(int mouseX, int mouseY) {
             Gui.drawRect(x, y, x + width, y + height, 0x80000000);
 
-            int visibleStart = (int) (scrollOffset / entryHeight);
-            int visibleEnd = Math.min(filteredStructures.size(), visibleStart + (height / entryHeight) + 2);
+            int scrollOffsetPixels = getScrollOffsetPixels();
+            int visibleStart = scrollRow;
+            int visibleEnd = Math.min(filteredStructures.size(), visibleStart + getVisibleRowCount() + 1);
 
             for (int i = visibleStart; i < visibleEnd; i++) {
-                int entryY = y + (i * entryHeight) - (int) scrollOffset;
+                int entryY = y + (i * entryHeight) - scrollOffsetPixels;
                 if (entryY + entryHeight < y || entryY > y + height) continue;
 
                 ResourceLocation id = filteredStructures.get(i);
@@ -1530,7 +1621,9 @@ public class GuiStructureScanner extends GuiScreen {
                 // Draw text - use localized name if i18n is enabled
                 String displayName = getDisplayName(id);
 
-                int availableWidth = width - (textStartX - x) - 3;
+                int availableWidth = getScrollbarX() - textStartX - 2;
+                if (!hasScrollbar()) availableWidth = width - (textStartX - x) - 3;
+
                 String elidedName = font.trimStringToWidth(displayName, availableWidth);
                 if (!elidedName.equals(displayName)) elidedName += "...";
 
@@ -1548,14 +1641,13 @@ public class GuiStructureScanner extends GuiScreen {
             }
 
             // Draw scrollbar if needed
-            float maxScroll = getMaxScroll();
-            if (maxScroll > 0) {
-                int scrollbarX = x + width - 3;
-                int scrollbarH = Math.max(20, (int) ((float) height / (height + maxScroll) * height));
-                int scrollbarY = y + (int) ((scrollOffset / maxScroll) * (height - scrollbarH));
+            if (hasScrollbar()) {
+                int scrollbarX = getScrollbarX();
+                int scrollbarH = getScrollbarThumbHeight();
+                int scrollbarY = getScrollbarThumbY();
 
-                Gui.drawRect(scrollbarX, y, scrollbarX + 3, y + height, 0x40FFFFFF);
-                Gui.drawRect(scrollbarX, scrollbarY, scrollbarX + 3, scrollbarY + scrollbarH, 0xA0FFFFFF);
+                Gui.drawRect(scrollbarX, y, x + width, y + height, 0x40FFFFFF);
+                Gui.drawRect(scrollbarX, scrollbarY, x + width, scrollbarY + scrollbarH, 0xA0FFFFFF);
             }
         }
 
