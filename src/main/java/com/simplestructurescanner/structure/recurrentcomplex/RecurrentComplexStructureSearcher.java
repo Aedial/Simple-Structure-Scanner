@@ -509,14 +509,18 @@ public class RecurrentComplexStructureSearcher {
     /** Reusable chunk-center position for biome lookups (scan-thread only). */
     private static final BlockPos.MutableBlockPos BIOME_LOOKUP_POS = new BlockPos.MutableBlockPos();
 
+    private static long getKey(long worldSeed, int dim, ChunkPos chunkPos) {
+        return worldSeed * 0x9E3779B97F4A7C15L ^ ((long) dim * 0xC2B2AE3D27D4EB4FL)
+                ^ ChunkPos.asLong(chunkPos.x, chunkPos.z);
+    }
+
     /**
      * Returns the chunk-center biome via the global memo (single fetch per chunk ever).
      */
     private static Biome biomeAt(WorldServer worldServer, ChunkPos chunkPos) {
         long worldSeed = worldServer.getSeed();
         int dim = worldServer.provider.getDimension();
-        long key = worldSeed * 0x9E3779B97F4A7C15L ^ ((long) dim * 0xC2B2AE3D27D4EB4FL)
-                ^ ChunkPos.asLong(chunkPos.x, chunkPos.z);
+        long key = getKey(worldSeed, dim, chunkPos);
 
         synchronized (BIOME_MEMO) {
             Biome cached = BIOME_MEMO.get(key);
@@ -528,6 +532,21 @@ public class RecurrentComplexStructureSearcher {
             BIOME_MEMO.put(key, biome);
 
             return biome;
+        }
+    }
+
+    /**
+     * Returns a memoized biome for a validation-world chunk-center lookup.
+     */
+    @Nullable
+    public static Biome getCachedChunkCenterBiome(World world, BlockPos pos) {
+        int x = pos.getX();
+        int z = pos.getZ();
+        if ((x & 15) != 8 || (z & 15) != 8) return null;
+
+        long key = getKey(world.getSeed(), world.provider.getDimension(), new ChunkPos(x >> 4, z >> 4));
+        synchronized (BIOME_MEMO) {
+            return BIOME_MEMO.get(key);
         }
     }
 

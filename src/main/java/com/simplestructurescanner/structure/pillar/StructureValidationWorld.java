@@ -11,6 +11,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.EnumSkyBlock;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
+import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.gen.IChunkGenerator;
@@ -18,6 +19,7 @@ import net.minecraft.world.storage.ISaveHandler;
 import net.minecraft.world.storage.WorldInfo;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexStructureSearcher;
 
 
 /**
@@ -89,6 +91,14 @@ public class StructureValidationWorld extends World {
     @Override
     protected boolean isChunkLoaded(int x, int z, boolean allowEmpty) {
         return validationChunkProvider != null && validationChunkProvider.isChunkGeneratedAt(x, z);
+    }
+
+    @Override
+    public Biome getBiomeForCoordsBody(BlockPos pos) {
+        Biome biome = RecurrentComplexStructureSearcher.getCachedChunkCenterBiome(this, pos);
+        if (biome != null) return biome;
+
+        return super.getBiomeForCoordsBody(pos);
     }
 
     //================================================================================
