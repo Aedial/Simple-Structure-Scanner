@@ -9,6 +9,8 @@ import net.minecraft.block.BlockLiquid;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.util.math.BlockPos;
 
+import com.simplestructurescanner.structure.validation.StructureValidationWorld;
+
 /**
  * Proxy for Pillar's GeneratorType enum.
  * <p>

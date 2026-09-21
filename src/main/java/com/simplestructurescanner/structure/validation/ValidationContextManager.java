@@ -1,4 +1,4 @@
-package com.simplestructurescanner.structure.pillar;
+package com.simplestructurescanner.structure.validation;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -21,6 +21,8 @@ import net.minecraft.world.storage.WorldInfo;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.util.ReflectionHelper;
+import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionException;
 
 
 /**
@@ -59,48 +61,32 @@ public class ValidationContextManager {
     }
 
     private static Field findChunkGeneratorField() {
-        String[] fieldNames = {"chunkGenerator", "field_186029_c"};
-
         // The obfuscated fallback preserves compatibility with production jars.
-        for (String fieldName : fieldNames) {
-            try {
-                Field field = ChunkProviderServer.class.getDeclaredField(fieldName);
-                field.setAccessible(true);
-
-                return field;
-            } catch (NoSuchFieldException e) {
-                // Try the next known field name.
-            }
-        }
+        Field field = ReflectionHelper.findAccessibleDeclaredField(
+            ChunkProviderServer.class, "chunkGenerator", "field_186029_c");
+        if (field != null) return field;
 
         throw new RuntimeException("Failed to find chunkGenerator field in ChunkProviderServer");
     }
 
     @Nullable
     private static Field findWorldProviderBiomeProviderField() {
-        String[] fieldNames = {"biomeProvider", "field_201645_s"};
-
-        for (String fieldName : fieldNames) {
-            try {
-                Field field = WorldProvider.class.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                SimpleStructureScanner.LOGGER.info("Successfully accessed WorldProvider.biomeProvider field as: {}", fieldName);
-                return field;
-            } catch (NoSuchFieldException e) {
-                // Try next name
-            }
+        Field field = ReflectionHelper.findAccessibleDeclaredField(
+            WorldProvider.class, "biomeProvider", "field_201645_s");
+        if (field != null) {
+            SimpleStructureScanner.LOGGER.info(
+                "Successfully accessed WorldProvider.biomeProvider field as: {}", field.getName());
+            return field;
         }
 
         // Type-based fallback: find the first BiomeProvider-typed field
         try {
-            for (Field field : WorldProvider.class.getDeclaredFields()) {
-                if (field.getType() == BiomeProvider.class) {
-                    field.setAccessible(true);
-                    SimpleStructureScanner.LOGGER.info("Found WorldProvider.biomeProvider field by type: {}", field.getName());
-                    return field;
-                }
+            field = ReflectionHelper.findAccessibleDeclaredField(WorldProvider.class, BiomeProvider.class);
+            if (field != null) {
+                SimpleStructureScanner.LOGGER.info("Found WorldProvider.biomeProvider field by type: {}", field.getName());
+                return field;
             }
-        } catch (Exception e) {
+        } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.warn("Type-based search for WorldProvider.biomeProvider failed", e);
         }
 
@@ -110,28 +96,18 @@ public class ValidationContextManager {
 
     @Nullable
     private static Field findWorldProviderWorldField() {
-        String[] fieldNames = {"world", "field_76579_a"};
-
-        for (String fieldName : fieldNames) {
-            try {
-                Field field = WorldProvider.class.getDeclaredField(fieldName);
-                field.setAccessible(true);
-                return field;
-            } catch (NoSuchFieldException e) {
-                // Try next name
-            }
-        }
+        Field field = ReflectionHelper.findAccessibleDeclaredField(
+            WorldProvider.class, "world", "field_76579_a");
+        if (field != null) return field;
 
         // Type-based fallback
         try {
-            for (Field field : WorldProvider.class.getDeclaredFields()) {
-                if (field.getType() == World.class) {
-                    field.setAccessible(true);
-                    SimpleStructureScanner.LOGGER.info("Found WorldProvider.world field by type: {}", field.getName());
-                    return field;
-                }
+            field = ReflectionHelper.findAccessibleDeclaredField(WorldProvider.class, World.class);
+            if (field != null) {
+                SimpleStructureScanner.LOGGER.info("Found WorldProvider.world field by type: {}", field.getName());
+                return field;
             }
-        } catch (Exception e) {
+        } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.warn("Type-based search for WorldProvider.world failed", e);
         }
 
@@ -350,14 +326,14 @@ public class ValidationContextManager {
                 SimpleStructureScanner.LOGGER.warn("Real world mapStorage is null — cannot copy to validation world");
                 return;
             }
-            for (Field f : World.class.getDeclaredFields()) {
-                if (f.getType() == MapStorage.class) {
-                    f.setAccessible(true);
-                    f.set(validationWorld, realStorage);
-                    SimpleStructureScanner.LOGGER.debug("Copied mapStorage to validation world (field: {})", f.getName());
-                    return;
-                }
+
+            Field field = ReflectionHelper.findAccessibleDeclaredField(World.class, MapStorage.class);
+            if (field != null) {
+                field.set(validationWorld, realStorage);
+                SimpleStructureScanner.LOGGER.debug("Copied mapStorage to validation world (field: {})", field.getName());
+                return;
             }
+
             SimpleStructureScanner.LOGGER.warn("Could not find mapStorage field on World to copy");
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.warn("Failed to copy mapStorage to validation world", e);
@@ -409,7 +385,7 @@ public class ValidationContextManager {
      */
     public static int getTotalCachedChunkCount() {
         return VALIDATION_WORLDS.values().stream()
-                .mapToInt(ValidationContextManager::getCachedChunkCountForWorld)
-                .sum();
+            .mapToInt(ValidationContextManager::getCachedChunkCountForWorld)
+            .sum();
     }
 }

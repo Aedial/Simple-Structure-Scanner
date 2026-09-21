@@ -28,32 +28,32 @@ import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
+import com.simplestructurescanner.util.ItemStackKey;
 
 
 /**
- * Parses Pillar structure NBT files by extending the shared structure NBT parser.
+ * Reads Pillar structure NBT files through the shared structure NBT parser.
  * <p>
- * Pillar structures are stored as external NBT files in the pillar/structures directory.
- * The shared parser handles the base structure walk, while this class adds:
- * - Pillar data block metadata expansion
- * - Summoned entities declared by metadata commands
- * - Direct container item extraction
+ * These files are located in {@code pillar/structures}. This extension :
+ * - Expands data-block metadata
+ * - Reads entities named by metadata commands
+ * - Extracts fixed container contents
  */
 public class PillarNBTParser {
 
-    // Pattern to extract loot table from chest data block: "chest [facing] loot_table"
+    // Matches chest metadata as "chest [<facing>] <loot table>"
     private static final Pattern CHEST_PATTERN = Pattern.compile("chest\\s+(?:(north|south|east|west)\\s+)?(.+)", Pattern.CASE_INSENSITIVE);
 
-    // Pattern to extract entity from spawner data block: "spawner entity_id"
+    // Matches spawner metadata as "spawner <entityID>"
     private static final Pattern SPAWNER_PATTERN = Pattern.compile("spawner\\s+(.+)", Pattern.CASE_INSENSITIVE);
 
-    // Pattern to extract load_loot_table command: "load_loot_table loot_table"
+    // Matches load_loot_table metadata as "load_loot_table <loot table>"
     private static final Pattern LOAD_LOOT_TABLE_PATTERN = Pattern.compile("load_loot_table\\s+(.+)", Pattern.CASE_INSENSITIVE);
 
-    // Pattern to extract entity from "run summon" or "run /summon" commands: "run [/]summon entity_id [pos] [nbt]"
+    // Matches run summon metadata as "run [/]summon <entityID> [pos] [nbt]"
     private static final Pattern RUN_SUMMON_PATTERN = Pattern.compile("run\\s+/?summon\\s+(\\S+)", Pattern.CASE_INSENSITIVE);
 
-    // Matches Pillar function calls like $rand_s(arg1;arg2)$ or $rand_i(1;10)$
+    // Matches Pillar functions such as $rand_s(value;weight)$ and $rand_i(1;10)$
     private static final Pattern FUNCTION_PATTERN = Pattern.compile("\\$(\\w+)\\(([^)]*)\\)\\$");
 
     private static File pillarStructureDir = null;
@@ -77,7 +77,7 @@ public class PillarNBTParser {
 
         @Override
         public boolean shouldStoreLayerBlock(@Nullable IBlockState state, @Nullable Block block) {
-            // Keep Pillar's flowing fluid states in the preview while still hiding structure markers.
+            // Keep flowing fluids in the preview and hide structure blocks
             return !StructureNBTParser.isInvisibleBlock(block) && block != Blocks.STRUCTURE_BLOCK;
         }
 
@@ -90,7 +90,7 @@ public class PillarNBTParser {
                 parseDataBlockMetadata(nbtData.getString("metadata"), builder);
             }
 
-            // Direct containers are processed in parallel, so exclude them to avoid double-counting
+            // Read fixed inventories separately so their contents are counted once
             if (!hasSerializedInventoryItems(nbtData)) extractContainerItems(state, nbtData, directContainerItems);
         }
 
@@ -111,25 +111,25 @@ public class PillarNBTParser {
     }
 
     /**
-     * Parse a Pillar structure NBT file.
+     * Parses a Pillar structure NBT file.
      *
      * @param structureName The structure name (e.g., "dungeon/room1")
-     * @return Parsed structure data or null if parsing fails
+     * @return Parsed structure data, or null when the file is unavailable or invalid
      */
     @Nullable
     public static StructureNBTParser.ParsedStructure parseStructure(String structureName) {
         File pillarDir = getPillarStructureDir();
         if (pillarDir == null) {
-            SimpleStructureScanner.LOGGER.debug("Pillar structure directory not found");
+            SimpleStructureScanner.LOGGER.debug("Could not locate the Pillar structure directory");
             return null;
         }
 
-        // Convert structure name to file path (structure names use "/" for subdirectories)
+        // Structure names retain subdirectories below pillar/structures
         String filePath = structureName + ".nbt";
         File nbtFile = new File(pillarDir, filePath);
 
         if (!nbtFile.exists()) {
-            SimpleStructureScanner.LOGGER.debug("Pillar structure file not found: {}", nbtFile.getAbsolutePath());
+            SimpleStructureScanner.LOGGER.debug("Could not find Pillar structure file {}", nbtFile.getAbsolutePath());
             return null;
         }
 
@@ -137,7 +137,7 @@ public class PillarNBTParser {
     }
 
     /**
-     * Get the Pillar structures directory via reflection.
+     * Reads Pillar's structure directory through reflection.
      */
     @Nullable
     private static File getPillarStructureDir() {
@@ -149,36 +149,32 @@ public class PillarNBTParser {
 
             return pillarStructureDir;
         } catch (Exception e) {
-            SimpleStructureScanner.LOGGER.debug("Failed to get Pillar structure directory", e);
+            SimpleStructureScanner.LOGGER.debug("Could not read the Pillar structure directory", e);
             return null;
         }
     }
 
 
     /**
-     * Parse data block metadata to extract loot tables and spawner entities.
+     * Parses data-block metadata for loot tables and entities.
      * <p>
-     * Pillar data block metadata strings can contain function calls like
-     * {@code $rand_s(value1;weight1;value2;weight2)$} that randomly select
-     * a value at generation time. We extract <em>all</em> possible values
-     * from these functions so that every potential loot table or entity is
-     * discovered.
+     * Each {@code $rand_s(value;weight;...)$} branch is expanded before parsing
+     * so every possible loot table and entity is included.
      *
-     * @param metadata       The data block metadata string
+     * @param metadata The data block metadata string
      */
     private static void parseDataBlockMetadata(String metadata, StructureNBTParser.ParsedStructureBuilder builder) {
         if (metadata == null || metadata.isEmpty()) return;
 
-        // Collect all possible expanded variants of the metadata string.
-        // Pillar's $rand_s(a;w1;b;w2)$ picks one at random; we want all of them.
+        // Expand every random string branch before matching the command
         List<String> variants = expandFunctions(metadata);
 
         for (String variant : variants) {
-            // Strip Pillar comments (/** marks "commented out" via $run_if()$)
+            // $run_if()$ can disable the remaining command with /**
             variant = variant.replaceAll("/\\*\\*.*", "").trim();
             if (variant.isEmpty()) continue;
 
-            // Check for chest command
+            // Read chest metadata
             Matcher chestMatcher = CHEST_PATTERN.matcher(variant);
             if (chestMatcher.find()) {
                 String lootTable = chestMatcher.group(2).trim();
@@ -187,7 +183,7 @@ public class PillarNBTParser {
                 continue;
             }
 
-            // Check for spawner command
+            // Read spawner metadata
             Matcher spawnerMatcher = SPAWNER_PATTERN.matcher(variant);
             if (spawnerMatcher.find()) {
                 String entityId = spawnerMatcher.group(1).trim();
@@ -196,7 +192,7 @@ public class PillarNBTParser {
                 continue;
             }
 
-            // Check for "run summon" or "run /summon" command (used to spawn entities at structure generation)
+            // Read run summon metadata
             Matcher runSummonMatcher = RUN_SUMMON_PATTERN.matcher(variant);
             if (runSummonMatcher.find()) {
                 String entityId = runSummonMatcher.group(1).trim();
@@ -205,7 +201,7 @@ public class PillarNBTParser {
                 continue;
             }
 
-            // Check for load_loot_table command
+            // Read load_loot_table metadata
             Matcher loadLootMatcher = LOAD_LOOT_TABLE_PATTERN.matcher(variant);
             if (loadLootMatcher.find()) {
                 String lootTable = loadLootMatcher.group(1).trim();
@@ -215,25 +211,21 @@ public class PillarNBTParser {
     }
 
     /**
-     * Expand Pillar function calls in a metadata string into all possible
-     * concrete variants. Each {@code $rand_s(...)$} call produces one variant
-     * per possible string value; {@code $rand_i(...)$} and {@code $run_if(...)$}
-     * are replaced with a representative value so the rest of the string can
-     * still be parsed.
+     * Expands {@code $rand_s(...)$} calls into metadata variants.
+     * {@code $rand_i(...)} and {@code $run_if(...)} are replaced with values
+     * that leave the command parseable.
      * <p>
      * For example, {@code "chest north $rand_s(a;1;b;1)$"} expands to
      * {@code ["chest north a", "chest north b"]}.
      *
-     * @return A list of all concrete metadata string variants. If the input
-     *         contains no functions, returns a single-element list.
+     * @return All expanded variants, or a list containing the input when it has no functions
      */
     private static List<String> expandFunctions(String metadata) {
-        // Start with the original string as the single seed variant
+        // Start with the metadata as the initial variant to be expanded
         List<String> current = new ArrayList<>();
         current.add(metadata);
 
-        // Repeatedly find and expand the first function in each variant
-        // until no more functions remain
+        // Expand the functions in each variant until none remain
         boolean changed = true;
         while (changed) {
             changed = false;
@@ -253,15 +245,14 @@ public class PillarNBTParser {
                 String prefix = variant.substring(0, m.start());
                 String suffix = variant.substring(m.end());
 
-                // Semicolons separate parameters; backslash-escaped semicolons are literal
+                // A backslash escapes semicolons inside a parameter
                 String[] params = paramsStr.split("\\s*(?<!\\\\);\\s*");
 
                 if ("rand_s".equals(funcName)) {
-                    // rand_s takes pairs: (value, weight, value, weight, ...)
-                    // Extract all even-indexed params (the string values)
+                    // rand_s arguments alternate between strings and weights
                     for (int i = 0; i < params.length; i += 2) next.add(prefix + params[i] + suffix);
                 } else if ("rand_i".equals(funcName) && params.length == 2) {
-                    // rand_i(min, max) — use the midpoint as a representative value
+                    // Use the midpoint as a the average value of the range
                     try {
                         int lower = Integer.parseInt(params[0].trim());
                         int upper = Integer.parseInt(params[1].trim());
@@ -270,11 +261,10 @@ public class PillarNBTParser {
                         next.add(prefix + "0" + suffix);
                     }
                 } else if ("run_if".equals(funcName)) {
-                    // run_if(chance) — conditionally inserts "/**" to comment out the rest.
-                    // We want to see the content regardless, so replace with empty string.
+                    // Drop run_if so the command remains visible to the parser
                     next.add(prefix + suffix);
                 } else {
-                    // Unknown function — remove it and hope for the best
+                    // Drop functions that cannot be expanded
                     next.add(prefix + suffix);
                 }
             }
@@ -286,8 +276,9 @@ public class PillarNBTParser {
     }
 
     /**
-     * Extract items from a container by instantiating its tile entity and reading via IInventory/IItemHandler.
-     * This allows any mod's container to work regardless of its internal NBT format.
+     * Reads fixed items by loading the container tile entity from NBT,
+     * so we can use the generic item extraction logic.
+     * Supports {@link IItemHandler} and {@link IInventory}.
      */
     private static void extractContainerItems(@Nullable IBlockState state, NBTTagCompound nbtData, List<ItemStack> outItems) {
         if (state == null) return;
@@ -299,7 +290,7 @@ public class PillarNBTParser {
         if (tileEntity == null) return;
 
         try {
-            // Try IItemHandler capability first (Forge's preferred inventory API)
+            // Read Forge item-handler slots when the tile entity exposes them
             IItemHandler itemHandler = tileEntity.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, EnumFacing.UP);
             if (itemHandler == null) {
                 itemHandler = tileEntity.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, null);
@@ -314,10 +305,10 @@ public class PillarNBTParser {
                 return;
             }
         } catch (Exception e) {
-            // Some capabilities may fail without a proper world context; fall back to IInventory
+            // Use the vanilla inventory when the capability needs a world instance
         }
 
-        // Fall back to IInventory (vanilla interface)
+        // Read vanilla inventory slots (IInventory)
         if (tileEntity instanceof IInventory) {
             IInventory inventory = (IInventory) tileEntity;
 
@@ -337,13 +328,13 @@ public class PillarNBTParser {
     @Nullable
     private static TileEntity createContainerTileEntity(IBlockState state, NBTTagCompound nbtData) {
         try {
-            // Prefer the registry-backed factory so dedicated servers never need a client world.
+            // Prefer a saved tile entity (NBT) before asking the block for an instance
             if (nbtData.hasKey("id", Constants.NBT.TAG_STRING)) {
                 TileEntity tileEntity = TileEntity.create(null, nbtData);
                 if (tileEntity != null) return tileEntity;
             }
         } catch (Exception e) {
-            // Some tile entities may fail to load directly from NBT; fall back to the block factory.
+            // Fall back to the block factory when the saved tile entity cannot load
         }
 
         try {
@@ -353,23 +344,21 @@ public class PillarNBTParser {
             tileEntity.readFromNBT(nbtData);
             return tileEntity;
         } catch (Exception e) {
-            // Some tile entities still require a real world; skip direct item extraction in that case.
+            // Skip inventories that require a world while reading NBT
             return null;
         }
     }
 
     /**
-     * Merge item stacks by item type, combining counts for identical items.
-     * Returns a deduplicated list sorted by total count descending.
+     * Combines equivalent item stacks and sorts them by total count.
      */
     private static List<ItemStack> mergeItemStacks(List<ItemStack> items) {
-        // Use a map keyed by item identity (registry name + damage + NBT tag hash)
-        Map<String, ItemStack> merged = new HashMap<>();
+        Map<ItemStackKey, ItemStack> merged = new HashMap<>();
 
         for (ItemStack stack : items) {
             if (stack.isEmpty()) continue;
 
-            String key = getItemKey(stack);
+            ItemStackKey key = ItemStackKey.of(stack);
             ItemStack existing = merged.get(key);
 
             if (existing != null) {
@@ -384,20 +373,5 @@ public class PillarNBTParser {
         result.sort((a, b) -> Integer.compare(b.getCount(), a.getCount()));
 
         return result;
-    }
-
-    /**
-     * Create a unique key for an item stack based on item, damage, and NBT.
-     */
-    private static String getItemKey(ItemStack stack) {
-        StringBuilder key = new StringBuilder();
-        key.append(stack.getItem().getRegistryName());
-        key.append('@').append(stack.getMetadata());
-
-        if (stack.hasTagCompound()) {
-            key.append('#').append(stack.getTagCompound().hashCode());
-        }
-
-        return key.toString();
     }
 }

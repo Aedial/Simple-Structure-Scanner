@@ -1,6 +1,4 @@
-package com.simplestructurescanner.structure.pillar;
-
-import java.lang.reflect.Field;
+package com.simplestructurescanner.structure.validation;
 
 import javax.annotation.Nonnull;
 
@@ -20,22 +18,18 @@ import net.minecraft.world.storage.WorldInfo;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexStructureSearcher;
+import com.simplestructurescanner.structure.util.ReflectionHelper;
 
 
 /**
- * A fake world used for validating structure placement with actual terrain data.
+ * In-memory world used to test terrain-dependent structure placement.
  * <p>
- * Extends {@link World} (not {@code WorldServer}) to avoid the heavy
- * WorldServer constructor side effects (PlayerChunkMap, Teleporter,
- * DimensionManager registration, Forge lifecycle events) that corrupted
- * the running server's state.
+ * Extends {@link World} so construction does not corrupts the running state
+ * with objects such as PlayerChunkMap, Teleporter, DimensionManager registration,
+ * or Forge lifecycle events.
  * <p>
- * Uses a {@link ValidationChunkProvider} for in-memory chunk generation.
- * Populate (decoration) is supported via {@link ValidationChunkProvider#populateChunk},
- * which sets {@link com.simplestructurescanner.rcv.RCVPredictionContext} to
- * activate {@link com.simplestructurescanner.mixin.rcv.MixinMapGenStructureHook},
- * which cancels RC's structure hook during prediction to prevent
- * ClassCastExceptions from WorldServer casts.
+ * Use {@link ValidationChunkProvider} to generate and decorate chunks without
+ * saving them.
  */
 public class StructureValidationWorld extends World {
 
@@ -43,40 +37,30 @@ public class StructureValidationWorld extends World {
     private final ValidationChunkProvider validationChunkProvider;
 
     /**
-     * Creates a new structure validation world.
+     * Creates a validation world from a source world's generator and settings.
      *
-     * @param saveHandler    A no-op save handler
-     * @param worldInfo      The WorldInfo from the real world (cloned)
-     * @param realProvider   The real world's WorldProvider (shared — saved/restored by caller)
-     * @param chunkGenerator The chunk generator from the real world
+     * @param saveHandler A save handler that discards writes
+     * @param worldInfo Cloned settings from the source world
+     * @param realProvider The source world's provider, restored by the caller after validation
+     * @param chunkGenerator The source world's chunk generator
      */
-    public StructureValidationWorld(
-        ISaveHandler saveHandler,
-        WorldInfo worldInfo,
-        WorldProvider realProvider,
-        IChunkGenerator chunkGenerator
-    ) {
+    public StructureValidationWorld(ISaveHandler saveHandler, WorldInfo worldInfo, WorldProvider realProvider,
+            IChunkGenerator chunkGenerator) {
+
         super(saveHandler, worldInfo, realProvider, new Profiler(), false);
 
         this.chunkGenerator = chunkGenerator;
         validationChunkProvider = new ValidationChunkProvider(this, chunkGenerator);
 
         try {
-            Field cpWorld = World.class.getDeclaredField("field_73020_y");
-            cpWorld.setAccessible(true);
-            cpWorld.set(this, validationChunkProvider);
+            ReflectionHelper.getAccessibleDeclaredField(World.class, "field_73020_y", "chunkProvider")
+                .set(this, validationChunkProvider);
         } catch (Exception e) {
-            try {
-                Field cpWorld = World.class.getDeclaredField("chunkProvider");
-                cpWorld.setAccessible(true);
-                cpWorld.set(this, validationChunkProvider);
-            } catch (Exception e2) {
-                SimpleStructureScanner.LOGGER.error("Failed to set World.chunkProvider", e2);
-            }
+            SimpleStructureScanner.LOGGER.error("Could not install the validation chunk provider", e);
         }
 
-        SimpleStructureScanner.LOGGER.debug(
-            "StructureValidationWorld created as World for dimension {}", realProvider.getDimension());
+        SimpleStructureScanner.LOGGER.debug("Created validation world for dimension {}",
+            realProvider.getDimension());
     }
 
     @Override
@@ -101,9 +85,7 @@ public class StructureValidationWorld extends World {
         return super.getBiomeForCoordsBody(pos);
     }
 
-    //================================================================================
-    // World Methods for Structure Placement
-    //================================================================================
+    // Terrain height queries
 
     BlockPos getTopBlock(@Nonnull BlockPos xzPos, @Nonnull Chunk chunk) {
         return new BlockPos(xzPos.getX(), chunk.getTopFilledSegment() + 16, xzPos.getZ());
@@ -111,17 +93,16 @@ public class StructureValidationWorld extends World {
 
     /**
      * Gets the highest solid or liquid block at the given XZ position.
-     * Used by Pillar's SURFACE generator type.
      *
      * @param xzPos The XZ position (Y coordinate is ignored)
-     * @return The position of the highest solid or liquid block
+     * @return The highest non-air block position
      */
     @Nonnull
     @Override
     public BlockPos getTopSolidOrLiquidBlock(@Nonnull BlockPos xzPos) {
         Chunk chunk = getChunk(xzPos);
 
-        // Start from the top and work down
+        // Search downward from the highest generated section
         for (BlockPos pos = getTopBlock(xzPos, chunk); pos.getY() >= 0; pos = pos.down()) {
             IBlockState state = chunk.getBlockState(pos);
             if (!state.getBlock().isAir(state, this, pos)) return pos;
@@ -131,12 +112,10 @@ public class StructureValidationWorld extends World {
     }
 
     /**
-     * Gets the highest solid block at the given XZ position.
-     * Used by Pillar's UNDERWATER generator type.
-     * This is a custom Pillar method that finds the ocean floor.
+     * Finds the position above the highest opaque block.
      *
      * @param xzPos The XZ position (Y coordinate is ignored)
-     * @return The position of the highest solid block (excluding liquids)
+     * @return The position above the highest solid block
      */
     @Nonnull
     public BlockPos getTopSolidBlock(@Nonnull BlockPos xzPos) {
@@ -159,12 +138,10 @@ public class StructureValidationWorld extends World {
     }
 
     /**
-     * Gets the highest liquid block at the given XZ position.
-     * Used by Pillar's ABOVE_WATER generator type.
-     * This is a custom Pillar method that finds the water surface.
+     * Finds the position above the highest liquid block.
      *
      * @param xzPos The XZ position (Y coordinate is ignored)
-     * @return The position of the highest liquid block
+     * @return The position above the highest liquid block
      */
     @Nonnull
     public BlockPos getTopLiquidBlock(@Nonnull BlockPos xzPos) {
@@ -182,64 +159,56 @@ public class StructureValidationWorld extends World {
         return pos;
     }
 
-    //================================================================================
-    // No-op Overrides to Prevent Side Effects
-    //================================================================================
+    // Overrides that suppress light, block, and render updates
 
     @Override
     public boolean checkLightFor(@Nonnull EnumSkyBlock lightType, @Nonnull BlockPos pos) {
-        // No-op - validation world doesn't need light updates
+        // Validation does not update light
         return true;
     }
 
     @Override
     public int getLightFromNeighborsFor(@Nonnull EnumSkyBlock type, @Nonnull BlockPos pos) {
-        // Return full brightness for simplicity
+        // Always return full block light
         return 15;
     }
 
     @Override
     public int getCombinedLight(@Nonnull BlockPos pos, int lightValue) {
-        // Return full brightness
+        // Always return full block and sky light
         return 15 << 20 | 15 << 4;
     }
 
     @Override
     public void notifyBlockUpdate(@Nonnull BlockPos pos, @Nonnull IBlockState oldState, @Nonnull IBlockState newState, int flags) {
-        // No-op - don't notify blocks in validation world
+        // Validation does not notify blocks
     }
 
     @Override
     public void markBlockRangeForRenderUpdate(@Nonnull BlockPos rangeMin, @Nonnull BlockPos rangeMax) {
-        // No-op - validation world isn't rendered
+        // Validation worlds are never rendered
     }
 
     @Override
     public void markBlockRangeForRenderUpdate(int x1, int y1, int z1, int x2, int y2, int z2) {
-        // No-op - validation world isn't rendered
+        // Validation worlds are never rendered
     }
 
-    //================================================================================
-    // Utility Methods
-    //================================================================================
+    // Chunk generation helpers
 
     /**
-     * Clears the chunk cache to free memory.
-     * Call this when done validating structures.
+     * Clears generated and decorated chunks after validation.
      */
     public void clearChunkCache() {
         if (validationChunkProvider != null) validationChunkProvider.clearCache();
     }
 
-    /**
-     * Returns the ValidationChunkProvider instance.
-     */
     public ValidationChunkProvider getValidationChunkProvider() {
         return validationChunkProvider;
     }
 
     /**
-     * Populates all chunks in the given block-coordinate range.
+     * Decorates every chunk within the provided range.
      *
      * @return the number of chunks successfully populated
      */
@@ -261,9 +230,7 @@ public class StructureValidationWorld extends World {
     }
 
     /**
-     * Generates (without decorating) all chunks in the given block-coordinate
-     * range — used for raw-terrain placement checks before paying full
-     * population cost.
+     * Generates every chunk within the provided range without decoration.
      */
     public void provideChunkRange(int minX, int minZ, int maxX, int maxZ) {
         if (validationChunkProvider == null) return;

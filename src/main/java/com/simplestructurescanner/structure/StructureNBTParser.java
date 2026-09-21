@@ -63,6 +63,7 @@ import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntryKind;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
+import com.simplestructurescanner.util.ItemStackKey;
 
 
 /**
@@ -174,6 +175,7 @@ public class StructureNBTParser {
         private final Map<EntityKey, Integer> entityCounts = new LinkedHashMap<>();
         private final Set<ResourceLocation> lootTableIds = new LinkedHashSet<>();
         private final List<LootEntry> extraLootEntries = new ArrayList<>();
+        private final Set<LootEntryKey> extraLootEntryKeys = new LinkedHashSet<>();
         private final boolean storeLayers;
 
         public ParsedStructureBuilder(int sizeX, int sizeY, int sizeZ) {
@@ -258,19 +260,9 @@ public class StructureNBTParser {
         @Override
         public void addLootEntry(@Nullable LootEntry lootEntry) {
             if (lootEntry == null) return;
-            if (containsEquivalentLootEntry(lootEntry)) return;
+            if (!extraLootEntryKeys.add(new LootEntryKey(lootEntry))) return;
 
             extraLootEntries.add(lootEntry);
-        }
-
-        private boolean containsEquivalentLootEntry(LootEntry candidate) {
-            String candidateKey = createLootEntryKey(candidate);
-
-            for (LootEntry existingEntry : extraLootEntries) {
-                if (createLootEntryKey(existingEntry).equals(candidateKey)) return true;
-            }
-
-            return false;
         }
 
         public ParsedStructure build() {
@@ -296,7 +288,11 @@ public class StructureNBTParser {
             // Entity counts are merged by id + spawner flag so repeated references become one UI entry.
             List<EntityEntry> entities = new ArrayList<>();
             for (Map.Entry<EntityKey, Integer> entry : entityCounts.entrySet()) {
-                entities.add(new EntityEntry(entry.getKey().entityId, entry.getValue(), entry.getKey().spawner));
+                entities.add(new EntityEntry(
+                    entry.getKey().getEntityId(),
+                    entry.getValue(),
+                    entry.getKey().isSpawner()
+                ));
             }
 
             // Loot tables discovered from NBT tags become regular loot entries, then fixed inventories and extension-specific extras are appended.
@@ -326,31 +322,6 @@ public class StructureNBTParser {
             if (this.blockEntityData != null || blockEntityData == null || blockEntityData.isEmpty()) return;
 
             this.blockEntityData = blockEntityData.copy();
-        }
-    }
-
-    private static final class EntityKey {
-        private final ResourceLocation entityId;
-        private final boolean spawner;
-
-        private EntityKey(ResourceLocation entityId, boolean spawner) {
-            this.entityId = entityId;
-            this.spawner = spawner;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) return true;
-            if (obj == null || getClass() != obj.getClass()) return false;
-
-            EntityKey that = (EntityKey) obj;
-            return spawner == that.spawner && entityId.equals(that.entityId);
-        }
-
-        @Override
-        public int hashCode() {
-            int result = entityId.hashCode();
-            return 31 * result + Boolean.hashCode(spawner);
         }
     }
 
@@ -679,12 +650,12 @@ public class StructureNBTParser {
     }
 
     private static List<ItemStack> mergeItemStacks(List<ItemStack> items) {
-        Map<String, ItemStack> mergedItems = new LinkedHashMap<>();
+        Map<ItemStackKey, ItemStack> mergedItems = new LinkedHashMap<>();
 
         for (ItemStack stack : items) {
             if (stack.isEmpty()) continue;
 
-            String itemKey = createItemStackKey(stack);
+            ItemStackKey itemKey = ItemStackKey.of(stack);
             ItemStack existingStack = mergedItems.get(itemKey);
 
             if (existingStack != null) {
@@ -700,39 +671,10 @@ public class StructureNBTParser {
             int countCompare = Integer.compare(second.getCount(), first.getCount());
             if (countCompare != 0) return countCompare;
 
-            return createItemStackKey(first).compareTo(createItemStackKey(second));
+            return first.getItem().getRegistryName().compareTo(second.getItem().getRegistryName());
         });
 
         return result;
-    }
-
-    private static String createLootEntryKey(LootEntry lootEntry) {
-        StringBuilder key = new StringBuilder();
-        key.append(lootEntry.lootTableId != null ? lootEntry.lootTableId.toString() : "<direct>");
-        key.append('|').append(lootEntry.kind.name());
-        key.append('|').append(lootEntry.containerType.isTranslatable()).append(':').append(lootEntry.containerType.getValue());
-
-        if (lootEntry.sourceName != null) {
-            key.append('|').append(lootEntry.sourceName.isTranslatable()).append(':').append(lootEntry.sourceName.getValue());
-        }
-
-        if (lootEntry.sourceStack != null) key.append('|').append(createItemStackKey(lootEntry.sourceStack));
-
-        if (lootEntry.possibleDrops == null) return key.toString();
-
-        for (ItemStack stack : lootEntry.possibleDrops) {
-            key.append('|').append(createItemStackKey(stack)).append('*').append(stack.getCount());
-        }
-
-        return key.toString();
-    }
-
-    private static String createItemStackKey(ItemStack stack) {
-        if (stack.isEmpty()) return "empty";
-
-        NBTTagCompound normalizedStack = stack.copy().writeToNBT(new NBTTagCompound());
-        normalizedStack.removeTag("Count");
-        return normalizedStack.toString();
     }
 
     public static boolean isInvisibleBlock(@Nullable Block block) {
@@ -776,20 +718,20 @@ public class StructureNBTParser {
     /**
      * Build the UI grouping key for a block using the already-resolved display fluid or item.
      */
-    public static String createDisplayedBlockKey(@Nullable IBlockState state, @Nullable FluidStack displayFluid,
+    public static BlockDisplayKey createDisplayedBlockKey(@Nullable IBlockState state, @Nullable FluidStack displayFluid,
             @Nullable ItemStack displayStack) {
         Block block = state != null ? state.getBlock() : null;
 
         if (displayFluid != null && displayFluid.getFluid() != null) {
-            return FLUID_BLOCK_KEY_PREFIX + displayFluid.getFluid().getName();
+            return BlockDisplayKey.forFluid(displayFluid.getFluid());
         }
 
         if (displayStack != null && !displayStack.isEmpty()) {
-            return ITEM_BLOCK_KEY_PREFIX + createItemStackKey(displayStack);
+            BlockDisplayKey itemKey = BlockDisplayKey.forItem(displayStack);
+            if (itemKey != null) return itemKey;
         }
 
-        String blockId = block != null && block.getRegistryName() != null ? block.getRegistryName().toString() : "minecraft:air";
-        return BLOCK_BLOCK_KEY_PREFIX + blockId;
+        return BlockDisplayKey.forBlock(block);
     }
 
     @Nullable

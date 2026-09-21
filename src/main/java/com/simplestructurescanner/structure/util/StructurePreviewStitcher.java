@@ -66,8 +66,8 @@ public class StructurePreviewStitcher {
                     IBlockState state = layer.getBlockState(x, z);
                     if (state == null) continue;
 
-                    BlockPos pos = transformParsedPosition(parsed,
-                        new BlockPos(layer.xOffset + x, layer.y, layer.zOffset + z), origin, mirror, rotation);
+                    BlockPos offsetPos = new BlockPos(layer.xOffset + x, layer.y, layer.zOffset + z);
+                    BlockPos pos = transformParsedPosition(parsed, offsetPos, origin, mirror, rotation);
                     setBlock(pos, state, layer.getBlockEntityData(x, z));
                 }
             }

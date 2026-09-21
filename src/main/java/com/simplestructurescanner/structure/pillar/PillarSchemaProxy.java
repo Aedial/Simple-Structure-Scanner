@@ -108,10 +108,7 @@ public final class PillarSchemaProxy {
 
     @Override
     public String toString() {
-        return "PillarSchemaProxy{" +
-                "structureName='" + structureName + '\'' +
-                ", generatorType=" + generatorType +
-                ", rarity=" + rarity +
-                '}';
+        return "PillarSchemaProxy{" + "structureName='" + structureName + "', " +
+            "generatorType=" + generatorType + ", " + "rarity=" + rarity + '}';
     }
 }

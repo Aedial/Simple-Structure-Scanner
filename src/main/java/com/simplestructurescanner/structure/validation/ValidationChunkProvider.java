@@ -1,4 +1,4 @@
-package com.simplestructurescanner.structure.pillar;
+package com.simplestructurescanner.structure.validation;
 
 import java.lang.reflect.Constructor;
 import java.util.HashSet;
@@ -21,20 +21,17 @@ import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.rcv.RCVPredictionContext;
 
 /**
- * A chunk provider for the structure validation world that generates real terrain.
+ * Generates and caches chunks for {@link StructureValidationWorld}.
  * <p>
- * Implements {@link IChunkProvider} (not extends {@code ChunkProviderServer})
- * to avoid the ChunkProviderServer constructor which requires a WorldServer.
+ * Implements {@link IChunkProvider} because {@code ChunkProviderServer}
+ * requires a {@code WorldServer}.
  * <p>
- * Uses a <b>separate chunk generator instance</b> ({@link #validationGenerator})
- * whose {@code world} field is permanently set to the validation world via its
- * constructor. This avoids the need to swap the real generator's {@code world}
- * field (which caused JIT inlining issues and post-scan crashes on JDK 25).
+ * Attempts to create a second chunk generator from the source generator's
+ * {@code (World, long, boolean, String)} constructor. The constructor binds it
+ * to the validation world.
  * <p>
- * Populate (decoration) runs on the validation generator. The
- * {@link RCVPredictionContext} flag activates {@link MixinMapGenStructureHook}
- * which cancels RC's {@code MapGenStructureHook.generate()} during prediction,
- * preventing ClassCastException from its WorldServer cast.
+ * During prediction, {@link RCVPredictionContext} causes the Recurrent Complex
+ * hook to skip its {@code WorldServer}-only structure generation path.
  */
 public class ValidationChunkProvider implements IChunkProvider {
 
@@ -47,10 +44,10 @@ public class ValidationChunkProvider implements IChunkProvider {
     private IChunkGenerator validationGenerator;
 
     /**
-     * Creates a new validation chunk provider.
+     * Creates a chunk provider for a validation world.
      *
-     * @param world          The validation World
-     * @param chunkGenerator The real chunk generator (used as a template to create the validation generator)
+     * @param world The validation world
+     * @param chunkGenerator The source chunk generator used to create the validation generator
      */
     public ValidationChunkProvider(World world, IChunkGenerator chunkGenerator) {
         this.world = world;
@@ -64,13 +61,10 @@ public class ValidationChunkProvider implements IChunkProvider {
     }
 
     /**
-     * Creates a separate chunk generator instance for the validation world.
+     * Creates a chunk generator bound to the validation world.
      * <p>
-     * The new generator's {@code world} field is permanently set to the
-     * validation world via its constructor. This avoids modifying the real
-     * generator's (potentially {@code final}) {@code world} field.
-     * <p>
-     * The constructor signature must be {@code (World, long, boolean, String)}.
+     * The source generator must expose a {@code (World, long, boolean, String)}
+     * constructor.
      *
      * @return the validation generator, or null if creation failed
      */
@@ -89,11 +83,11 @@ public class ValidationChunkProvider implements IChunkProvider {
             validationGenerator = (IChunkGenerator) ctor.newInstance(
                 world, seed, mapFeatures, genOptions);
             SimpleStructureScanner.LOGGER.info(
-                "Created validation generator: {} (seed={}, mapFeatures={})",
+                "Created validation chunk generator {} for seed {} (map features: {})",
                 validationGenerator.getClass().getSimpleName(), seed, mapFeatures);
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.warn(
-                "Failed to create validation generator from {}: {} — populate unavailable",
+                "Could not create validation chunk generator from {}; decoration is unavailable: {}",
                 realGenerator.getClass().getName(), e.getMessage());
         }
 
@@ -164,21 +158,21 @@ public class ValidationChunkProvider implements IChunkProvider {
     }
 
     /**
-     * Gets the number of cached chunks.
+     * Returns the number of generated chunks in the cache.
      */
     public int getCachedChunkCount() {
         return loadedChunks.size();
     }
 
     /**
-     * Populates a chunk using the validation generator.
+     * Decorates a generated chunk once with the validation generator.
      * <p>
-     * The validation generator's {@code world} field is permanently set to the
-     * validation world, so no field swap is needed. The
-     * {@link RCVPredictionContext} flag activates {@link MixinMapGenStructureHook}
-     * to cancel RC's structure hook during prediction.
+     * {@link RCVPredictionContext} skips Recurrent Complex's structure hook,
+     * which requires a {@code WorldServer}.
      *
-     * @return true if populate succeeded, false if it failed or was already done
+     * FIXME: Move the RCV part to RC, this level of coupling is disgusting.
+     *
+     * @return true when decoration succeeds or the chunk was already decorated
      */
     public boolean populateChunk(int x, int z) {
         long key = getChunkKey(x, z);
@@ -188,17 +182,14 @@ public class ValidationChunkProvider implements IChunkProvider {
         if (vGen == null) return false;
 
         provideChunk(x, z);
-
         for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                provideChunk(x + dx, z + dz);
-            }
+            for (int dz = -1; dz <= 1; dz++) provideChunk(x + dx, z + dz);
         }
 
         RCVPredictionContext.setPredicting(true);
         try {
             SimpleStructureScanner.LOGGER.debug(
-                "Populating chunk ({},{}) on validation world (generator: {})",
+                "Decorating validation chunk ({},{}) with {}",
                 x, z, vGen.getClass().getSimpleName());
 
             Chunk chunk = loadedChunks.get(key);
@@ -209,7 +200,7 @@ public class ValidationChunkProvider implements IChunkProvider {
 
             int afterTopY = chunk != null ? chunk.getTopFilledSegment() + 16 : -1;
             SimpleStructureScanner.LOGGER.debug(
-                "Populate succeeded for chunk ({},{}) — topY before={}, after={}",
+                "Decorated validation chunk ({},{}): top Y {} -> {}",
                 x, z, beforeTopY, afterTopY);
             return true;
         } catch (Throwable t) {
@@ -217,7 +208,7 @@ public class ValidationChunkProvider implements IChunkProvider {
             String topFrame = stack.length > 0 ? stack[0].toString() : "?";
             String callerFrame = stack.length > 2 ? stack[2].toString() : "?";
             SimpleStructureScanner.LOGGER.warn(
-                "Populate failed for chunk ({},{}) on validation world: {}: {} | at: {} | caller: {}",
+                "Could not decorate validation chunk ({},{}): {}: {} [at {}; caller {}]",
                 x, z, t.getClass().getSimpleName(), t.getMessage(), topFrame, callerFrame);
             return false;
         } finally {
@@ -227,7 +218,7 @@ public class ValidationChunkProvider implements IChunkProvider {
     }
 
     /**
-     * Clears the populated-chunks tracking along with the chunk cache.
+     * Clears generated and decorated chunk caches.
      */
     public void clearCache() {
         loadedChunks.clear();

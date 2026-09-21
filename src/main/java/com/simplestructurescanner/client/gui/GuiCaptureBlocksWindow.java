@@ -170,7 +170,7 @@ public class GuiCaptureBlocksWindow {
                 tooltipLines.add(entry.displayFluid.getLocalizedName());
                 tooltipLines.add(I18n.format("gui.structurescanner.blocks.fluidAmount", (long) entry.displayFluid.amount * entry.count));
             } else {
-                tooltipLines.add(blockSummaries.get(hoveredIndex).getKey());
+                tooltipLines.add(blockSummaries.get(hoveredIndex).getSerializedKey());
             }
 
             if (exclusions.isBlockExcluded(blockSummaries.get(hoveredIndex).getKey())) {

@@ -45,6 +45,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.common.util.Constants;
 
+import com.simplestructurescanner.structure.BlockDisplayKey;
+
 
 /**
  * Server-side capture builder for preview summaries and final structure NBT files.
@@ -88,9 +90,7 @@ public final class StructureCaptureService {
         CapturedStructure capturedStructure = buildCapturedStructure(frozenCapture, exclusions);
         if (capturedStructure == null) return null;
 
-        File captureDirectory = getCaptureDirectory(world);
-
-        File captureFile = createCaptureFile(captureDirectory);
+        File captureFile = createCaptureFile(getCaptureDirectory(world));
         try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
             CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
         }
@@ -109,9 +109,7 @@ public final class StructureCaptureService {
         CapturedStructure capturedStructure = buildCapturedStructure(world, firstCorner, secondCorner, exclusions);
         if (capturedStructure == null) return null;
 
-        File captureDirectory = getCaptureDirectory(world);
-
-        File captureFile = createCaptureFile(captureDirectory);
+        File captureFile = createCaptureFile(getCaptureDirectory(world));
         try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
             CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
         }
@@ -150,8 +148,8 @@ public final class StructureCaptureService {
     @Nullable
     private static StructureCaptureSummary buildSummary(FrozenCapture frozenCapture) {
         ContentBounds contentBounds = new ContentBounds();
-        Map<String, BlockAccumulator> blocks = new LinkedHashMap<>();
-        Map<String, ContainerAccumulator> containers = new LinkedHashMap<>();
+        Map<BlockDisplayKey, BlockAccumulator> blocks = new LinkedHashMap<>();
+        Map<CaptureContainerKey, ContainerAccumulator> containers = new LinkedHashMap<>();
 
         for (FrozenBlock frozenBlock : frozenCapture.blocks.values()) {
             BlockPos blockPos = frozenBlock.worldPos;
@@ -160,7 +158,7 @@ public final class StructureCaptureService {
             if (CaptureBlockHelper.contributesToBounds(state)) contentBounds.include(blockPos);
 
             if (CaptureBlockHelper.shouldShowInSummary(state)) {
-                String blockKey = CaptureBlockHelper.createKey(state);
+                BlockDisplayKey blockKey = CaptureBlockHelper.createKey(state);
                 BlockAccumulator accumulator = blocks.computeIfAbsent(blockKey, k -> new BlockAccumulator(k, state));
 
                 accumulator.count++;
@@ -169,14 +167,12 @@ public final class StructureCaptureService {
             if (frozenBlock.tileData == null) continue;
             if (frozenBlock.lootTableId == null && frozenBlock.itemCount <= 0) continue;
 
-            String containerKey = createContainerKey(state, frozenBlock.lootTableId);
+            CaptureContainerKey containerKey = createContainerKey(state, frozenBlock.lootTableId);
             ContainerAccumulator accumulator = containers.computeIfAbsent(containerKey, k -> new ContainerAccumulator(k, state, frozenBlock.lootTableId));
 
             accumulator.containerCount++;
             accumulator.totalItemCount += frozenBlock.itemCount;
         }
-
-        List<StructureCaptureSummary.EntityInstance> entities = collectEntitySummaries(frozenCapture, contentBounds);
 
         if (!contentBounds.hasContent()) return null;
 
@@ -187,10 +183,9 @@ public final class StructureCaptureService {
 
         blockSummaries.sort((first, second) -> {
             int countCompare = Integer.compare(second.getCount(), first.getCount());
-            if (countCompare != 0)
-                return countCompare;
+            if (countCompare != 0) return countCompare;
 
-            return first.getKey().compareTo(second.getKey());
+            return first.getSerializedKey().compareTo(second.getSerializedKey());
         });
 
         List<StructureCaptureSummary.ContainerSummary> containerSummaries = new ArrayList<>();
@@ -209,7 +204,7 @@ public final class StructureCaptureService {
             if (countCompare != 0)
                 return countCompare;
 
-            return first.getKey().compareTo(second.getKey());
+            return first.getSerializedKey().compareTo(second.getSerializedKey());
         });
 
         return new StructureCaptureSummary(
@@ -217,7 +212,7 @@ public final class StructureCaptureService {
             contentBounds.getSizeY(),
             contentBounds.getSizeZ(),
             blockSummaries,
-            entities,
+            collectEntitySummaries(frozenCapture, contentBounds),
             containerSummaries
         );
     }
@@ -260,16 +255,13 @@ public final class StructureCaptureService {
 
         entities.sort((first, second) -> {
             int idCompare = first.getEntityId().toString().compareTo(second.getEntityId().toString());
-            if (idCompare != 0)
-                return idCompare;
+            if (idCompare != 0) return idCompare;
 
             int compareX = Integer.compare(first.getBlockPos().getX(), second.getBlockPos().getX());
-            if (compareX != 0)
-                return compareX;
+            if (compareX != 0) return compareX;
 
             int compareY = Integer.compare(first.getBlockPos().getY(), second.getBlockPos().getY());
-            if (compareY != 0)
-                return compareY;
+            if (compareY != 0) return compareY;
 
             return Integer.compare(first.getBlockPos().getZ(), second.getBlockPos().getZ());
         });
@@ -471,6 +463,7 @@ public final class StructureCaptureService {
             blockTag.setTag("pos", writeInts(block.relativePos.getX(), block.relativePos.getY(), block.relativePos.getZ()));
             blockTag.setInteger("state", palette.get(block.state));
             if (block.tileData != null) blockTag.setTag("nbt", block.tileData);
+
             blockList.appendTag(blockTag);
         }
     }
@@ -615,9 +608,7 @@ public final class StructureCaptureService {
         if (!entityData.hasKey("Passengers", Constants.NBT.TAG_LIST)) return;
 
         NBTTagList passengers = entityData.getTagList("Passengers", Constants.NBT.TAG_COMPOUND);
-        for (int i = 0; i < passengers.tagCount(); i++) {
-            trimEntityData(passengers.getCompoundTagAt(i));
-        }
+        for (int i = 0; i < passengers.tagCount(); i++) trimEntityData(passengers.getCompoundTagAt(i));
     }
 
     private static void addNamespacesFromEntityData(NBTTagCompound entityData, Set<String> referencedNamespaces) {
@@ -673,11 +664,8 @@ public final class StructureCaptureService {
         return true;
     }
 
-    private static String createContainerKey(IBlockState state, @Nullable ResourceLocation lootTableId) {
-        String blockKey = CaptureBlockHelper.createKey(state);
-        if (lootTableId != null) return blockKey + "|loot:" + lootTableId;
-
-        return blockKey + "|fixed";
+    private static CaptureContainerKey createContainerKey(IBlockState state, @Nullable ResourceLocation lootTableId) {
+        return new CaptureContainerKey(CaptureBlockHelper.createKey(state), lootTableId);
     }
 
     private static boolean isContainerExcluded(IBlockState state, @Nullable ResourceLocation lootTableId,
@@ -801,11 +789,11 @@ public final class StructureCaptureService {
     }
 
     private static final class BlockAccumulator {
-        private final String key;
+        private final BlockDisplayKey key;
         private final IBlockState representativeState;
         private int count;
 
-        private BlockAccumulator(String key, IBlockState representativeState) {
+        private BlockAccumulator(BlockDisplayKey key, IBlockState representativeState) {
             this.key = key;
             this.representativeState = representativeState;
             this.count = 0;
@@ -813,14 +801,14 @@ public final class StructureCaptureService {
     }
 
     private static final class ContainerAccumulator {
-        private final String key;
+        private final CaptureContainerKey key;
         private final IBlockState representativeState;
         @Nullable
         private final ResourceLocation lootTableId;
         private int containerCount;
         private int totalItemCount;
 
-        private ContainerAccumulator(String key, IBlockState representativeState,
+        private ContainerAccumulator(CaptureContainerKey key, IBlockState representativeState,
                 @Nullable ResourceLocation lootTableId) {
             this.key = key;
             this.representativeState = representativeState;

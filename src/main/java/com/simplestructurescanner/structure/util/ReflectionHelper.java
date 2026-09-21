@@ -1,7 +1,11 @@
 package com.simplestructurescanner.structure.util;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import javax.annotation.Nullable;
@@ -66,6 +70,119 @@ public final class ReflectionHelper {
             return field.get(obj);
         } catch (Exception e) {
             throw new ReflectionException("Failed to get field '" + fieldName + "' from " + clazz.getName(), e);
+        }
+    }
+
+    /**
+     * Get a declared field and make it accessible.
+     *
+     * @param clazz the class declaring the field
+     * @param fieldNames the field names to try, in priority order
+     * @return the accessible field
+     * @throws ReflectionException if the field cannot be accessed
+     */
+    public static Field getAccessibleDeclaredField(Class<?> clazz, String... fieldNames)
+            throws ReflectionException {
+        if (fieldNames.length == 0) throw new IllegalArgumentException("At least one field name is required");
+
+        Exception lastException = null;
+        for (String fieldName : fieldNames) {
+            try {
+                Field field = clazz.getDeclaredField(fieldName);
+                field.setAccessible(true);
+                return field;
+            } catch (Exception e) {
+                // Try the next known field name
+                lastException = e;
+            }
+        }
+
+        throw new ReflectionException(
+            "Failed to access field '" + fieldNames[0] + "' on " + clazz.getName(), lastException);
+    }
+
+    /**
+     * Find an accessible declared field from a set of known names.
+     *
+     * @param clazz the class declaring the field
+     * @param fieldNames the field names to try, in priority order
+     * @return the accessible field, or null when no name matches
+     */
+    @Nullable
+    public static Field findAccessibleDeclaredField(Class<?> clazz, String... fieldNames) {
+        try {
+            return getAccessibleDeclaredField(clazz, fieldNames);
+        } catch (ReflectionException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Find a declared field by an exact type and make it accessible.
+     *
+     * @param clazz the class declaring the field
+     * @param fieldType the exact field type
+     * @return the accessible field, or null when no field has that type
+     * @throws ReflectionException if the class fields cannot be accessed
+     */
+    @Nullable
+    public static Field findAccessibleDeclaredField(Class<?> clazz, Class<?> fieldType) throws ReflectionException {
+        try {
+            for (Field field : clazz.getDeclaredFields()) {
+                if (field.getType() != fieldType) continue;
+
+                field.setAccessible(true);
+                return field;
+            }
+        } catch (Exception e) {
+            throw new ReflectionException("Failed to inspect fields on " + clazz.getName(), e);
+        }
+
+        return null;
+    }
+
+    /**
+     * Find a declared field assignable to a type and make it accessible.
+     *
+     * @param clazz the class declaring the field
+     * @param fieldType the required supertype
+     * @return the accessible field, or null when no field matches
+     * @throws ReflectionException if the class fields cannot be accessed
+     */
+    @Nullable
+    public static Field findAccessibleAssignableDeclaredField(Class<?> clazz, Class<?> fieldType)
+            throws ReflectionException {
+        try {
+            for (Field field : clazz.getDeclaredFields()) {
+                if (!fieldType.isAssignableFrom(field.getType())) continue;
+
+                field.setAccessible(true);
+                return field;
+            }
+        } catch (Exception e) {
+            throw new ReflectionException("Failed to inspect fields on " + clazz.getName(), e);
+        }
+
+        return null;
+    }
+
+    /**
+     * Set a public field value and require the write to succeed.
+     *
+     * @param obj the object to update
+     * @param clazz the class declaring the field
+     * @param fieldName the name of the field
+     * @param value the value to write
+     * @throws ReflectionException if the field cannot be written
+     */
+    public static void setFieldRequired(Object obj, Class<?> clazz, String fieldName, Object value)
+            throws ReflectionException {
+        try {
+            Field field = clazz.getField(fieldName);
+            field.setAccessible(true);
+            field.set(obj, value);
+        } catch (Exception e) {
+            throw new ReflectionException("Failed to set field '" + fieldName + "' on " + clazz.getName(), e);
         }
     }
 
@@ -253,6 +370,112 @@ public final class ReflectionHelper {
     @Nullable
     public static <T> List<T> getListField(Object obj, Class<?> clazz, String fieldName) throws ReflectionException {
         return (List<T>) getField(obj, clazz, fieldName);
+    }
+
+    /**
+     * Get the elements of a List field that match a required type.
+     *
+     * @param obj the object to get the field from
+     * @param clazz the class containing the field
+     * @param fieldName the name of the field
+     * @param elementClass the required element type
+     * @param <T> the type of list elements
+     * @return the matching elements, or an empty list when the field is empty
+     * @throws ReflectionException if the field cannot be accessed
+     */
+    public static <T> List<T> getListFieldOfType(Object obj, Class<?> clazz, String fieldName,
+            Class<T> elementClass) throws ReflectionException {
+        List<?> values = getListField(obj, clazz, fieldName);
+        if (values == null || values.isEmpty()) return Collections.emptyList();
+
+        List<T> matchingValues = new ArrayList<>();
+        for (Object value : values) {
+            if (elementClass.isInstance(value)) matchingValues.add(elementClass.cast(value));
+        }
+
+        return matchingValues;
+    }
+
+    /**
+     * Creates a MethodHandle for a public method when access permits it.
+     *
+     * @param method the reflected method, or null
+     * @return the MethodHandle, or null when it cannot be created
+     */
+    @Nullable
+    public static MethodHandle unreflectOrNull(@Nullable Method method) {
+        if (method == null) return null;
+        try {
+            return MethodHandles.publicLookup().unreflect(method);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug("MethodHandle unavailable for {}", method.getName(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Get a declared method and make it accessible.
+     *
+     * @param clazz the class declaring the method
+     * @param methodName the name of the method
+     * @param parameterTypes the exact parameter signature to resolve
+     * @return the accessible method
+     * @throws ReflectionException if the method cannot be accessed
+     */
+    public static Method getAccessibleDeclaredMethod(Class<?> clazz, String methodName,
+            Class<?>... parameterTypes) throws ReflectionException {
+        try {
+            Method method = clazz.getDeclaredMethod(methodName, parameterTypes);
+            method.setAccessible(true);
+            return method;
+        } catch (Exception e) {
+            throw new ReflectionException("Failed to access method '" + methodName + "' on " + clazz.getName(), e);
+        }
+    }
+
+    /**
+     * Invokes a single-argument method through a MethodHandle when available.
+     */
+    public static Object invoke(@Nullable MethodHandle methodHandle, Method method,
+            @Nullable Object target, Object firstArgument) throws Exception {
+        if (methodHandle == null) return method.invoke(target, firstArgument);
+
+        try {
+            return methodHandle.invoke(firstArgument);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
+
+    /**
+     * Invokes a two-argument method through a MethodHandle when available.
+     */
+    public static Object invoke(@Nullable MethodHandle methodHandle, Method method,
+            @Nullable Object target, Object firstArgument, Object secondArgument) throws Exception {
+        if (methodHandle == null) return method.invoke(target, firstArgument, secondArgument);
+
+        try {
+            return methodHandle.invoke(firstArgument, secondArgument);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
+    }
+
+    /**
+     * Invokes a three-argument method through a MethodHandle when available.
+     */
+    public static Object invoke(@Nullable MethodHandle methodHandle, Method method,
+            @Nullable Object target, Object firstArgument, Object secondArgument,
+            Object thirdArgument) throws Exception {
+        if (methodHandle == null) {
+            return method.invoke(target, firstArgument, secondArgument, thirdArgument);
+        }
+
+        try {
+            return methodHandle.invoke(firstArgument, secondArgument, thirdArgument);
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
     }
 
     /**

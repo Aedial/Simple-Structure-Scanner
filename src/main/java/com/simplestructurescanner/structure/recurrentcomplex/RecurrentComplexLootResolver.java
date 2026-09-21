@@ -1,6 +1,5 @@
 package com.simplestructurescanner.structure.recurrentcomplex;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -184,7 +183,7 @@ public final class RecurrentComplexLootResolver {
         if (component == null) return;
 
         try {
-            ItemStack generated = (ItemStack) invokeRequired(component, "getRandomItemStack",
+            ItemStack generated = (ItemStack) ReflectionHelper.invokeRequired(component, "getRandomItemStack",
                 new Class<?>[]{Random.class}, random);
             if (generated != null) simulateGenerator(null, generated, random, itemMap, depth);
         } catch (ReflectionException e) {
@@ -204,7 +203,8 @@ public final class RecurrentComplexLootResolver {
 
         try {
             Class<?> sourceClass = ReflectionHelper.loadClassRequired(artifact ? ARTIFACT_ITEM_CLASS : BOOK_ITEM_CLASS);
-            ItemStack generated = (ItemStack) invokeStaticRequired(sourceClass, "any", new Class<?>[]{Random.class}, random);
+            ItemStack generated = (ItemStack) ReflectionHelper.invokeStaticRequired(
+                sourceClass, "any", new Class<?>[]{Random.class}, random);
             if (generated != null) simulateGenerator(world, generated, random, itemMap, depth);
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.debug("Failed to resolve Recurrent Complex {} generator",
@@ -227,7 +227,7 @@ public final class RecurrentComplexLootResolver {
                 return pickApproximateVanillaLoot(world, lootTable, random);
             }
 
-            return (ItemStack) invokeRequired(lootTable, "getRandomItemStack",
+            return (ItemStack) ReflectionHelper.invokeRequired(lootTable, "getRandomItemStack",
                 new Class<?>[]{WorldServer.class, Random.class}, world instanceof WorldServer ? world : null, random);
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.debug("Failed to generate Recurrent Complex loot result", e);
@@ -291,7 +291,7 @@ public final class RecurrentComplexLootResolver {
         try {
             Class<?> registryClass = ReflectionHelper.loadClassRequired(WEIGHTED_ITEM_COLLECTION_REGISTRY_CLASS);
             Object registry = ReflectionHelper.getStaticField(registryClass, "INSTANCE");
-            return invokeRequired(registry, "get", new Class<?>[]{String.class}, key);
+            return ReflectionHelper.invokeRequired(registry, "get", new Class<?>[]{String.class}, key);
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.debug("Failed to access Recurrent Complex weighted loot registry", e);
             return null;
@@ -306,7 +306,7 @@ public final class RecurrentComplexLootResolver {
         try {
             Class<?> registryClass = ReflectionHelper.loadClassRequired(GENERIC_ITEM_COLLECTION_REGISTRY_CLASS);
             Object registry = ReflectionHelper.getStaticField(registryClass, "INSTANCE");
-            return invokeRequired(registry, "get", new Class<?>[]{String.class}, key);
+            return ReflectionHelper.invokeRequired(registry, "get", new Class<?>[]{String.class}, key);
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.debug("Failed to access Recurrent Complex generic loot registry", e);
             return null;
@@ -477,28 +477,6 @@ public final class RecurrentComplexLootResolver {
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.debug("Failed to read Recurrent Complex custom loot override {}", fieldName, e);
             return CustomOverride.EMPTY;
-        }
-    }
-
-    private static Object invokeRequired(Object target, String methodName, Class<?>[] parameterTypes,
-            Object... args) throws ReflectionException {
-        try {
-            Method method = target.getClass().getMethod(methodName, parameterTypes);
-            method.setAccessible(true);
-            return method.invoke(target, args);
-        } catch (Exception e) {
-            throw new ReflectionException("Failed to invoke method '" + methodName + "' on " + target.getClass().getName(), e);
-        }
-    }
-
-    private static Object invokeStaticRequired(Class<?> ownerClass, String methodName, Class<?>[] parameterTypes,
-            Object... args) throws ReflectionException {
-        try {
-            Method method = ownerClass.getMethod(methodName, parameterTypes);
-            method.setAccessible(true);
-            return method.invoke(null, args);
-        } catch (Exception e) {
-            throw new ReflectionException("Failed to invoke static method '" + methodName + "' on " + ownerClass.getName(), e);
         }
     }
 

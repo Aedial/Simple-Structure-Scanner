@@ -11,7 +11,7 @@ import net.minecraftforge.fml.common.network.simpleimpl.IMessageHandler;
 import net.minecraftforge.fml.common.network.simpleimpl.MessageContext;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.structure.pillar.ValidationContextManager;
+import com.simplestructurescanner.structure.validation.ValidationContextManager;
 import com.simplestructurescanner.util.WorldUtils;
 
 

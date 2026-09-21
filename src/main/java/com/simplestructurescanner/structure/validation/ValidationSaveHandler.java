@@ -1,4 +1,4 @@
-package com.simplestructurescanner.structure.pillar;
+package com.simplestructurescanner.structure.validation;
 
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
@@ -15,6 +15,7 @@ import net.minecraft.world.storage.WorldInfo;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.File;
+
 
 /**
  * A save handler for the structure validation world that performs no actual save operations.

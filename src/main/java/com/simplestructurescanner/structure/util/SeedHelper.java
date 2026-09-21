@@ -27,7 +27,6 @@ public final class SeedHelper {
     public static Long getWorldSeed(World world) {
         if (world == null) return null;
         return world.getWorldInfo().getSeed();
-
     }
 
     /**
@@ -35,10 +34,10 @@ public final class SeedHelper {
      * <p>
      * This is the common seeding pattern used by many Minecraft structure generators:
      * <pre>
-     * random.setSeed(seed);
-     * long i = random.nextLong();
-     * long j = random.nextLong();
-     * random.setSeed((chunkX * i) ^ (chunkZ * j) ^ seed);
+     *      random.setSeed(seed);
+     *      long i = random.nextLong();
+     *      long j = random.nextLong();
+     *      random.setSeed((chunkX * i) ^ (chunkZ * j) ^ seed);
      * </pre>
      *
      * @param seed the world seed
@@ -60,7 +59,7 @@ public final class SeedHelper {
      * <p>
      * This is the seeding pattern used by villages, temples, and other scattered features:
      * <pre>
-     * random.setSeed(regionX * 341873128712L + regionZ * 132897987541L + seed + salt);
+     *      random.setSeed(regionX * 341873128712L + regionZ * 132897987541L + seed + salt);
      * </pre>
      *
      * @param seed the world seed
@@ -81,10 +80,10 @@ public final class SeedHelper {
      * <p>
      * This is used by structure components to determine internal randomness like Y offsets:
      * <pre>
-     * random.setSeed(seed);
-     * long i = random.nextLong();
-     * long j = random.nextLong();
-     * random.setSeed(chunkX * i ^ chunkZ * j ^ seed);
+     *      random.setSeed(seed);
+     *      long i = random.nextLong();
+     *      long j = random.nextLong();
+     *      random.setSeed(chunkX * i ^ chunkZ * j ^ seed);
      * </pre>
      *
      * @param seed the world seed

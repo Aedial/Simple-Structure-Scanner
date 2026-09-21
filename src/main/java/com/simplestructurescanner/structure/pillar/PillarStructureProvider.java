@@ -31,6 +31,7 @@ import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionException;
+import com.simplestructurescanner.structure.validation.ValidationContextManager;
 
 
 /**
@@ -124,9 +125,7 @@ public class PillarStructureProvider extends AbstractStructureProvider {
         Set<DimensionInfo> dimensions = new HashSet<>();
 
         if (!schema.isDimensionSpawnsBlacklist) {
-            for (Integer dimId : schema.dimensionSpawns) {
-                dimensions.add(new DimensionInfo(dimId));
-            }
+            for (Integer dimId : schema.dimensionSpawns) dimensions.add(new DimensionInfo(dimId));
 
             return dimensions;
         }
@@ -224,8 +223,8 @@ public class PillarStructureProvider extends AbstractStructureProvider {
         ScanOutcome scanOutcome = scanStructure(world, schema, pos, Integer.MAX_VALUE);
         if (scanOutcome.timedOut) {
             SimpleStructureScanner.LOGGER.warn(
-                    "Search interrupted: Exceeded maximum time limit ({}ms). Searched {} chunks.",
-                    MAX_SCAN_TIME_MS, scanOutcome.chunksSearched);
+                "Search interrupted: Exceeded maximum time limit ({}ms). Searched {} chunks.",
+                MAX_SCAN_TIME_MS, scanOutcome.chunksSearched);
 
             return null;
         }
@@ -255,7 +254,6 @@ public class PillarStructureProvider extends AbstractStructureProvider {
         if (scanOutcome.timedOut) return scanOutcome.positions;
 
         List<BlockPos> results = scanOutcome.positions;
-
         PositionHelper.sortByHorizontalDistance(results, pos);
 
         return results;
@@ -302,8 +300,8 @@ public class PillarStructureProvider extends AbstractStructureProvider {
                         maintainValidationCache(dimensionId, chunksSearched);
 
                         BlockPos predictedPos = PillarStructurePredictor.predictStructureInChunk(
-                                generationWorld, chunkX, chunkZ, structureName, foundPositions,
-                                schemasInOrder, rarityMultiplier, maxStructuresInOneChunk);
+                            generationWorld, chunkX, chunkZ, structureName, foundPositions,
+                            schemasInOrder, rarityMultiplier, maxStructuresInOneChunk);
 
                         if (predictedPos == null) continue;
 
@@ -366,7 +364,7 @@ public class PillarStructureProvider extends AbstractStructureProvider {
         try {
             Class<?> structureLoaderClass = ReflectionHelper.loadClassRequired("vazkii.pillar.StructureLoader");
             Map<String, Object> pillarSchemas = (Map<String, Object>) ReflectionHelper.getStaticField(
-                    structureLoaderClass, "loadedSchemas");
+                structureLoaderClass, "loadedSchemas");
 
             if (pillarSchemas == null) {
                 SimpleStructureScanner.LOGGER.warn("Pillar loadedSchemas is null");
@@ -432,11 +430,10 @@ public class PillarStructureProvider extends AbstractStructureProvider {
         PillarGeneratorType generatorType = convertGeneratorType(generatorTypeObj);
 
         return new PillarSchemaProxy(
-                structureName, generatorType,
-                maxY, minY, rarity, minDistance,
-                dimensionSpawns, biomeNameSpawns, biomeTagSpawns,
-                isDimBlacklist, isBiomeNameBlacklist, isBiomeTagBlacklist,
-                generateEverywhere);
+            structureName, generatorType,
+            maxY, minY, rarity, minDistance,
+            dimensionSpawns, biomeNameSpawns, biomeTagSpawns,
+            isDimBlacklist, isBiomeNameBlacklist, isBiomeTagBlacklist, generateEverywhere);
     }
 
     /**

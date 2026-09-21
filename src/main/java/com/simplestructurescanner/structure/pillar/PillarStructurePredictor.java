@@ -11,6 +11,9 @@ import javax.annotation.Nullable;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
+import com.simplestructurescanner.structure.validation.StructureValidationWorld;
+import com.simplestructurescanner.structure.validation.ValidationContextManager;
+
 
 /**
  * Predicts Pillar structure locations by replicating Pillar's generation algorithm.

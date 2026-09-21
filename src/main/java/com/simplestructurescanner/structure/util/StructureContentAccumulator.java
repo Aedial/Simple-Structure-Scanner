@@ -8,11 +8,12 @@ import java.util.Map;
 import javax.annotation.Nullable;
 
 import net.minecraft.block.state.IBlockState;
-import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
 
+import com.simplestructurescanner.structure.EntityKey;
 import com.simplestructurescanner.structure.LocalizedText;
+import com.simplestructurescanner.structure.LootEntryKey;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
@@ -23,8 +24,8 @@ import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 public class StructureContentAccumulator implements StructureNBTParser.StructureContentSink {
 
     private final Map<Object, BlockAggregate> blocks = new LinkedHashMap<>();
-    private final Map<String, EntityAggregate> entities = new LinkedHashMap<>();
-    private final Map<String, LootEntry> lootEntries = new LinkedHashMap<>();
+    private final Map<EntityKey, EntityAggregate> entities = new LinkedHashMap<>();
+    private final Map<LootEntryKey, LootEntry> lootEntries = new LinkedHashMap<>();
 
     public void add(StructureNBTParser.ParsedStructure parsed) {
         if (parsed == null) return;
@@ -78,7 +79,7 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
     public void addEntity(@Nullable EntityEntry entityEntry) {
         if (entityEntry == null || entityEntry.entityId == null || entityEntry.count <= 0) return;
 
-        String key = entityEntry.entityId.toString() + '|' + entityEntry.spawner;
+        EntityKey key = new EntityKey(entityEntry.entityId, entityEntry.spawner);
         EntityAggregate aggregate = entities.get(key);
         if (aggregate == null) {
             entities.put(key, new EntityAggregate(entityEntry));
@@ -99,7 +100,7 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
     public void addLootEntry(@Nullable LootEntry lootEntry) {
         if (lootEntry == null) return;
 
-        lootEntries.putIfAbsent(createLootEntryKey(lootEntry), lootEntry);
+        lootEntries.putIfAbsent(new LootEntryKey(lootEntry), lootEntry);
     }
 
     public List<BlockEntry> buildBlocks() {
@@ -152,37 +153,6 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
             LocalizedText.translatable("gui.structurescanner.loot.chest"));
     }
 
-    private static String createLootEntryKey(LootEntry lootEntry) {
-        StringBuilder key = new StringBuilder();
-        key.append(lootEntry.lootTableId != null ? lootEntry.lootTableId.toString() : "<direct>");
-        key.append('|').append(lootEntry.kind.name());
-        key.append('|').append(createLocalizedTextKey(lootEntry.containerType));
-
-        if (lootEntry.sourceName != null) key.append('|').append(createLocalizedTextKey(lootEntry.sourceName));
-        if (lootEntry.sourceStack != null) key.append('|').append(createItemStackKey(lootEntry.sourceStack));
-
-        if (lootEntry.possibleDrops != null) {
-            for (ItemStack stack : lootEntry.possibleDrops) {
-                key.append('|').append(createItemStackKey(stack)).append('*').append(stack.getCount());
-            }
-        }
-
-        return key.toString();
-    }
-
-    private static String createLocalizedTextKey(@Nullable LocalizedText text) {
-        if (text == null) return "<null>";
-        return text.isTranslatable() + ":" + text.getValue();
-    }
-
-    private static String createItemStackKey(@Nullable ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return "empty";
-
-        NBTTagCompound normalizedStack = stack.copy().writeToNBT(new NBTTagCompound());
-        normalizedStack.removeTag("Count");
-        return normalizedStack.toString();
-    }
-
     private static final class BlockAggregate {
         private BlockEntry representative;
         private int count;
@@ -222,7 +192,6 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
         }
     }
 
-    
     public static final class GeneratedPreviewData {
         private final List<BlockEntry> blocks;
         private final List<EntityEntry> entities;

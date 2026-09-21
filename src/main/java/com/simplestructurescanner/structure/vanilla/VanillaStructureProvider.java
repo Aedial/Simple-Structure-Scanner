@@ -41,10 +41,10 @@ import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.TerrainHeightCalculator;
-import com.simplestructurescanner.structure.pillar.ValidationContextManager;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.SeedHelper;
+import com.simplestructurescanner.structure.validation.ValidationContextManager;
 
 
 /**

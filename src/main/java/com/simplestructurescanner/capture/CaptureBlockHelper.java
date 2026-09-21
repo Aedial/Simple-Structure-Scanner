@@ -10,6 +10,7 @@ import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.IFluidBlock;
 
+import com.simplestructurescanner.structure.BlockDisplayKey;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureNBTParser;
 
@@ -39,7 +40,7 @@ public final class CaptureBlockHelper {
         return block != null && block != Blocks.AIR && block != Blocks.STRUCTURE_VOID;
     }
 
-    public static String createKey(@Nullable IBlockState state) {
+    public static BlockDisplayKey createKey(@Nullable IBlockState state) {
         return StructureNBTParser.createDisplayedBlockKey(
             state,
             createDisplayFluid(state),

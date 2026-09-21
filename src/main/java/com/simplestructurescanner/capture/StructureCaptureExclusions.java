@@ -11,6 +11,8 @@ import net.minecraft.nbt.NBTTagString;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.common.util.Constants;
 
+import com.simplestructurescanner.structure.BlockDisplayKey;
+
 
 /**
  * Mutable exclusion set for block keys, entity IDs, and container positions.
@@ -25,6 +27,10 @@ public class StructureCaptureExclusions {
         return key != null && excludedBlockKeys.contains(key);
     }
 
+    public boolean isBlockExcluded(@Nullable BlockDisplayKey key) {
+        return key != null && excludedBlockKeys.contains(key.toString());
+    }
+
     public void setBlockExcluded(@Nullable String key, boolean excluded) {
         if (key == null) return;
 
@@ -34,6 +40,12 @@ public class StructureCaptureExclusions {
         }
 
         excludedBlockKeys.remove(key);
+    }
+
+    public void setBlockExcluded(@Nullable BlockDisplayKey key, boolean excluded) {
+        if (key == null) return;
+
+        setBlockExcluded(key.toString(), excluded);
     }
 
     public boolean isEntityExcluded(@Nullable String entityId) {
@@ -63,6 +75,10 @@ public class StructureCaptureExclusions {
         return key != null && excludedContainerKeys.contains(key);
     }
 
+    public boolean isContainerExcluded(@Nullable CaptureContainerKey key) {
+        return key != null && excludedContainerKeys.contains(key.toString());
+    }
+
     public void setContainerExcluded(@Nullable String key, boolean excluded) {
         if (key == null) return;
 
@@ -72,6 +88,12 @@ public class StructureCaptureExclusions {
         }
 
         excludedContainerKeys.remove(key);
+    }
+
+    public void setContainerExcluded(@Nullable CaptureContainerKey key, boolean excluded) {
+        if (key == null) return;
+
+        setContainerExcluded(key.toString(), excluded);
     }
 
     public void clear() {

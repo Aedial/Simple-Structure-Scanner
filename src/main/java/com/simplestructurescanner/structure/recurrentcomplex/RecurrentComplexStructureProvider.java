@@ -1,7 +1,5 @@
 package com.simplestructurescanner.structure.recurrentcomplex;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -51,7 +49,7 @@ import com.simplestructurescanner.structure.util.StructureTranslationKeys;
  * <p>
  * The mod mixes true world-entry structures with maze pieces, list entries,
  * and other subcomponents. This provider keeps merged blocks, entities, and
- * loot as a superset of what the archive can spawn, then builds a separate
+ * loot as a superset of what the archive *can* spawn, then builds a separate
  * stitched preview that stays deterministic even when RC would randomize the
  * final composition at runtime.
  */
@@ -173,12 +171,12 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
     @SuppressWarnings("unchecked")
     private Collection<String> getActiveStructureIds(Object registry) throws ReflectionException {
-        return (Collection<String>) invokeRequired(registry, "activeIDs");
+        return (Collection<String>) ReflectionHelper.invokeRequired(registry, "activeIDs");
     }
 
     @Nullable
     private Object getActiveStructure(Object registry, String rawId) throws ReflectionException {
-        return invokeRequired(registry, "getActive", new Class<?>[]{String.class}, rawId);
+        return ReflectionHelper.invokeRequired(registry, "getActive", new Class<?>[]{String.class}, rawId);
     }
 
     @Nullable
@@ -187,8 +185,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     }
 
     private ResourceLocation createStructureId(Object registry, String rawId) throws ReflectionException {
-        Object status = invokeRequired(registry, "status", new Class<?>[]{String.class}, rawId);
-        String domain = status != null ? (String) invokeRequired(status, "getDomain") : MOD_ID;
+        Object status = ReflectionHelper.invokeRequired(registry, "status", new Class<?>[]{String.class}, rawId);
+        String domain = status != null ? (String) ReflectionHelper.invokeRequired(status, "getDomain") : MOD_ID;
         return new ResourceLocation(domain, rawId);
     }
 
@@ -256,7 +254,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     @Nullable
     private Object getWorldData(Object structure) throws ReflectionException {
         try {
-            return invokeRequired(structure, "constructWorldData");
+            return ReflectionHelper.invokeRequired(structure, "constructWorldData");
         } catch (ReflectionException e) {
             Object worldDataCompound = ReflectionHelper.getField(structure, structure.getClass(), "worldDataCompound");
             if (!(worldDataCompound instanceof NBTTagCompound)) throw e;
@@ -269,8 +267,9 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         try {
             Class<?> genericStructureClass = ReflectionHelper.loadClassRequired(GENERIC_STRUCTURE_CLASS);
             Object structure = genericStructureClass.getDeclaredConstructor().newInstance();
-            setFieldRequired(structure, genericStructureClass, "worldDataCompound", worldDataCompound.copy());
-            return invokeRequired(structure, "constructWorldData");
+            ReflectionHelper.setFieldRequired(
+                structure, genericStructureClass, "worldDataCompound", worldDataCompound.copy());
+            return ReflectionHelper.invokeRequired(structure, "constructWorldData");
         } catch (ReflectionException e) {
             throw e;
         } catch (Exception e) {
@@ -281,8 +280,10 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private void mergeWorldData(StructureNBTParser.StructureContentSink contents, Object registry,
             Object worldData, Set<String> recursionStack) throws ReflectionException {
         Object blockCollection = ReflectionHelper.getField(worldData, worldData.getClass(), "blockCollection");
-        List<NBTTagCompound> tileEntities = getCompoundListField(worldData, "tileEntities");
-        List<NBTTagCompound> entities = getCompoundListField(worldData, "entities");
+        List<NBTTagCompound> tileEntities = ReflectionHelper.getListFieldOfType(
+            worldData, worldData.getClass(), "tileEntities", NBTTagCompound.class);
+        List<NBTTagCompound> entities = ReflectionHelper.getListFieldOfType(
+            worldData, worldData.getClass(), "entities", NBTTagCompound.class);
 
         Set<BlockPos> scriptPositions = collectScriptPositions(tileEntities);
         Map<BlockPos, NBTTagCompound> tileEntitiesByPos = indexTileEntities(tileEntities);
@@ -345,7 +346,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             int[] size, BlockPos origin, PreviewTransform transform, Set<String> recursionStack) throws ReflectionException {
         Object blockCollection = ReflectionHelper.getField(worldData, worldData.getClass(), "blockCollection");
         int[] worldDataSize = hasUsableSize(size) ? size : getBlockCollectionSize(blockCollection);
-        List<NBTTagCompound> tileEntities = getCompoundListField(worldData, "tileEntities");
+        List<NBTTagCompound> tileEntities = ReflectionHelper.getListFieldOfType(
+            worldData, worldData.getClass(), "tileEntities", NBTTagCompound.class);
 
         Set<BlockPos> scriptPositions = collectScriptPositions(tileEntities);
         Map<BlockPos, NBTTagCompound> tileEntitiesByPos = indexTileEntities(tileEntities);
@@ -375,7 +377,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             Set<BlockPos> scriptPositions, Map<BlockPos, NBTTagCompound> tileEntitiesByPos) throws ReflectionException {
         if (blockCollection == null) return;
 
-        Object area = invokeRequired(blockCollection, "area");
+        Object area = ReflectionHelper.invokeRequired(blockCollection, "area");
         if (!(area instanceof Iterable)) {
             throw new ReflectionException("Unexpected Recurrent Complex block area payload: " + area);
         }
@@ -401,7 +403,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             Map<BlockPos, NBTTagCompound> tileEntitiesByPos) throws ReflectionException {
         if (blockCollection == null) return;
 
-        Object area = invokeRequired(blockCollection, "area");
+        Object area = ReflectionHelper.invokeRequired(blockCollection, "area");
         if (!(area instanceof Iterable)) {
             throw new ReflectionException("Unexpected Recurrent Complex block area payload: " + area);
         }
@@ -425,22 +427,11 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private IBlockState getBlockState(@Nullable Object blockCollection, BlockPos pos) throws ReflectionException {
         if (blockCollection == null) return null;
 
-        Object value = invokeRequired(blockCollection, "getBlockState", new Class<?>[]{BlockPos.class}, pos);
+        Object value = ReflectionHelper.invokeRequired(
+            blockCollection, "getBlockState", new Class<?>[]{BlockPos.class}, pos);
         if (value == null || value instanceof IBlockState) return (IBlockState) value;
 
         throw new ReflectionException("Unexpected Recurrent Complex block state payload: " + value);
-    }
-
-    private List<NBTTagCompound> getCompoundListField(Object target, String fieldName) throws ReflectionException {
-        List<?> values = ReflectionHelper.getListField(target, target.getClass(), fieldName);
-        if (values == null || values.isEmpty()) return Collections.emptyList();
-
-        List<NBTTagCompound> compounds = new ArrayList<>();
-        for (Object value : values) {
-            if (value instanceof NBTTagCompound) compounds.add((NBTTagCompound) value);
-        }
-
-        return compounds;
     }
 
     private Map<BlockPos, NBTTagCompound> indexTileEntities(List<NBTTagCompound> tileEntities) {
@@ -697,14 +688,14 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
     @Nullable
     private Object getStructureById(Object registry, String structureId) throws ReflectionException {
-        return invokeRequired(registry, "get", new Class<?>[]{String.class}, structureId);
+        return ReflectionHelper.invokeRequired(registry, "get", new Class<?>[]{String.class}, structureId);
     }
 
     private List<Object> getListStructures(Object registry, String structureListId,
             @Nullable EnumFacing front) throws ReflectionException {
         Class<?> registryClass = ReflectionHelper.loadClassRequired(STRUCTURE_REGISTRY_CLASS);
         Class<?> listGenerationClass = ReflectionHelper.loadClassRequired(LIST_GENERATION_CLASS);
-        Object stream = invokeStaticRequired(listGenerationClass, "structures",
+        Object stream = ReflectionHelper.invokeStaticRequired(listGenerationClass, "structures",
             new Class<?>[]{registryClass, String.class, EnumFacing.class}, registry, structureListId, front);
         return getStructuresFromPairStream(stream);
     }
@@ -713,7 +704,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             @Nullable EnumFacing front) throws ReflectionException {
         Class<?> registryClass = ReflectionHelper.loadClassRequired(STRUCTURE_REGISTRY_CLASS);
         Class<?> listGenerationClass = ReflectionHelper.loadClassRequired(LIST_GENERATION_CLASS);
-        Object stream = invokeStaticRequired(listGenerationClass, "structures",
+        Object stream = ReflectionHelper.invokeStaticRequired(listGenerationClass, "structures",
             new Class<?>[]{registryClass, String.class, EnumFacing.class}, registry, structureListId, front);
         return getListStructureCandidatesFromPairStream(stream);
     }
@@ -728,7 +719,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private List<Object> getMazeStructuresExact(Object registry, String mazeId) throws ReflectionException {
         Class<?> registryClass = ReflectionHelper.loadClassRequired(STRUCTURE_REGISTRY_CLASS);
         Class<?> mazeGenerationClass = ReflectionHelper.loadClassRequired(MAZE_GENERATION_CLASS);
-        Object stream = invokeStaticRequired(mazeGenerationClass, "structures",
+        Object stream = ReflectionHelper.invokeStaticRequired(mazeGenerationClass, "structures",
             new Class<?>[]{registryClass, String.class}, registry, mazeId);
         return getStructuresFromPairStream(stream);
     }
@@ -736,7 +727,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     // FIXME: RC's maze gen is broken. The pagodas show, but the Stone Maze Small/Big/Huge have a size with no layer
     private List<Object> getMazeStructuresCaseInsensitive(Object registry, String mazeId) throws ReflectionException {
         Class<?> mazeGenerationClass = ReflectionHelper.loadClassRequired(MAZE_GENERATION_CLASS);
-        Object generationPairsObject = invokeRequired(registry, "getGenerationTypes", new Class<?>[]{Class.class}, mazeGenerationClass);
+        Object generationPairsObject = ReflectionHelper.invokeRequired(
+            registry, "getGenerationTypes", new Class<?>[]{Class.class}, mazeGenerationClass);
         if (!(generationPairsObject instanceof Collection)) {
             throw new ReflectionException("Unexpected Recurrent Complex maze generation pair collection payload: " + generationPairsObject);
         }
@@ -745,8 +737,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         List<Object> relaxedMatches = new ArrayList<>();
 
         for (Object pair : (Collection<?>) generationPairsObject) {
-            Object structure = invokeRequired(pair, "getLeft");
-            Object generationType = invokeRequired(pair, "getRight");
+            Object structure = ReflectionHelper.invokeRequired(pair, "getLeft");
+            Object generationType = ReflectionHelper.invokeRequired(pair, "getRight");
             if (structure == null || generationType == null) continue;
 
             String candidateMazeId = (String) ReflectionHelper.getField(generationType,
@@ -755,7 +747,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
             Object mazeComponent = ReflectionHelper.getField(generationType,
                 generationType.getClass(), "mazeComponent");
-            boolean valid = mazeComponent == null || invokeBooleanRequired(mazeComponent, "isValid", new Class<?>[0]);
+            boolean valid = mazeComponent == null || ReflectionHelper.invokeBooleanRequired(
+                mazeComponent, "isValid", new Class<?>[0]);
 
             if (valid) {
                 if (!validMatches.contains(structure)) validMatches.add(structure);
@@ -796,7 +789,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         try {
             stream.iterator().forEachRemaining(pair -> {
                 try {
-                    Object structure = invokeRequired(pair, "getLeft");
+                    Object structure = ReflectionHelper.invokeRequired(pair, "getLeft");
                     if (structure != null) structures.add(structure);
                 } catch (ReflectionException e) {
                     throw new IllegalStateException(e);
@@ -822,8 +815,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         try {
             stream.iterator().forEachRemaining(pair -> {
                 try {
-                    Object structure = invokeRequired(pair, "getLeft");
-                    Object generationInfo = invokeRequired(pair, "getRight");
+                    Object structure = ReflectionHelper.invokeRequired(pair, "getLeft");
+                    Object generationInfo = ReflectionHelper.invokeRequired(pair, "getRight");
                     if (structure == null || generationInfo == null) return;
 
                     BlockPos shift = (BlockPos) ReflectionHelper.getField(generationInfo, generationInfo.getClass(), "shift");
@@ -844,24 +837,15 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     }
 
     private String getStructureKey(Object registry, Object structure) throws ReflectionException {
-        Object rawLocation = invokeRequired(registry, "resourceLocation", new Class<?>[]{Object.class}, structure);
+        Object rawLocation = ReflectionHelper.invokeRequired(
+            registry, "resourceLocation", new Class<?>[]{Object.class}, structure);
         if (rawLocation != null) return rawLocation.toString();
 
         return structure.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(structure));
     }
 
-    private void setFieldRequired(Object target, Class<?> ownerClass, String fieldName, Object value) throws ReflectionException {
-        try {
-            Field field = ownerClass.getField(fieldName);
-            field.setAccessible(true);
-            field.set(target, value);
-        } catch (Exception e) {
-            throw new ReflectionException("Failed to set field '" + fieldName + "' on " + ownerClass.getName(), e);
-        }
-    }
-
     private int[] getStructureSize(Object structure) throws ReflectionException {
-        Object size = invokeRequired(structure, "size");
+        Object size = ReflectionHelper.invokeRequired(structure, "size");
         if (size instanceof int[]) return normalizeSize((int[]) size);
 
         throw new ReflectionException("Unexpected Recurrent Complex size payload: " + size);
@@ -890,7 +874,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
     private BlockPos readRcBlockPos(String key, NBTTagCompound compound) throws ReflectionException {
         Class<?> blockPositionsClass = ReflectionHelper.loadClassRequired(BLOCK_POSITIONS_CLASS);
-        Object value = invokeStaticRequired(blockPositionsClass, "readFromNBT",
+        Object value = ReflectionHelper.invokeStaticRequired(blockPositionsClass, "readFromNBT",
             new Class<?>[]{String.class, NBTTagCompound.class}, key, compound);
         if (value instanceof BlockPos) return (BlockPos) value;
 
@@ -925,11 +909,11 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     }
 
     private boolean canStructureRotate(Object structure) throws ReflectionException {
-        return invokeBooleanRequired(structure, "isRotatable", new Class<?>[0]);
+        return ReflectionHelper.invokeBooleanRequired(structure, "isRotatable", new Class<?>[0]);
     }
 
     private boolean canStructureMirror(Object structure) throws ReflectionException {
-        return invokeBooleanRequired(structure, "isMirrorable", new Class<?>[0]);
+        return ReflectionHelper.invokeBooleanRequired(structure, "isMirrorable", new Class<?>[0]);
     }
 
     private int getClockwiseRotations(EnumFacing from, EnumFacing to) {
@@ -1076,7 +1060,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         if (dimensionExpression == null) return matchingDimensions;
 
         for (WorldProvider provider : getRegisteredDimensionProviders()) {
-            boolean matches = invokeBooleanRequired(dimensionExpression, "test", new Class<?>[]{WorldProvider.class}, provider);
+            boolean matches = ReflectionHelper.invokeBooleanRequired(
+                dimensionExpression, "test", new Class<?>[]{WorldProvider.class}, provider);
             if (matches) matchingDimensions.add(new DimensionInfo(provider.getDimension()));
         }
 
@@ -1084,7 +1069,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     }
 
     private double getNaturalGenerationWeight(Object generationType, WorldProvider provider, Biome biome) throws ReflectionException {
-        Object value = invokeRequired(generationType, "getGenerationWeight", new Class<?>[]{WorldProvider.class, Biome.class}, provider, biome);
+        Object value = ReflectionHelper.invokeRequired(generationType, "getGenerationWeight",
+            new Class<?>[]{WorldProvider.class, Biome.class}, provider, biome);
         if (value instanceof Number) return ((Number) value).doubleValue();
 
         throw new ReflectionException("Unexpected Recurrent Complex generation weight payload: " + value);
@@ -1106,38 +1092,6 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         }
 
         return providers;
-    }
-
-    private Object invokeRequired(Object target, String methodName) throws ReflectionException {
-        return invokeRequired(target, methodName, new Class<?>[0]);
-    }
-
-    private Object invokeStaticRequired(Class<?> ownerClass, String methodName, Class<?>[] parameterTypes,
-            Object... args) throws ReflectionException {
-        try {
-            Method method = ownerClass.getMethod(methodName, parameterTypes);
-            method.setAccessible(true);
-            return method.invoke(null, args);
-        } catch (Exception e) {
-            throw new ReflectionException("Failed to invoke static method '" + methodName + "' on " + ownerClass.getName(), e);
-        }
-    }
-
-    private Object invokeRequired(Object target, String methodName, Class<?>[] parameterTypes, Object... args) throws ReflectionException {
-        try {
-            Method method = target.getClass().getMethod(methodName, parameterTypes);
-            method.setAccessible(true);
-            return method.invoke(target, args);
-        } catch (Exception e) {
-            throw new ReflectionException("Failed to invoke method '" + methodName + "' on " + target.getClass().getName(), e);
-        }
-    }
-
-    private boolean invokeBooleanRequired(Object target, String methodName, Class<?>[] parameterTypes, Object... args) throws ReflectionException {
-        Object value = invokeRequired(target, methodName, parameterTypes, args);
-        if (value instanceof Boolean) return (Boolean) value;
-
-        throw new ReflectionException("Unexpected boolean reflection payload from '" + methodName + "': " + value);
     }
 
     @Override

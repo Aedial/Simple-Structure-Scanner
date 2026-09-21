@@ -16,6 +16,7 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraftforge.common.util.Constants;
 
+import com.simplestructurescanner.structure.BlockDisplayKey;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 
 
@@ -93,19 +94,13 @@ public class StructureCaptureSummary {
         tag.setInteger("sizeZ", sizeZ);
 
         NBTTagList blockList = new NBTTagList();
-        for (BlockSummary block : blocks) {
-            blockList.appendTag(block.toNBT());
-        }
+        for (BlockSummary block : blocks) blockList.appendTag(block.toNBT());
 
         NBTTagList entityList = new NBTTagList();
-        for (EntityInstance entity : entities) {
-            entityList.appendTag(entity.toNBT());
-        }
+        for (EntityInstance entity : entities) entityList.appendTag(entity.toNBT());
 
         NBTTagList containerList = new NBTTagList();
-        for (ContainerSummary container : containers) {
-            containerList.appendTag(container.toNBT());
-        }
+        for (ContainerSummary container : containers) containerList.appendTag(container.toNBT());
 
         tag.setTag("blocks", blockList);
         tag.setTag("entities", entityList);
@@ -115,9 +110,8 @@ public class StructureCaptureSummary {
     }
 
     public static StructureCaptureSummary fromNBT(@Nullable NBTTagCompound tag) {
-        if (tag == null) {
-            return new StructureCaptureSummary(0, 0, 0, Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
-        }
+        if (tag == null) return new StructureCaptureSummary(0, 0, 0, Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList());
 
         List<BlockSummary> blocks = new ArrayList<>();
         NBTTagList blockList = tag.getTagList("blocks", Constants.NBT.TAG_COMPOUND);
@@ -148,18 +142,22 @@ public class StructureCaptureSummary {
     }
 
     public static class BlockSummary {
-        private final String key;
+        private final BlockDisplayKey key;
         private final IBlockState blockState;
         private final int count;
 
-        public BlockSummary(String key, IBlockState blockState, int count) {
+        public BlockSummary(BlockDisplayKey key, IBlockState blockState, int count) {
             this.key = key;
             this.blockState = blockState;
             this.count = count;
         }
 
-        public String getKey() {
+        public BlockDisplayKey getKey() {
             return key;
+        }
+
+        public String getSerializedKey() {
+            return key.toString();
         }
 
         public IBlockState getBlockState() {
@@ -177,16 +175,17 @@ public class StructureCaptureSummary {
 
         public NBTTagCompound toNBT() {
             NBTTagCompound tag = new NBTTagCompound();
-            tag.setString("key", key);
+            tag.setString("key", key.toString());
             tag.setTag("state", NBTUtil.writeBlockState(new NBTTagCompound(), blockState));
             tag.setInteger("count", count);
             return tag;
         }
 
         public static BlockSummary fromNBT(NBTTagCompound tag) {
+            IBlockState blockState = NBTUtil.readBlockState(tag.getCompoundTag("state"));
             return new BlockSummary(
-                tag.getString("key"),
-                NBTUtil.readBlockState(tag.getCompoundTag("state")),
+                CaptureBlockHelper.createKey(blockState),
+                blockState,
                 tag.getInteger("count")
             );
         }
@@ -233,14 +232,14 @@ public class StructureCaptureSummary {
     }
 
     public static class ContainerSummary {
-        private final String key;
+        private final CaptureContainerKey key;
         private final IBlockState blockState;
         @Nullable
         private final ResourceLocation lootTableId;
         private final int containerCount;
         private final int totalItemCount;
 
-        public ContainerSummary(String key, IBlockState blockState, @Nullable ResourceLocation lootTableId,
+        public ContainerSummary(CaptureContainerKey key, IBlockState blockState, @Nullable ResourceLocation lootTableId,
                 int containerCount, int totalItemCount) {
             this.key = key;
             this.blockState = blockState;
@@ -249,8 +248,12 @@ public class StructureCaptureSummary {
             this.totalItemCount = totalItemCount;
         }
 
-        public String getKey() {
+        public CaptureContainerKey getKey() {
             return key;
+        }
+
+        public String getSerializedKey() {
+            return key.toString();
         }
 
         public IBlockState getBlockState() {
@@ -272,7 +275,7 @@ public class StructureCaptureSummary {
 
         public NBTTagCompound toNBT() {
             NBTTagCompound tag = new NBTTagCompound();
-            tag.setString("key", key);
+            tag.setString("key", key.toString());
             tag.setTag("state", NBTUtil.writeBlockState(new NBTTagCompound(), blockState));
             if (lootTableId != null) tag.setString("lootTableId", lootTableId.toString());
             tag.setInteger("containerCount", containerCount);
@@ -283,10 +286,11 @@ public class StructureCaptureSummary {
         public static ContainerSummary fromNBT(NBTTagCompound tag) {
             ResourceLocation lootTableId = null;
             if (tag.hasKey("lootTableId")) lootTableId = new ResourceLocation(tag.getString("lootTableId"));
+            IBlockState blockState = NBTUtil.readBlockState(tag.getCompoundTag("state"));
 
             return new ContainerSummary(
-                tag.getString("key"),
-                NBTUtil.readBlockState(tag.getCompoundTag("state")),
+                new CaptureContainerKey(CaptureBlockHelper.createKey(blockState), lootTableId),
+                blockState,
                 lootTableId,
                 tag.getInteger("containerCount"),
                 tag.getInteger("totalItemCount")
