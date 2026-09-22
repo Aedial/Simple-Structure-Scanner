@@ -757,10 +757,11 @@ public class GuiStructureScanner extends GuiScreen {
             nextButtonVisible = true;
 
             boolean nextHovered = isInBounds(mouseX, mouseY, nextButtonX, nextButtonY, nextButtonW, nextButtonH);
-            drawButton(nextButtonX, nextButtonY, nextButtonW, nextButtonH, nextText, nextHovered);
+            StructureLocation location = StructureSearchManager.getLastKnownLocation(selected);
+            boolean nextEnabled = location == null || skipOffset < location.getTotalFound() - 1;
+            drawNavButton(nextButtonX, nextButtonY, nextButtonW, nextButtonH, nextText, nextHovered, nextEnabled);
 
             // Blacklist button "X" (red) - only show if location is known
-            StructureLocation location = StructureSearchManager.getLastKnownLocation(selected);
             int currentButtonX = nextButtonX + nextButtonW + buttonSpacing;
 
             if (location != null) {
