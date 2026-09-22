@@ -59,6 +59,12 @@ public class GuiStructureScanner extends GuiScreen {
     private static final int BUTTON_I18N = 1;
     private static final int BUTTON_SHOW_NON_SEARCHABLE = 2;
     private static final int BUTTON_SHOW_CURRENT_DIMENSION = 3;
+    private static final int TOOLTIP_PADDING = 6;
+    private static final int TOOLTIP_ROW_HEIGHT = 10;
+    private static final int TOOLTIP_COLUMN_SPACING = 8;
+    private static final int TOOLTIP_VERTICAL_OFFSET = 12;
+    private static final int TOOLTIP_RIGHT_OFFSET = 12;
+    private static final int TOOLTIP_LEFT_OFFSET = 4;
 
     private GuiTextField filterField;
     private StructureListWidget listWidget;
@@ -1229,62 +1235,96 @@ public class GuiStructureScanner extends GuiScreen {
     }
 
     private void drawMultiColumnTooltip(int mouseX, int mouseY, List<String> items) {
-        // Calculate columns needed
-        int maxItemsPerColumn = 15;
-        int numColumns = (items.size() + maxItemsPerColumn - 1) / maxItemsPerColumn;
-        int itemsPerColumn = (items.size() + numColumns - 1) / numColumns;
+        if (items.isEmpty()) return;
 
-        // Calculate column widths
-        int[] columnWidths = new int[numColumns];
-        for (int i = 0; i < items.size(); i++) {
-            int col = i / itemsPerColumn;
-            int w = fontRenderer.getStringWidth(items.get(i));
-            if (w > columnWidths[col]) columnWidths[col] = w;
+        boolean preferRight = mouseX < width / 2;
+        int tooltipY = Math.max(0, mouseY - TOOLTIP_VERTICAL_OFFSET);
+        int downRows = Math.max(1, (height - tooltipY - TOOLTIP_PADDING * 2) / TOOLTIP_ROW_HEIGHT);
+        TooltipLayout layout = buildTooltipLayout(items, downRows);
+
+        if (layout.tooltipWidth > getPreferredTooltipWidth(mouseX, preferRight)) {
+            int expandedRows = Math.max(1, (height - TOOLTIP_PADDING * 2) / TOOLTIP_ROW_HEIGHT);
+            layout = buildTooltipLayout(items, expandedRows);
         }
 
-        // Total tooltip size
-        int columnSpacing = 8;
-        int totalWidth = 0;
-        for (int i = 0; i < numColumns; i++) {
-            totalWidth += columnWidths[i];
-            if (i < numColumns - 1) totalWidth += columnSpacing;
-        }
-
-        int padding = 6;
-        int tooltipWidth = totalWidth + padding * 2;
-        int tooltipHeight = itemsPerColumn * 10 + padding * 2;
-
-        // Position tooltip
-        int tooltipX = mouseX + 12;
-        int tooltipY = mouseY - 12;
-
-        // Keep on screen
-        if (tooltipX + tooltipWidth > width) tooltipX = mouseX - tooltipWidth - 4;
-        if (tooltipY + tooltipHeight > height) tooltipY = height - tooltipHeight;
-        if (tooltipY < 0) tooltipY = 0;
+        int tooltipX = getTooltipX(mouseX, layout.tooltipWidth, preferRight);
+        if (tooltipY + layout.tooltipHeight > height) tooltipY = Math.max(0, height - layout.tooltipHeight);
 
         // Draw background
         int bgColor = 0xF0100010;
         int borderLight = 0x505000FF;
         int borderDark = 0x5028007F;
-        Gui.drawRect(tooltipX - 1, tooltipY - 1, tooltipX + tooltipWidth + 1, tooltipY + tooltipHeight + 1, bgColor);
-        Gui.drawRect(tooltipX, tooltipY, tooltipX + tooltipWidth, tooltipY + 1, borderLight);
-        Gui.drawRect(tooltipX, tooltipY + tooltipHeight - 1, tooltipX + tooltipWidth, tooltipY + tooltipHeight, borderDark);
-        Gui.drawRect(tooltipX - 1, tooltipY, tooltipX, tooltipY + tooltipHeight, borderLight);
-        Gui.drawRect(tooltipX + tooltipWidth, tooltipY, tooltipX + tooltipWidth + 1, tooltipY + tooltipHeight, borderDark);
+        Gui.drawRect(tooltipX - 1, tooltipY - 1, tooltipX + layout.tooltipWidth + 1, tooltipY + layout.tooltipHeight + 1, bgColor);
+        Gui.drawRect(tooltipX, tooltipY, tooltipX + layout.tooltipWidth, tooltipY + 1, borderLight);
+        Gui.drawRect(tooltipX, tooltipY + layout.tooltipHeight - 1, tooltipX + layout.tooltipWidth, tooltipY + layout.tooltipHeight, borderDark);
+        Gui.drawRect(tooltipX - 1, tooltipY, tooltipX, tooltipY + layout.tooltipHeight, borderLight);
+        Gui.drawRect(tooltipX + layout.tooltipWidth, tooltipY, tooltipX + layout.tooltipWidth + 1, tooltipY + layout.tooltipHeight, borderDark);
 
         // Draw items in columns
-        int textY = tooltipY + padding;
-        int colX = tooltipX + padding;
-        for (int col = 0; col < numColumns; col++) {
-            int startIdx = col * itemsPerColumn;
-            int endIdx = Math.min(startIdx + itemsPerColumn, items.size());
+        int textY = tooltipY + TOOLTIP_PADDING;
+        int colX = tooltipX + TOOLTIP_PADDING;
+        for (int col = 0; col < layout.columnWidths.length; col++) {
+            int startIdx = col * layout.itemsPerColumn;
+            int endIdx = Math.min(startIdx + layout.itemsPerColumn, items.size());
 
             for (int i = startIdx; i < endIdx; i++) {
-                fontRenderer.drawStringWithShadow(items.get(i), colX, textY + (i - startIdx) * 10, 0xDDDDDD);
+                fontRenderer.drawStringWithShadow(items.get(i), colX,
+                    textY + (i - startIdx) * TOOLTIP_ROW_HEIGHT, 0xDDDDDD);
             }
 
-            colX += columnWidths[col] + columnSpacing;
+            colX += layout.columnWidths[col] + TOOLTIP_COLUMN_SPACING;
+        }
+    }
+
+    private TooltipLayout buildTooltipLayout(List<String> items, int maxItemsPerColumn) {
+        int itemsPerColumn = Math.max(1, Math.min(items.size(), maxItemsPerColumn));
+        int numColumns = (items.size() + itemsPerColumn - 1) / itemsPerColumn;
+        int[] columnWidths = new int[numColumns];
+
+        for (int i = 0; i < items.size(); i++) {
+            int col = i / itemsPerColumn;
+            int itemWidth = fontRenderer.getStringWidth(items.get(i));
+            if (itemWidth > columnWidths[col]) columnWidths[col] = itemWidth;
+        }
+
+        int totalWidth = 0;
+        for (int i = 0; i < numColumns; i++) {
+            totalWidth += columnWidths[i];
+            if (i < numColumns - 1) totalWidth += TOOLTIP_COLUMN_SPACING;
+        }
+
+        int tooltipWidth = totalWidth + TOOLTIP_PADDING * 2;
+        int tooltipHeight = Math.min(itemsPerColumn, items.size()) * TOOLTIP_ROW_HEIGHT + TOOLTIP_PADDING * 2;
+
+        return new TooltipLayout(itemsPerColumn, columnWidths, tooltipWidth, tooltipHeight);
+    }
+
+    private int getPreferredTooltipWidth(int mouseX, boolean preferRight) {
+        if (preferRight) return Math.max(0, width - mouseX - TOOLTIP_RIGHT_OFFSET);
+
+        return Math.max(0, mouseX - TOOLTIP_LEFT_OFFSET);
+    }
+
+    private int getTooltipX(int mouseX, int tooltipWidth, boolean preferRight) {
+        int tooltipX = preferRight ? mouseX + TOOLTIP_RIGHT_OFFSET : mouseX - tooltipWidth - TOOLTIP_LEFT_OFFSET;
+
+        if (tooltipX < 0) tooltipX = 0;
+        if (tooltipX + tooltipWidth > width) tooltipX = Math.max(0, width - tooltipWidth);
+
+        return tooltipX;
+    }
+
+    private static class TooltipLayout {
+        private final int itemsPerColumn;
+        private final int[] columnWidths;
+        private final int tooltipWidth;
+        private final int tooltipHeight;
+
+        private TooltipLayout(int itemsPerColumn, int[] columnWidths, int tooltipWidth, int tooltipHeight) {
+            this.itemsPerColumn = itemsPerColumn;
+            this.columnWidths = columnWidths;
+            this.tooltipWidth = tooltipWidth;
+            this.tooltipHeight = tooltipHeight;
         }
     }
 
