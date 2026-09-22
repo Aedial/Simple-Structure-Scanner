@@ -141,16 +141,17 @@ public class RecurrentComplexStructureSearcher {
             return searchVillages(worldServer, structureId, origin, maxResults);
         }
 
-        // Natural generation cannot select structures without NaturalGeneration entries
         List<RecurrentComplexAccessors.RcGeneration> naturalTypes = RecurrentComplexAccessors.naturalGenerationTypes(structure);
-        if (naturalTypes != null && naturalTypes.isEmpty()) {
-            SimpleStructureScanner.LOGGER.info("Skipping '{}': it has no NaturalGeneration entries",
+        boolean hasNaturalGeneration = naturalTypes == null || !naturalTypes.isEmpty();
+        boolean hasStaticGeneration = RecurrentComplexAccessors.hasStaticGeneration(structure);
+        if (!hasNaturalGeneration && !hasStaticGeneration) {
+            SimpleStructureScanner.LOGGER.info("Skipping '{}': it has no supported generation entries",
                 structureId);
             return new ArrayList<>();
         }
 
         // RCConfig.tweakedSpawnRate scales each natural-generation weight
-        double spawnRateTweak = naturalTypes != null
+        double spawnRateTweak = hasNaturalGeneration && naturalTypes != null
             ? RecurrentComplexAccessors.tweakedSpawnRate(structureId) : 1.0;
 
         // Cache target weights and Recurrent Complex settings for this scan
@@ -210,20 +211,23 @@ public class RecurrentComplexStructureSearcher {
 
                 chunksSearched++;
 
-                if (RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z)) {
-                    cacheHits++;
-                } else {
-                    eventsFired++;
+                boolean mayGenerateNaturally = hasNaturalGeneration
+                    && mayGenerateNaturallyCached(worldServer, chunkPos, rcBiomeEnabled,
+                        memoizedGenerationFilter, rcProviderEnabled, minDistSq, spawnX, spawnZ);
+
+                if (mayGenerateNaturally) {
+                    if (RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z)) {
+                        cacheHits++;
+                    } else {
+                        eventsFired++;
+                    }
                 }
 
-                if (!mayGenerateNaturallyCached(worldServer, chunkPos, rcBiomeEnabled,
-                    memoizedGenerationFilter, rcProviderEnabled, minDistSq, spawnX, spawnZ)) continue;
+                if (!hasStaticGeneration && !mayGenerateNaturally) continue;
 
                 BlockPos found = searchInChunk(worldServer, structureId, structure, chunkPos,
-                    naturalTypes, spawnRateTweak, weightByBiome);
-                if (found != null && foundPositions.add(found)) {
-                    results.add(found);
-                }
+                    hasStaticGeneration, mayGenerateNaturally, naturalTypes, spawnRateTweak, weightByBiome);
+                if (found != null && foundPositions.add(found)) results.add(found);
             }
         } finally {
             ValidationContextManager.clearDimensionCache(dimensionId);
@@ -501,6 +505,8 @@ public class RecurrentComplexStructureSearcher {
      * @param structureId The Recurrent Complex structure ID
      * @param structure The reflected Recurrent Complex structure
      * @param chunkPos The chunk to search
+     * @param searchStatic Whether the target has StaticGeneration entries
+     * @param mayGenerateNaturally Whether Recurrent Complex permits natural generation in this chunk
      * @param naturalTypes The target NaturalGeneration types, or null when unavailable
      * @param spawnRateTweak RCConfig.tweakedSpawnRate for the target structure
      * @param weightByBiome Per-search natural generation weights
@@ -509,6 +515,7 @@ public class RecurrentComplexStructureSearcher {
     @Nullable
     private static BlockPos searchInChunk(WorldServer worldServer, String structureId,
             RecurrentComplexAccessors.RcStructure structure, ChunkPos chunkPos,
+            boolean searchStatic, boolean mayGenerateNaturally,
             @Nullable List<RecurrentComplexAccessors.RcGeneration> naturalTypes,
             double spawnRateTweak, Map<Biome, Double> weightByBiome) {
 
@@ -560,6 +567,40 @@ public class RecurrentComplexStructureSearcher {
                 }
             }
 
+            Random random = RecurrentComplexAccessors.populationRandom(worldSeed, chunkPos);
+            List<RecurrentComplexAccessors.RcStaticCandidate> staticCandidates =
+                RecurrentComplexAccessors.staticCandidates(worldServer, chunkPos, random);
+
+            if (searchStatic) {
+                for (RecurrentComplexAccessors.RcStaticCandidate candidate : staticCandidates) {
+                    if (candidate.structureValue() != structure.value()) continue;
+
+                    World validationWorld = ValidationContextManager.getValidationWorld(worldServer);
+                    try {
+                        BlockPos validated = RecurrentComplexAccessors.validateStaticPlacement(
+                            validationWorld, structure, candidate, structureId, chunkPos);
+                        if (validated == null) {
+                            SimpleStructureScanner.LOGGER.debug(
+                                "Static placement rejected '{}' in chunk ({},{})",
+                                structureId, chunkPos.x, chunkPos.z);
+                            continue;
+                        }
+
+                        SimpleStructureScanner.LOGGER.info(
+                            "Predicted static '{}' in chunk ({},{}), center {}",
+                            structureId, chunkPos.x, chunkPos.z, validated);
+                        return validated;
+                    } catch (Exception e) {
+                        SimpleStructureScanner.LOGGER.warn(
+                            "Could not validate static '{}' in chunk ({},{}): {}: {}",
+                            structureId, chunkPos.x, chunkPos.z,
+                            e.getClass().getSimpleName(), e.getMessage());
+                    }
+                }
+            }
+
+            if (!mayGenerateNaturally) return null;
+
             // Skip chunks where every target NaturalGeneration entry has non-positive weight
             if (naturalTypes != null) {
                 Biome chunkBiome = biomeAt(worldServer, chunkPos);
@@ -578,7 +619,6 @@ public class RecurrentComplexStructureSearcher {
                 if (!RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z)) return null;
             }
 
-            Random random = RecurrentComplexAccessors.populationRandom(worldSeed, chunkPos);
             List<RecurrentComplexAccessors.RcCandidate> candidates =
                     RecurrentComplexAccessors.naturalCandidates(worldServer, chunkPos, random);
 

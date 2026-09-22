@@ -75,6 +75,8 @@ final class RecurrentComplexAccessors {
             "ivorius.reccomplex.world.gen.feature.structure.Environment";
     private static final String NATURAL_GENERATION_CLASS =
             "ivorius.reccomplex.world.gen.feature.structure.generic.generation.NaturalGeneration";
+    private static final String STATIC_GENERATION_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.generic.generation.StaticGeneration";
     private static final String VANILLA_GENERATION_CLASS =
             "ivorius.reccomplex.world.gen.feature.structure.generic.generation.VanillaGeneration";
     private static final String VANILLA_DECORATION_GENERATION_CLASS =
@@ -107,8 +109,6 @@ final class RecurrentComplexAccessors {
     @Nullable
     private static Method diagStaticCandidatesMethod;
     @Nullable
-    private static Method diagSeedCandidatesMethod;
-    @Nullable
     private static Method diagNaturalCandidatesMethod;
     @Nullable
     private static Method diagMayGenerateMethod;
@@ -118,8 +118,6 @@ final class RecurrentComplexAccessors {
     private static MethodHandle mhPopulationRandom;
     @Nullable
     private static MethodHandle mhStaticCandidates;
-    @Nullable
-    private static MethodHandle mhSeedCandidates;
     @Nullable
     private static MethodHandle mhNaturalCandidates;
 
@@ -153,6 +151,10 @@ final class RecurrentComplexAccessors {
     @Nullable
     private static Method blockSurfacePosFromMethod;
     @Nullable
+    private static Method blockSurfacePosGetXMethod;
+    @Nullable
+    private static Method blockSurfacePosGetZMethod;
+    @Nullable
     private static Method sgTestMethod;
     @Nullable
     private static Method sgAllowOverlapsMethod;
@@ -172,6 +174,8 @@ final class RecurrentComplexAccessors {
     // Natural-generation weight access
     @Nullable
     private static Class<?> naturalGenerationClass;
+    @Nullable
+    private static Class<?> staticGenerationClass;
     @Nullable
     private static Class<?> vanillaGenerationClass;
     @Nullable
@@ -293,6 +297,38 @@ final class RecurrentComplexAccessors {
         }
     }
 
+    static final class RcStaticCandidate {
+
+        private final RcStructure structure;
+        private final RcGeneration generation;
+        private final BlockPos position;
+        private final long seed;
+
+        private RcStaticCandidate(RcStructure structure, RcGeneration generation,
+                BlockPos position, long seed) {
+            this.structure = structure;
+            this.generation = generation;
+            this.position = position;
+            this.seed = seed;
+        }
+
+        RcGeneration generation() {
+            return generation;
+        }
+
+        BlockPos position() {
+            return position;
+        }
+
+        long seed() {
+            return seed;
+        }
+
+        Object structureValue() {
+            return structure.value();
+        }
+    }
+
     static final class LedgerChunk {
 
         private final boolean checked;
@@ -327,7 +363,6 @@ final class RecurrentComplexAccessors {
             diagPopulationRandomMethod = locatorClass.getMethod("populationRandom", long.class, ChunkPos.class);
             diagStaticCandidatesMethod = ReflectionHelper.getAccessibleDeclaredMethod(
                 locatorClass, "staticCandidatesInChunk", WorldServer.class, ChunkPos.class);
-            diagSeedCandidatesMethod = locatorClass.getMethod("seedCandidates", Collection.class, Random.class);
             diagNaturalCandidatesMethod = ReflectionHelper.getAccessibleDeclaredMethod(
                 locatorClass, "naturalCandidatesInChunk", WorldServer.class, ChunkPos.class, Random.class);
             diagMayGenerateMethod = ReflectionHelper.getAccessibleDeclaredMethod(
@@ -335,7 +370,6 @@ final class RecurrentComplexAccessors {
 
             mhPopulationRandom = ReflectionHelper.unreflectOrNull(diagPopulationRandomMethod);
             mhStaticCandidates = ReflectionHelper.unreflectOrNull(diagStaticCandidatesMethod);
-            mhSeedCandidates = ReflectionHelper.unreflectOrNull(diagSeedCandidatesMethod);
             mhNaturalCandidates = ReflectionHelper.unreflectOrNull(diagNaturalCandidatesMethod);
 
             initializeGeneratorAccess(structureClass);
@@ -414,6 +448,18 @@ final class RecurrentComplexAccessors {
         }
     }
 
+    static boolean hasStaticGeneration(RcStructure structure) {
+        if (staticGenerationClass == null || structureGenerationTypesMethod == null) return false;
+
+        try {
+            List<?> types = (List<?>) structureGenerationTypesMethod.invoke(structure.value,
+                staticGenerationClass);
+            return types != null && !types.isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     static double tweakedSpawnRate(String structureId) {
         if (rcTweakedSpawnRateMethod == null) return 1.0;
 
@@ -487,13 +533,29 @@ final class RecurrentComplexAccessors {
             null, worldSeed, chunkPos);
     }
 
+    static List<RcStaticCandidate> staticCandidates(WorldServer worldServer, ChunkPos chunkPos,
+            Random random) throws Exception {
+
+        List<?> rawCandidates = (List<?>) ReflectionHelper.invoke(mhStaticCandidates,
+            diagStaticCandidatesMethod, null, worldServer, chunkPos);
+        List<RcStaticCandidate> candidates = new ArrayList<>(rawCandidates.size());
+
+        for (Object rawCandidate : rawCandidates) {
+            long seed = random.nextLong();
+            Class<?> candidateClass = rawCandidate.getClass();
+            Object structure = ReflectionHelper.getField(rawCandidate, candidateClass, "structure");
+            Object generation = ReflectionHelper.getField(rawCandidate, candidateClass, "generation");
+            Object position = ReflectionHelper.getField(rawCandidate, candidateClass, "position");
+
+            candidates.add(new RcStaticCandidate(new RcStructure(structure),
+                new RcGeneration(generation), surfacePosition(position), seed));
+        }
+
+        return candidates;
+    }
+
     static List<RcCandidate> naturalCandidates(WorldServer worldServer, ChunkPos chunkPos, Random random)
             throws Exception {
-
-        List<?> statics = (List<?>) ReflectionHelper.invoke(mhStaticCandidates,
-            diagStaticCandidatesMethod, null, worldServer, chunkPos);
-        ReflectionHelper.invoke(mhSeedCandidates, diagSeedCandidatesMethod, null, statics, random);
-
         List<?> rawCandidates = (List<?>) ReflectionHelper.invoke(mhNaturalCandidates,
             diagNaturalCandidatesMethod, null, worldServer, chunkPos, random);
 
@@ -647,12 +709,28 @@ final class RecurrentComplexAccessors {
     static BlockPos validatePlacement(World validationWorld, RcStructure structure,
             RcGeneration generation, String structureId, long seed, ChunkPos chunkPos) throws Exception {
 
+        return validatePlacement(validationWorld, structure, generation, structureId, seed, chunkPos,
+            computeSurfacePos(chunkPos, seed), true);
+    }
+
+    @Nullable
+    static BlockPos validateStaticPlacement(World validationWorld, RcStructure structure,
+            RcStaticCandidate candidate, String structureId, ChunkPos chunkPos) throws Exception {
+
+        return validatePlacement(validationWorld, structure, candidate.generation(), structureId,
+            candidate.seed(), chunkPos, candidate.position(), false);
+    }
+
+    @Nullable
+    private static BlockPos validatePlacement(World validationWorld, RcStructure structure,
+            RcGeneration generation, String structureId, long seed, ChunkPos chunkPos,
+            BlockPos surfaceBlockPos, boolean checkNaturalWeight) throws Exception {
+
         if (sgConstructor == null || unsafeInstance == null) {
             throw new IllegalStateException(
                 "Cannot validate Recurrent Complex placement: generator access is unavailable");
         }
 
-        BlockPos surfaceBlockPos = computeSurfacePos(chunkPos, seed);
         Object generator = sgConstructor.newInstance(structure.value);
         setupGenerator(generator, generation, structureId, seed, surfaceBlockPos);
 
@@ -726,7 +804,7 @@ final class RecurrentComplexAccessors {
         StructureBoundingBox boundingBox = (StructureBoundingBox) boundingBoxResult.get();
         Object environment = sgEnvironmentMethod.invoke(generator);
         Biome biome = (Biome) envBiomeField.get(environment);
-        if (biome != null) {
+        if (checkNaturalWeight && biome != null) {
             double weight = generationWeight(generation, ((World) validationWorld).provider, biome);
             if (weight <= 0) {
                 SimpleStructureScanner.LOGGER.debug(
@@ -737,6 +815,13 @@ final class RecurrentComplexAccessors {
         }
 
         return boundingBoxCenter(boundingBox);
+    }
+
+    private static BlockPos surfacePosition(Object position) throws Exception {
+        int x = ((Number) blockSurfacePosGetXMethod.invoke(position)).intValue();
+        int z = ((Number) blockSurfacePosGetZMethod.invoke(position)).intValue();
+
+        return new BlockPos(x, 0, z);
     }
 
     /**
@@ -817,6 +902,8 @@ final class RecurrentComplexAccessors {
 
         placerMethod = generationTypeClass.getMethod("placer");
         blockSurfacePosFromMethod = blockSurfacePosClass.getMethod("from", BlockPos.class);
+        blockSurfacePosGetXMethod = blockSurfacePosClass.getMethod("getX");
+        blockSurfacePosGetZMethod = blockSurfacePosClass.getMethod("getZ");
         generateMaturitySuggest = Enum.valueOf((Class<Enum>) generateMaturityClass, "SUGGEST");
 
         sgTestMethod = structureGeneratorClass.getDeclaredMethod("test");
@@ -836,6 +923,7 @@ final class RecurrentComplexAccessors {
 
     private static void initializeNaturalGenerationAccess() throws Exception {
         naturalGenerationClass = Class.forName(NATURAL_GENERATION_CLASS);
+        staticGenerationClass = Class.forName(STATIC_GENERATION_CLASS);
         vanillaGenerationClass = Class.forName(VANILLA_GENERATION_CLASS);
         ngGetGenerationWeightMethod = naturalGenerationClass.getDeclaredMethod("getGenerationWeight",
             WorldProvider.class, Biome.class);

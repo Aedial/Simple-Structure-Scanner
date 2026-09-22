@@ -24,6 +24,9 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
+import net.minecraft.world.WorldProviderEnd;
+import net.minecraft.world.WorldProviderHell;
+import net.minecraft.world.WorldProviderSurface;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.Constants;
@@ -973,6 +976,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private GenerationMetadata collectGenerationMetadata(List<?> generationTypes) throws ReflectionException {
         Set<Biome> biomes = new HashSet<>();
         Set<DimensionInfo> dimensions = new HashSet<>();
+        boolean filterNaturalGeneration = RecurrentComplexAccessors.isAvailable()
+            && RecurrentComplexAccessors.supportsMemoizedGenerationFilter();
         boolean hasNaturalGeneration = false;
         boolean hasStaticGeneration = false;
         boolean vanillaViable = false;
@@ -982,8 +987,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
             if (NATURAL_GENERATION_CLASS.equals(className)) {
                 hasNaturalGeneration = true;
-                biomes.addAll(resolveNaturalBiomes(generationType));
-                dimensions.addAll(resolveNaturalDimensions(generationType));
+                biomes.addAll(resolveNaturalBiomes(generationType, filterNaturalGeneration));
+                dimensions.addAll(resolveNaturalDimensions(generationType, filterNaturalGeneration));
                 continue;
             }
 
@@ -1007,27 +1012,29 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             return GenerationMetadata.skip();
         }
 
-        if (vanillaViable && !hasNaturalGeneration && !hasStaticGeneration) {
-            dimensions.add(DimensionInfo.OVERWORLD);
-        }
+        if (vanillaViable) dimensions.add(DimensionInfo.OVERWORLD);
 
         return new GenerationMetadata(
             true,
-            !biomes.isEmpty() ? biomes : null,
-            !dimensions.isEmpty() ? dimensions : null,
-            hasStaticGeneration && !hasNaturalGeneration ? RarityTextHelper.fixedPosition() : null
+            hasNaturalGeneration ? biomes : null,
+            dimensions,
+            hasStaticGeneration && !hasNaturalGeneration && !vanillaViable
+                ? RarityTextHelper.fixedPosition() : null
         );
     }
 
-    private Set<Biome> resolveNaturalBiomes(Object generationType) throws ReflectionException {
+    private Set<Biome> resolveNaturalBiomes(Object generationType, boolean filterNaturalGeneration)
+            throws ReflectionException {
         Set<Biome> matchingBiomes = new HashSet<>();
         List<WorldProvider> providers = getRegisteredDimensionProviders();
         if (providers.isEmpty()) return matchingBiomes;
 
         for (Biome biome : Biome.REGISTRY) {
             if (biome == null) continue;
+            if (filterNaturalGeneration && !isNaturalGenerationEnabled(biome)) continue;
 
             for (WorldProvider provider : providers) {
+                if (filterNaturalGeneration && !isNaturalGenerationEnabled(provider)) continue;
                 if (getNaturalGenerationWeight(generationType, provider, biome) <= 0.0D) continue;
 
                 matchingBiomes.add(biome);
@@ -1038,12 +1045,16 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         return matchingBiomes;
     }
 
-    private Set<DimensionInfo> resolveNaturalDimensions(Object generationType) throws ReflectionException {
+    private Set<DimensionInfo> resolveNaturalDimensions(Object generationType, boolean filterNaturalGeneration)
+            throws ReflectionException {
         Set<DimensionInfo> matchingDimensions = new HashSet<>();
 
         for (WorldProvider provider : getRegisteredDimensionProviders()) {
+            if (filterNaturalGeneration && !isNaturalGenerationEnabled(provider)) continue;
+
             for (Biome biome : Biome.REGISTRY) {
                 if (biome == null) continue;
+                if (filterNaturalGeneration && !isNaturalGenerationEnabled(biome)) continue;
                 if (getNaturalGenerationWeight(generationType, provider, biome) <= 0.0D) continue;
 
                 matchingDimensions.add(new DimensionInfo(provider.getDimension()));
@@ -1052,6 +1063,26 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         }
 
         return matchingDimensions;
+    }
+
+    private boolean isNaturalGenerationEnabled(Biome biome) {
+        try {
+            return RecurrentComplexAccessors.isGenerationEnabled(biome);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not resolve Recurrent Complex biome generation settings; keeping its metadata", e);
+            return true;
+        }
+    }
+
+    private boolean isNaturalGenerationEnabled(WorldProvider provider) {
+        try {
+            return RecurrentComplexAccessors.isGenerationEnabled(provider);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not resolve Recurrent Complex dimension generation settings; keeping its metadata", e);
+            return true;
+        }
     }
 
     private Set<DimensionInfo> resolveStaticDimensions(Object generationType) throws ReflectionException {
@@ -1078,20 +1109,57 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
     private List<WorldProvider> getRegisteredDimensionProviders() {
         Set<Integer> dimensionIds = new LinkedHashSet<>();
+        dimensionIds.add(-1);
+        dimensionIds.add(0);
+        dimensionIds.add(1);
+
         for (Integer dimensionId : DimensionManager.getIDs()) {
             if (dimensionId != null) dimensionIds.add(dimensionId);
         }
 
         List<WorldProvider> providers = new ArrayList<>();
         for (Integer dimensionId : dimensionIds) {
-            try {
-                providers.add(DimensionManager.createProviderFor(dimensionId));
-            } catch (Exception e) {
-                SimpleStructureScanner.LOGGER.debug("Failed to create Recurrent Complex dimension provider for {}", dimensionId, e);
-            }
+            WorldProvider provider = createDimensionProvider(dimensionId);
+            if (provider != null) providers.add(provider);
         }
 
         return providers;
+    }
+
+    @Nullable
+    private WorldProvider createDimensionProvider(int dimensionId) {
+        try {
+            return DimensionManager.createProviderFor(dimensionId);
+        } catch (Exception e) {
+            WorldProvider fallbackProvider = createVanillaProviderFallback(dimensionId);
+            if (fallbackProvider != null) return fallbackProvider;
+
+            SimpleStructureScanner.LOGGER.debug(
+                "Failed to create Recurrent Complex dimension provider for {}", dimensionId, e);
+            return null;
+        }
+    }
+
+    @Nullable
+    private WorldProvider createVanillaProviderFallback(int dimensionId) {
+        WorldProvider provider;
+
+        switch (dimensionId) {
+            case -1:
+                provider = new WorldProviderHell();
+                break;
+            case 0:
+                provider = new WorldProviderSurface();
+                break;
+            case 1:
+                provider = new WorldProviderEnd();
+                break;
+            default:
+                return null;
+        }
+
+        provider.setDimension(dimensionId);
+        return provider;
     }
 
     @Override

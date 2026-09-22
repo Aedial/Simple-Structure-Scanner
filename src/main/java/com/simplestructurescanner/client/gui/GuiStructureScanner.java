@@ -673,13 +673,14 @@ public class GuiStructureScanner extends GuiScreen {
             // Biome info
             Set<Biome> biomes = selectedInfo.getValidBiomes();
             int biomesCount = biomes != null ? biomes.size() : 0;
-            boolean hasBiomes = biomesCount > 0;
 
             // Build biome display
             String biomesLabel;
             int biomesLabelY = textY;
-            if (!hasBiomes) {
+            if (biomes == null) {
                 biomesLabel = I18n.format("gui.structurescanner.biomes", I18n.format("gui.structurescanner.biomes.any"));
+            } else if (biomes.isEmpty()) {
+                biomesLabel = I18n.format("gui.structurescanner.biomes", I18n.format("gui.structurescanner.unknown"));
             } else if (biomesCount == 1) {
                 String biomeName = biomes.iterator().next().getBiomeName();
                 biomesLabel = I18n.format("gui.structurescanner.biomes", biomeName);
