@@ -44,7 +44,7 @@ import com.simplestructurescanner.structure.validation.StructureValidationWorld;
  * The mod is not used directly to not fail directly if the internal API changes.
  * This allows some flexibility in handling changes.
  */
-@SuppressWarnings("unchecked")
+@SuppressWarnings({"unchecked", "rawtypes"})
 final class RecurrentComplexAccessors {
 
     // ========== Recurrent Complex class names ==========

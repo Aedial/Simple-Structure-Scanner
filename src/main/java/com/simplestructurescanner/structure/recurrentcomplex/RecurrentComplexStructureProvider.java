@@ -68,6 +68,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private static final String NATURAL_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.NaturalGeneration";
     private static final String STATIC_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.StaticGeneration";
     private static final String VANILLA_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.VanillaGeneration";
+    private static final String RC_CONFIG_CLASS = "ivorius.reccomplex.RCConfig";
     private static final String LIST_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.ListGeneration";
     private static final String MAZE_GENERATION_CLASS = "ivorius.reccomplex.world.gen.feature.structure.generic.generation.MazeGeneration";
 
@@ -117,10 +118,11 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         Object registry = getStructureRegistry();
         List<String> activeStructureIds = new ArrayList<>(getActiveStructureIds(registry));
         activeStructureIds.sort(String.CASE_INSENSITIVE_ORDER);
+        Map<String, LocalizedText> naturalRarities = calculateNaturalRarities(registry, activeStructureIds);
 
         for (String rawId : activeStructureIds) {
             try {
-                loadStructure(registry, rawId);
+                loadStructure(registry, rawId, naturalRarities.get(rawId));
             } catch (ReflectionException e) {
                 SimpleStructureScanner.LOGGER.warn("Skipping Recurrent Complex structure '{}': {}", rawId, e.getMessage());
             }
@@ -129,14 +131,15 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         SimpleStructureScanner.LOGGER.info("Loaded {} Recurrent Complex structures", structureInfos.size());
     }
 
-    private void loadStructure(Object registry, String rawId) throws ReflectionException {
+    private void loadStructure(Object registry, String rawId, @Nullable LocalizedText naturalRarity)
+            throws ReflectionException {
         Object structure = getActiveStructure(registry, rawId);
         if (structure == null) return;
 
         List<?> generationTypes = getGenerationTypes(structure);
         if (generationTypes == null || generationTypes.isEmpty()) return;
 
-        GenerationMetadata metadata = collectGenerationMetadata(generationTypes);
+        GenerationMetadata metadata = collectGenerationMetadata(generationTypes, naturalRarity);
         if (!metadata.isTopLevel()) return;
 
         ResourceLocation structureId = createStructureId(registry, rawId);
@@ -973,7 +976,205 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         };
     }
 
-    private GenerationMetadata collectGenerationMetadata(List<?> generationTypes) throws ReflectionException {
+    private Map<String, LocalizedText> calculateNaturalRarities(Object registry,
+            List<String> activeStructureIds) {
+        if (!RecurrentComplexAccessors.isAvailable()
+                || !RecurrentComplexAccessors.supportsMemoizedGenerationFilter()) {
+            return Collections.emptyMap();
+        }
+
+        try {
+            Class<?> configClass = ReflectionHelper.loadClassRequired(RC_CONFIG_CLASS);
+            double spawnChanceModifier = getNaturalSpawnChanceModifier(configClass);
+            if (spawnChanceModifier <= 0.0D) return Collections.emptyMap();
+
+            Map<String, Double> spawnRateTweaks = new HashMap<>();
+            Map<Object, NaturalRarityCategory> categories = new HashMap<>();
+            Set<String> unsupportedStructures = new HashSet<>();
+            List<NaturalRarityEntry> entries = new ArrayList<>();
+
+            for (String rawId : activeStructureIds) {
+                Object structure = getActiveStructure(registry, rawId);
+                if (structure == null) continue;
+
+                List<?> generationTypes = getGenerationTypes(structure);
+                if (generationTypes == null) continue;
+
+                double spawnRateTweak = getNaturalSpawnRateTweak(configClass, rawId, spawnRateTweaks);
+                if (spawnRateTweak <= 0.0D) continue;
+
+                for (Object generationType : generationTypes) {
+                    if (!NATURAL_GENERATION_CLASS.equals(generationType.getClass().getName())) continue;
+                    if (hasNaturalSpawnLimitation(generationType)) unsupportedStructures.add(rawId);
+
+                    Object category = ReflectionHelper.invokeRequired(generationType, "generationCategory");
+                    if (category == null || !hasConstantNaturalSpawnDistance(category)) {
+                        unsupportedStructures.add(rawId);
+                        continue;
+                    }
+
+                    NaturalRarityCategory rarityCategory = categories.get(category);
+                    if (rarityCategory == null) {
+                        rarityCategory = new NaturalRarityCategory(category);
+                        categories.put(category, rarityCategory);
+                    }
+
+                    entries.add(new NaturalRarityEntry(rawId, generationType, rarityCategory,
+                        spawnRateTweak));
+                }
+            }
+
+            if (entries.isEmpty()) return Collections.emptyMap();
+
+            // Natural rates use the active category pool, then average compatible biome and dimension contexts
+            Map<String, NaturalRarityAccumulator> rates = new HashMap<>();
+            List<WorldProvider> providers = getRegisteredDimensionProviders();
+            for (WorldProvider provider : providers) {
+                if (!isNaturalGenerationEnabled(provider)) continue;
+
+                for (Biome biome : Biome.REGISTRY) {
+                    if (biome == null || !isNaturalGenerationEnabled(biome)) continue;
+
+                    accumulateNaturalRarity(entries, provider, biome, spawnChanceModifier, rates);
+                }
+            }
+
+            Map<String, LocalizedText> rarities = new HashMap<>();
+            for (Map.Entry<String, NaturalRarityAccumulator> entry : rates.entrySet()) {
+                if (unsupportedStructures.contains(entry.getKey())) continue;
+
+                double chance = entry.getValue().averageChance();
+                if (chance > 0.0D && chance <= 1.0D) {
+                    rarities.put(entry.getKey(), RarityTextHelper.oneInChunks(1.0D / chance));
+                }
+            }
+
+            return rarities;
+        } catch (ReflectionException e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not calculate Recurrent Complex natural generation rarity", e);
+            return Collections.emptyMap();
+        }
+    }
+
+    private void accumulateNaturalRarity(List<NaturalRarityEntry> entries, WorldProvider provider,
+            Biome biome, double spawnChanceModifier, Map<String, NaturalRarityAccumulator> rates)
+            throws ReflectionException {
+        Map<NaturalRarityCategory, NaturalCategoryWeights> weightsByCategory = new HashMap<>();
+
+        for (NaturalRarityEntry entry : entries) {
+            double weight = getNaturalGenerationWeight(entry.generationType, provider, biome)
+                * entry.spawnRateTweak;
+            if (weight <= 0.0D || Double.isInfinite(weight) || Double.isNaN(weight)) continue;
+
+            NaturalCategoryWeights weights = weightsByCategory.get(entry.category);
+            if (weights == null) {
+                weights = new NaturalCategoryWeights();
+                weightsByCategory.put(entry.category, weights);
+            }
+
+            weights.add(entry.structureId, weight);
+        }
+
+        Map<String, Double> failureByStructure = new HashMap<>();
+        for (Map.Entry<NaturalRarityCategory, NaturalCategoryWeights> entry : weightsByCategory.entrySet()) {
+            NaturalCategoryWeights weights = entry.getValue();
+            if (weights.totalWeight <= 0.0D) continue;
+
+            Object category = entry.getKey().value;
+            Object chanceValue = ReflectionHelper.invokeRequired(category, "spawnChance",
+                new Class<?>[]{Biome.class, WorldProvider.class}, biome, provider);
+            if (!(chanceValue instanceof double[])) {
+                throw new ReflectionException("Unexpected Recurrent Complex category spawn chance payload: "
+                    + chanceValue);
+            }
+
+            Object multiplierValue = ReflectionHelper.invokeRequired(category, "amountMultiplier",
+                new Class<?>[]{double.class}, weights.totalWeight);
+            if (!(multiplierValue instanceof Number)) {
+                throw new ReflectionException("Unexpected Recurrent Complex category amount multiplier payload: "
+                    + multiplierValue);
+            }
+
+            double categoryMultiplier = ((Number) multiplierValue).doubleValue() * spawnChanceModifier;
+            if (categoryMultiplier <= 0.0D || Double.isInfinite(categoryMultiplier)
+                    || Double.isNaN(categoryMultiplier)) continue;
+
+            for (Map.Entry<String, Double> target : weights.structureWeights.entrySet()) {
+                double targetChance = 0.0D;
+                for (double spawnChance : (double[]) chanceValue) {
+                    double selectionChance = probability(spawnChance * categoryMultiplier
+                        * target.getValue() / weights.totalWeight);
+                    targetChance = 1.0D - (1.0D - targetChance) * (1.0D - selectionChance);
+                }
+
+                if (targetChance <= 0.0D) continue;
+
+                double failure = failureByStructure.containsKey(target.getKey())
+                    ? failureByStructure.get(target.getKey()) : 1.0D;
+                failureByStructure.put(target.getKey(), failure * (1.0D - targetChance));
+            }
+        }
+
+        for (Map.Entry<String, Double> entry : failureByStructure.entrySet()) {
+            NaturalRarityAccumulator rate = rates.get(entry.getKey());
+            if (rate == null) {
+                rate = new NaturalRarityAccumulator();
+                rates.put(entry.getKey(), rate);
+            }
+
+            rate.add(1.0D - entry.getValue());
+        }
+    }
+
+    private double getNaturalSpawnChanceModifier(Class<?> configClass) throws ReflectionException {
+        Object value = ReflectionHelper.getStaticField(configClass, "structureSpawnChanceModifier");
+        if (value instanceof Number) return ((Number) value).doubleValue();
+
+        throw new ReflectionException("Unexpected Recurrent Complex natural spawn chance modifier: " + value);
+    }
+
+    private double getNaturalSpawnRateTweak(Class<?> configClass, String structureId,
+            Map<String, Double> spawnRateTweaks) throws ReflectionException {
+        Double cached = spawnRateTweaks.get(structureId);
+        if (cached != null) return cached;
+
+        Object value = ReflectionHelper.invokeStaticRequired(configClass, "tweakedSpawnRate",
+            new Class<?>[]{String.class}, structureId);
+        if (!(value instanceof Number)) {
+            throw new ReflectionException("Unexpected Recurrent Complex natural spawn rate tweak: " + value);
+        }
+
+        double tweak = ((Number) value).doubleValue();
+        spawnRateTweaks.put(structureId, tweak);
+        return tweak;
+    }
+
+    private boolean hasNaturalSpawnLimitation(Object generationType) throws ReflectionException {
+        return ReflectionHelper.invokeBooleanRequired(generationType, "hasLimitations", new Class<?>[0]);
+    }
+
+    private boolean hasConstantNaturalSpawnDistance(Object category) throws ReflectionException {
+        Object multiplier = ReflectionHelper.getField(category, category.getClass(),
+            "spawnDistanceMultiplier");
+        Object cap = ReflectionHelper.getField(category, category.getClass(),
+            "spawnDistanceMultiplierCap");
+        if (!(multiplier instanceof Number) || !(cap instanceof Number)) {
+            throw new ReflectionException("Unexpected Recurrent Complex category distance payload");
+        }
+
+        return ((Number) multiplier).doubleValue() == 0.0D
+            && ((Number) cap).doubleValue() == 1.0D;
+    }
+
+    private static double probability(double value) {
+        if (Double.isNaN(value)) return 0.0D;
+
+        return Math.max(0.0D, Math.min(1.0D, value));
+    }
+
+    private GenerationMetadata collectGenerationMetadata(List<?> generationTypes,
+            @Nullable LocalizedText naturalRarity) throws ReflectionException {
         Set<Biome> biomes = new HashSet<>();
         Set<DimensionInfo> dimensions = new HashSet<>();
         boolean filterNaturalGeneration = RecurrentComplexAccessors.isAvailable()
@@ -1018,8 +1219,9 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             true,
             hasNaturalGeneration ? biomes : null,
             dimensions,
-            hasStaticGeneration && !hasNaturalGeneration && !vanillaViable
-                ? RarityTextHelper.fixedPosition() : null
+            hasNaturalGeneration && !hasStaticGeneration && !vanillaViable ? naturalRarity
+                : hasStaticGeneration && !hasNaturalGeneration && !vanillaViable
+                    ? RarityTextHelper.fixedPosition() : null
         );
     }
 
@@ -1259,6 +1461,54 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private static int normalizeRotation(int rotation) {
         int normalized = rotation % 4;
         return normalized < 0 ? normalized + 4 : normalized;
+    }
+
+    private static final class NaturalRarityEntry {
+        private final String structureId;
+        private final Object generationType;
+        private final NaturalRarityCategory category;
+        private final double spawnRateTweak;
+
+        private NaturalRarityEntry(String structureId, Object generationType,
+                NaturalRarityCategory category, double spawnRateTweak) {
+            this.structureId = structureId;
+            this.generationType = generationType;
+            this.category = category;
+            this.spawnRateTweak = spawnRateTweak;
+        }
+    }
+
+    private static final class NaturalRarityCategory {
+        private final Object value;
+
+        private NaturalRarityCategory(Object value) {
+            this.value = value;
+        }
+    }
+
+    private static final class NaturalCategoryWeights {
+        private final Map<String, Double> structureWeights = new HashMap<>();
+        private double totalWeight;
+
+        private void add(String structureId, double weight) {
+            Double existing = structureWeights.get(structureId);
+            structureWeights.put(structureId, (existing != null ? existing : 0.0D) + weight);
+            totalWeight += weight;
+        }
+    }
+
+    private static final class NaturalRarityAccumulator {
+        private double totalChance;
+        private int contexts;
+
+        private void add(double chance) {
+            totalChance += chance;
+            contexts++;
+        }
+
+        private double averageChance() {
+            return contexts > 0 ? totalChance / contexts : 0.0D;
+        }
     }
 
     private static final class GenerationMetadata {
