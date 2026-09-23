@@ -577,19 +577,18 @@ public class RecurrentComplexStructureSearcher {
 
                     World validationWorld = ValidationContextManager.getValidationWorld(worldServer);
                     try {
-                        BlockPos validated = RecurrentComplexAccessors.validateStaticPlacement(
-                            validationWorld, structure, candidate, structureId, chunkPos);
+                        RecurrentComplexAccessors.RcPlacement validated =
+                            RecurrentComplexAccessors.validateStaticPlacement(
+                                validationWorld, structure, candidate, structureId, chunkPos);
                         if (validated == null) {
                             SimpleStructureScanner.LOGGER.debug(
                                 "Static placement rejected '{}' in chunk ({},{})",
                                 structureId, chunkPos.x, chunkPos.z);
                             continue;
                         }
-
-                        SimpleStructureScanner.LOGGER.info(
-                            "Predicted static '{}' in chunk ({},{}), center {}",
-                            structureId, chunkPos.x, chunkPos.z, validated);
-                        return validated;
+                        SimpleStructureScanner.LOGGER.info("Predicted static '{}' in chunk ({},{}), center {}",
+                            structureId, chunkPos.x, chunkPos.z, validated.position());
+                        return validated.position();
                     } catch (Exception e) {
                         SimpleStructureScanner.LOGGER.warn(
                             "Could not validate static '{}' in chunk ({},{}): {}: {}",
@@ -628,27 +627,36 @@ public class RecurrentComplexStructureSearcher {
                 long seed = random.nextLong();
                 if (candidate.structureValue() == structure.value()) {
                     RecurrentComplexAccessors.RcGeneration generation = candidate.generation();
+                    if (!RecurrentComplexAccessors.isSpawnLimitResolved(generation, worldServer, structureId)) {
+                        SimpleStructureScanner.LOGGER.debug("Spawn limitation rejected '{}' in chunk ({},{})",
+                            structureId, chunkPos.x, chunkPos.z);
+                        continue;
+                    }
+
                     World validationWorld = ValidationContextManager.getValidationWorld(worldServer);
                     try {
-                        BlockPos validated = RecurrentComplexAccessors.validatePlacement(
-                            validationWorld, structure, generation, structureId, seed, chunkPos);
+                        RecurrentComplexAccessors.RcPlacement validated =
+                            RecurrentComplexAccessors.validatePlacement(validationWorld, structure, generation,
+                                structureId, seed, chunkPos);
                         if (validated == null) {
+                            SimpleStructureScanner.LOGGER.debug("Placement rejected '{}' in chunk ({},{})",
+                                structureId, chunkPos.x, chunkPos.z);
+                            continue;
+                        }
+                        if (RecurrentComplexAccessors.hasBlockingOverlap(worldServer, validated)) {
                             SimpleStructureScanner.LOGGER.debug(
-                                    "Placement rejected '{}' in chunk ({},{})",
-                                    structureId, chunkPos.x, chunkPos.z);
+                                "Placement overlaps a Recurrent Complex structure '{}' in chunk ({},{})",
+                                structureId, chunkPos.x, chunkPos.z);
                             continue;
                         }
 
-                        SimpleStructureScanner.LOGGER.info(
-                            "Predicted '{}' in chunk ({},{}), center {}",
-                            structureId, chunkPos.x, chunkPos.z, validated);
-                        return validated;
+                        SimpleStructureScanner.LOGGER.info("Predicted '{}' in chunk ({},{}), center {}",
+                            structureId, chunkPos.x, chunkPos.z, validated.position());
+                        return validated.position();
                     } catch (Exception e) {
                         SimpleStructureScanner.LOGGER.warn(
-                            "Could not validate '{}' in chunk ({},{}); using its seeded surface position: {}: {}",
+                            "Could not validate '{}' in chunk ({},{}): {}: {}",
                             structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
-                        BlockPos pos = RecurrentComplexAccessors.computeSurfacePos(chunkPos, seed);
-                        return pos;
                     }
                 }
             }

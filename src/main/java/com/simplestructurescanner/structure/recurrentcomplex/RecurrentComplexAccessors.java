@@ -75,6 +75,7 @@ final class RecurrentComplexAccessors {
             "ivorius.reccomplex.world.gen.feature.structure.Environment";
     private static final String NATURAL_GENERATION_CLASS =
             "ivorius.reccomplex.world.gen.feature.structure.generic.generation.NaturalGeneration";
+    private static final String SPAWN_LIMITATION_CLASS = NATURAL_GENERATION_CLASS + "$SpawnLimitation";
     private static final String STATIC_GENERATION_CLASS =
             "ivorius.reccomplex.world.gen.feature.structure.generic.generation.StaticGeneration";
     private static final String VANILLA_GENERATION_CLASS =
@@ -181,6 +182,12 @@ final class RecurrentComplexAccessors {
     @Nullable
     private static Method ngGetGenerationWeightMethod;
     @Nullable
+    private static Method ngHasLimitationsMethod;
+    @Nullable
+    private static Method ngGetLimitationsMethod;
+    @Nullable
+    private static Method spawnLimitationAreResolvedMethod;
+    @Nullable
     private static Method rcTweakedSpawnRateMethod;
 
     // Cached Recurrent Complex generation settings
@@ -190,6 +197,8 @@ final class RecurrentComplexAccessors {
     private static Method rcGenEnabledProviderMethod;
     @Nullable
     private static Field rcMinDistToSpawnField;
+    @Nullable
+    private static Field rcAvoidOverlappingGenerationField;
 
     // ========== Persisted-generation reflection access ==========
 
@@ -201,9 +210,13 @@ final class RecurrentComplexAccessors {
     @Nullable
     private static Method wsgdStructureEntriesInMethod;
     @Nullable
+    private static Method wsgdEntriesAtBoundingBoxMethod;
+    @Nullable
     private static Method wsgdGetStructureIDMethod;
     @Nullable
     private static Method entryGetBoundingBoxMethod;
+    @Nullable
+    private static Method entryBlockingMethod;
 
     // ========== Event-dispatch reflection access ==========
 
@@ -294,6 +307,21 @@ final class RecurrentComplexAccessors {
 
         Object generationValue() {
             return generation.value();
+        }
+    }
+
+    static final class RcPlacement {
+
+        private final BlockPos position;
+        private final StructureBoundingBox boundingBox;
+
+        private RcPlacement(BlockPos position, StructureBoundingBox boundingBox) {
+            this.position = position;
+            this.boundingBox = boundingBox;
+        }
+
+        BlockPos position() {
+            return position;
         }
     }
 
@@ -481,6 +509,24 @@ final class RecurrentComplexAccessors {
         }
     }
 
+    static boolean isSpawnLimitResolved(RcGeneration generation, WorldServer worldServer,
+            String structureId) {
+        if (ngHasLimitationsMethod == null || ngGetLimitationsMethod == null ||
+                spawnLimitationAreResolvedMethod == null) return false;
+
+        try {
+            if (!(boolean) ngHasLimitationsMethod.invoke(generation.value)) return true;
+
+            Object limitation = ngGetLimitationsMethod.invoke(generation.value);
+            return limitation != null && (boolean) spawnLimitationAreResolvedMethod.invoke(
+                limitation, worldServer, structureId);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not check the Recurrent Complex spawn limitation for '{}'", structureId, e);
+            return false;
+        }
+    }
+
     static boolean mayGenerateNaturally(WorldServer worldServer, ChunkPos chunkPos) {
         if (rcGenEnabledBiomeMethod == null || rcGenEnabledProviderMethod == null) {
             try {
@@ -575,6 +621,31 @@ final class RecurrentComplexAccessors {
         return wsgdGetMethod != null && wsgdIsChunkCheckedMethod != null &&
             wsgdStructureEntriesInMethod != null && wsgdGetStructureIDMethod != null &&
             entryGetBoundingBoxMethod != null;
+    }
+
+    static boolean hasBlockingOverlap(WorldServer worldServer, RcPlacement placement) {
+        if (rcAvoidOverlappingGenerationField == null) return true;
+
+        try {
+            if (!rcAvoidOverlappingGenerationField.getBoolean(null)) return false;
+
+            if (wsgdGetMethod == null || wsgdEntriesAtBoundingBoxMethod == null ||
+                    entryBlockingMethod == null) return true;
+
+            Object data = wsgdGetMethod.invoke(null, worldServer);
+            Object result = wsgdEntriesAtBoundingBoxMethod.invoke(data, placement.boundingBox);
+            if (result == null) return false;
+
+            Iterator<?> iterator = ((Stream<?>) result).iterator();
+            while (iterator.hasNext()) {
+                if ((boolean) entryBlockingMethod.invoke(iterator.next())) return true;
+            }
+
+            return false;
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug("Could not check Recurrent Complex structure overlap", e);
+            return true;
+        }
     }
 
     /**
@@ -706,7 +777,7 @@ final class RecurrentComplexAccessors {
      * Recurrent Complex placer rejects, to avoid unnecessary decoration work.
      */
     @Nullable
-    static BlockPos validatePlacement(World validationWorld, RcStructure structure,
+    static RcPlacement validatePlacement(World validationWorld, RcStructure structure,
             RcGeneration generation, String structureId, long seed, ChunkPos chunkPos) throws Exception {
 
         return validatePlacement(validationWorld, structure, generation, structureId, seed, chunkPos,
@@ -714,7 +785,7 @@ final class RecurrentComplexAccessors {
     }
 
     @Nullable
-    static BlockPos validateStaticPlacement(World validationWorld, RcStructure structure,
+    static RcPlacement validateStaticPlacement(World validationWorld, RcStructure structure,
             RcStaticCandidate candidate, String structureId, ChunkPos chunkPos) throws Exception {
 
         return validatePlacement(validationWorld, structure, candidate.generation(), structureId,
@@ -722,7 +793,7 @@ final class RecurrentComplexAccessors {
     }
 
     @Nullable
-    private static BlockPos validatePlacement(World validationWorld, RcStructure structure,
+    private static RcPlacement validatePlacement(World validationWorld, RcStructure structure,
             RcGeneration generation, String structureId, long seed, ChunkPos chunkPos,
             BlockPos surfaceBlockPos, boolean checkNaturalWeight) throws Exception {
 
@@ -814,7 +885,7 @@ final class RecurrentComplexAccessors {
             }
         }
 
-        return boundingBoxCenter(boundingBox);
+        return new RcPlacement(boundingBoxCenter(boundingBox), boundingBox);
     }
 
     private static BlockPos surfacePosition(Object position) throws Exception {
@@ -929,11 +1000,22 @@ final class RecurrentComplexAccessors {
             WorldProvider.class, Biome.class);
 
         try {
+            ngHasLimitationsMethod = naturalGenerationClass.getMethod("hasLimitations");
+            ngGetLimitationsMethod = naturalGenerationClass.getMethod("getLimitations");
+            spawnLimitationAreResolvedMethod = Class.forName(SPAWN_LIMITATION_CLASS)
+                                                    .getMethod("areResolved", World.class, String.class);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not access Recurrent Complex spawn limitations; natural predictions are unavailable", e);
+        }
+
+        try {
             Class<?> rcConfigClass = Class.forName(RC_CONFIG_CLASS);
             rcTweakedSpawnRateMethod = rcConfigClass.getMethod("tweakedSpawnRate", String.class);
             rcGenEnabledBiomeMethod = rcConfigClass.getMethod("isGenerationEnabled", Biome.class);
             rcGenEnabledProviderMethod = rcConfigClass.getMethod("isGenerationEnabled", WorldProvider.class);
             rcMinDistToSpawnField = rcConfigClass.getField("minDistToSpawnForGeneration");
+            rcAvoidOverlappingGenerationField = rcConfigClass.getField("avoidOverlappingGeneration");
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.debug(
                 "Could not access all Recurrent Complex generation settings; cached checks are unavailable", e);
@@ -956,9 +1038,12 @@ final class RecurrentComplexAccessors {
             wsgdGetMethod = dataClass.getMethod("get", World.class);
             wsgdIsChunkCheckedMethod = dataClass.getMethod("isChunkChecked", ChunkPos.class);
             wsgdStructureEntriesInMethod = dataClass.getMethod("structureEntriesIn", ChunkPos.class);
+            wsgdEntriesAtBoundingBoxMethod = dataClass.getMethod("entriesAt", StructureBoundingBox.class);
 
             wsgdGetStructureIDMethod = Class.forName(STRUCTURE_ENTRY_CLASS).getMethod("getStructureID");
-            entryGetBoundingBoxMethod = Class.forName(ENTRY_CLASS).getMethod("getBoundingBox");
+            Class<?> entryClass = Class.forName(ENTRY_CLASS);
+            entryGetBoundingBoxMethod = entryClass.getMethod("getBoundingBox");
+            entryBlockingMethod = entryClass.getMethod("blocking");
 
             SimpleStructureScanner.LOGGER.info("Initialized Recurrent Complex saved-generation access");
         } catch (Exception e) {

@@ -11,11 +11,13 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ## [1.4.0] - 2026-??-??
 ### Added
 - Add optional VoxelMap waypoint creation to the Structure Scanner Map button, reusing the located structure's coordinates and color.
+- Add Recurrent Complex structure search support, allowing you to locate them in-world.
+- Add rarity information to natural Recurrent Complex structures (as opposed to fixed or village-bound).
 
 ### Fixed
-- Fix Recurrent Complex structure search frequently pointing at locations where the structure never generated. The chunk-population event is now simulated on the real Forge event bus so other mods consume the decoration random in the same order as during real generation, and predicted candidates are validated against fully decorated in-memory terrain (including trees and lakes) instead of raw terrain.
-- Fix Recurrent Complex structure search predicting structures in already generated chunks where Recurrent Complex decided not to generate anything; such chunks are now resolved directly from Recurrent Complex's own persisted generation records instead of being simulated.
 - Fix the Structure Scanner list scrollbar so it can be dragged properly again, and make wheel scrolling advance by whole structure entries instead of fractional offsets.
+- Fix large Structure Scanner biome and dimension tooltips spilling off-screen; they now grow as needed and are positioned to stay fully visible.
+- Fix ">" (next structure) button in the Structure Scanner GUI not darkening (disabled) when there are no more structures to cycle to.
 
 
 ## [1.3.0] - 2026-07-30
