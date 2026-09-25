@@ -30,6 +30,7 @@ import net.minecraft.world.gen.structure.StructureComponent;
 
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.terraingen.PopulateChunkEvent;
+import net.minecraftforge.fml.common.eventhandler.Event;
 import net.minecraftforge.fml.common.eventhandler.EventBus;
 import net.minecraftforge.fml.common.eventhandler.IEventListener;
 
@@ -73,6 +74,13 @@ final class RecurrentComplexAccessors {
             "ivorius.reccomplex.world.gen.feature.StructureGenerator$GenerationResult$Failure";
     private static final String ENVIRONMENT_CLASS =
             "ivorius.reccomplex.world.gen.feature.structure.Environment";
+    private static final String STRUCTURE_SPAWN_CONTEXT_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.context.StructureSpawnContext";
+    private static final String RC_EVENT_BUS_CLASS = "ivorius.reccomplex.events.RCEventBus";
+    private static final String STRUCTURE_GENERATION_EVENT_SUGGEST_CLASS =
+            "ivorius.reccomplex.events.StructureGenerationEvent$Suggest";
+    private static final String STRUCTURE_GENERATION_EVENT_LITE_SUGGEST_CLASS =
+            "ivorius.reccomplex.events.StructureGenerationEventLite$Suggest";
     private static final String NATURAL_GENERATION_CLASS =
             "ivorius.reccomplex.world.gen.feature.structure.generic.generation.NaturalGeneration";
     private static final String SPAWN_LIMITATION_CLASS = NATURAL_GENERATION_CLASS + "$SpawnLimitation";
@@ -101,7 +109,11 @@ final class RecurrentComplexAccessors {
     @Nullable
     private static Method registryActiveIDsMethod;
     @Nullable
+    private static Method registryIdMethod;
+    @Nullable
     private static Method structureGenerationTypesMethod;
+    @Nullable
+    private static Method structureBlockingMethod;
 
     // ========== Candidate-selection reflection access ==========
 
@@ -139,6 +151,8 @@ final class RecurrentComplexAccessors {
     @Nullable
     private static Method sgFromCenterMethod;
     @Nullable
+    private static Method sgPartiallyMethod;
+    @Nullable
     private static Method sgBoundingBoxMethod;
     @Nullable
     private static Method sgStructureSizeMethod;
@@ -162,6 +176,8 @@ final class RecurrentComplexAccessors {
     @Nullable
     private static Method sgEnvironmentMethod;
     @Nullable
+    private static Method sgSpawnMethod;
+    @Nullable
     private static Method grSucceededMethod;
     @Nullable
     private static Field failureDescriptionField;
@@ -169,6 +185,14 @@ final class RecurrentComplexAccessors {
     private static Field envBiomeField;
     @Nullable
     private static Object generateMaturitySuggest;
+    @Nullable
+    private static Object generateMaturityFirst;
+    @Nullable
+    private static EventBus rcEventBus;
+    @Nullable
+    private static Constructor<?> structureGenerationSuggestConstructor;
+    @Nullable
+    private static Constructor<?> structureGenerationLiteSuggestConstructor;
 
     // ========== Natural-generation reflection access ==========
 
@@ -199,6 +223,8 @@ final class RecurrentComplexAccessors {
     private static Field rcMinDistToSpawnField;
     @Nullable
     private static Field rcAvoidOverlappingGenerationField;
+    @Nullable
+    private static Field rcHonorStructureGenerationOptionField;
 
     // ========== Persisted-generation reflection access ==========
 
@@ -308,6 +334,10 @@ final class RecurrentComplexAccessors {
         Object generationValue() {
             return generation.value();
         }
+
+        RcStructure structure() {
+            return structure;
+        }
     }
 
     static final class RcPlacement {
@@ -322,6 +352,10 @@ final class RecurrentComplexAccessors {
 
         BlockPos position() {
             return position;
+        }
+
+        boolean intersects(RcPlacement other) {
+            return this.boundingBox.intersectsWith(other.boundingBox);
         }
     }
 
@@ -386,7 +420,9 @@ final class RecurrentComplexAccessors {
             structureRegistryInstance = registryClass.getField("INSTANCE").get(null);
             registryGetMethod = registryClass.getMethod("get", String.class);
             registryActiveIDsMethod = registryClass.getMethod("activeIDs");
+            registryIdMethod = findRegistryIdMethod(registryClass);
             structureGenerationTypesMethod = structureClass.getMethod("generationTypes", Class.class);
+            structureBlockingMethod = structureClass.getMethod("isBlocking");
 
             diagPopulationRandomMethod = locatorClass.getMethod("populationRandom", long.class, ChunkPos.class);
             diagStaticCandidatesMethod = ReflectionHelper.getAccessibleDeclaredMethod(
@@ -438,6 +474,13 @@ final class RecurrentComplexAccessors {
         }
 
         return null;
+    }
+
+    @Nullable
+    static String structureId(RcStructure structure) throws Exception {
+        if (structureRegistryInstance == null || registryIdMethod == null) return null;
+
+        return (String) registryIdMethod.invoke(structureRegistryInstance, structure.value);
     }
 
     // ========== Search planning ==========
@@ -559,6 +602,19 @@ final class RecurrentComplexAccessors {
         return rcGenEnabledBiomeMethod != null && rcGenEnabledProviderMethod != null;
     }
 
+    static boolean isStructureGenerationEnabled(WorldServer worldServer) {
+        if (rcHonorStructureGenerationOptionField == null) return true;
+
+        try {
+            return !rcHonorStructureGenerationOptionField.getBoolean(null) ||
+                worldServer.getWorldInfo().isMapFeaturesEnabled();
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not read the Recurrent Complex map-feature setting", e);
+            return true;
+        }
+    }
+
     static boolean isGenerationEnabled(Biome biome) throws Exception {
         return (boolean) rcGenEnabledBiomeMethod.invoke(null, biome);
     }
@@ -646,6 +702,26 @@ final class RecurrentComplexAccessors {
             SimpleStructureScanner.LOGGER.debug("Could not check Recurrent Complex structure overlap", e);
             return true;
         }
+    }
+
+    static boolean avoidsOverlappingGeneration() {
+        if (rcAvoidOverlappingGenerationField == null) return true;
+
+        try {
+            return rcAvoidOverlappingGenerationField.getBoolean(null);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not read the Recurrent Complex overlap setting", e);
+            return true;
+        }
+    }
+
+    static boolean isStructureBlocking(RcStructure structure) throws Exception {
+        if (structureBlockingMethod == null) {
+            throw new IllegalStateException("Cannot read Recurrent Complex structure blocking state");
+        }
+
+        return (boolean) structureBlockingMethod.invoke(structure.value);
     }
 
     /**
@@ -771,31 +847,28 @@ final class RecurrentComplexAccessors {
     // ========== Placement validation ==========
 
     /**
-     * Tests a candidate on generated terrain, then on decorated terrain.
-     * <p>
-     * The generated-terrain test avoids decoration work for placements the
-     * Recurrent Complex placer rejects, to avoid unnecessary decoration work.
+     * Tests a candidate on generated terrain before vanilla chunk decoration.
      */
     @Nullable
     static RcPlacement validatePlacement(World validationWorld, RcStructure structure,
             RcGeneration generation, String structureId, long seed, ChunkPos chunkPos) throws Exception {
 
         return validatePlacement(validationWorld, structure, generation, structureId, seed, chunkPos,
-            computeSurfacePos(chunkPos, seed), true);
+            computeSurfacePos(chunkPos, seed), true, generateMaturitySuggest);
     }
 
     @Nullable
     static RcPlacement validateStaticPlacement(World validationWorld, RcStructure structure,
-            RcStaticCandidate candidate, String structureId, ChunkPos chunkPos) throws Exception {
+            RcStaticCandidate candidate, ChunkPos chunkPos) throws Exception {
 
-        return validatePlacement(validationWorld, structure, candidate.generation(), structureId,
-            candidate.seed(), chunkPos, candidate.position(), false);
+        return validatePlacement(validationWorld, structure, candidate.generation(), null,
+            candidate.seed(), chunkPos, candidate.position(), false, generateMaturityFirst);
     }
 
     @Nullable
     private static RcPlacement validatePlacement(World validationWorld, RcStructure structure,
             RcGeneration generation, String structureId, long seed, ChunkPos chunkPos,
-            BlockPos surfaceBlockPos, boolean checkNaturalWeight) throws Exception {
+            BlockPos surfaceBlockPos, boolean checkNaturalWeight, Object maturity) throws Exception {
 
         if (sgConstructor == null || unsafeInstance == null) {
             throw new IllegalStateException(
@@ -803,10 +876,10 @@ final class RecurrentComplexAccessors {
         }
 
         Object generator = sgConstructor.newInstance(structure.value);
-        setupGenerator(generator, generation, structureId, seed, surfaceBlockPos);
+        setupGenerator(generator, generation, structureId, seed, surfaceBlockPos, chunkPos, maturity);
 
-        // Generate the rotated structure footprint before the placer reads terrain
-        // test() caches the placed bounding box, so the decorated pass needs a second generator
+        // Recurrent Complex plans structures before vanilla chunk decoration
+        // Provide the rotated structure footprint before the placer reads terrain
         if (sgStructureSizeMethod != null && validationWorld instanceof StructureValidationWorld) {
             try {
                 int[] size = (int[]) sgStructureSizeMethod.invoke(generator);
@@ -817,41 +890,9 @@ final class RecurrentComplexAccessors {
 
                 StructureValidationWorld svw = (StructureValidationWorld) validationWorld;
                 svw.provideChunkRange(bbMinX, bbMinZ, bbMaxX, bbMaxZ);
-
-                Object rawGenerator = sgConstructor.newInstance(structure.value);
-                setupGenerator(rawGenerator, generation, structureId, seed, surfaceBlockPos);
-                setValidationWorld(rawGenerator, validationWorld);
-                sgAllowOverlapsMethod.invoke(rawGenerator, true);
-
-                Object rawResult = sgTestMethod.invoke(rawGenerator);
-                if (rawResult == null || !(boolean) grSucceededMethod.invoke(rawResult)) {
-                    SimpleStructureScanner.LOGGER.debug(
-                        "Generated-terrain placement check rejected '{}' in chunk ({},{}): {}",
-                        structureId, chunkPos.x, chunkPos.z,
-                        rawResult != null ? extractFailureDescription(rawResult) : "null-result");
-                    return null;
-                }
             } catch (Exception e) {
                 SimpleStructureScanner.LOGGER.debug(
-                    "Could not check '{}' on generated terrain in chunk ({},{}): {}: {}",
-                    structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
-            }
-        }
-
-        // Decorate the same footprint before the final test so placers read populated terrain
-        if (sgStructureSizeMethod != null && validationWorld instanceof StructureValidationWorld) {
-            try {
-                int[] size = (int[]) sgStructureSizeMethod.invoke(generator);
-                int bbMinX = surfaceBlockPos.getX() - size[0] / 2;
-                int bbMinZ = surfaceBlockPos.getZ() - size[2] / 2;
-                int bbMaxX = bbMinX + size[0];
-                int bbMaxZ = bbMinZ + size[2];
-
-                StructureValidationWorld svw = (StructureValidationWorld) validationWorld;
-                svw.populateChunkRange(bbMinX, bbMinZ, bbMaxX, bbMaxZ);
-            } catch (Exception e) {
-                SimpleStructureScanner.LOGGER.debug(
-                    "Could not decorate terrain for '{}' in chunk ({},{}): {}: {}",
+                    "Could not provide terrain for '{}' in chunk ({},{}): {}: {}",
                     structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
             }
         }
@@ -888,6 +929,32 @@ final class RecurrentComplexAccessors {
         return new RcPlacement(boundingBoxCenter(boundingBox), boundingBox);
     }
 
+    static boolean isNaturalGenerationAllowed(World validationWorld, RcStructure structure,
+            RcGeneration generation, String structureId, long seed, ChunkPos chunkPos,
+            RcPlacement placement) throws Exception {
+
+        if (sgSpawnMethod == null || rcEventBus == null || structureGenerationSuggestConstructor == null ||
+                structureGenerationLiteSuggestConstructor == null) {
+            throw new IllegalStateException("Cannot check Recurrent Complex natural-generation events");
+        }
+
+        Object generator = sgConstructor.newInstance(structure.value);
+        setupGenerator(generator, generation, structureId, seed, computeSurfacePos(chunkPos, seed),
+            chunkPos, generateMaturitySuggest);
+        setValidationWorld(generator, validationWorld);
+
+        Optional<?> spawn = (Optional<?>) sgSpawnMethod.invoke(generator);
+        if (!spawn.isPresent()) return false;
+
+        Event suggest = (Event) structureGenerationSuggestConstructor.newInstance(
+            structure.value, spawn.get());
+        if (rcEventBus.post(suggest)) return false;
+
+        Event liteSuggest = (Event) structureGenerationLiteSuggestConstructor.newInstance(
+            validationWorld, structureId, placement.boundingBox, 0, true);
+        return !MinecraftForge.EVENT_BUS.post(liteSuggest);
+    }
+
     private static BlockPos surfacePosition(Object position) throws Exception {
         int x = ((Number) blockSurfacePosGetXMethod.invoke(position)).intValue();
         int z = ((Number) blockSurfacePosGetZMethod.invoke(position)).intValue();
@@ -907,18 +974,19 @@ final class RecurrentComplexAccessors {
     }
 
     private static void setupGenerator(Object generator, RcGeneration generation,
-            String structureId, long seed, BlockPos surfaceBlockPos) throws Exception {
+            String structureId, long seed, BlockPos surfaceBlockPos, ChunkPos chunkPos, Object maturity)
+            throws Exception {
         sgGenerationInfoMethod.invoke(generator, generation.value);
         sgSeedMethod.invoke(generator, seed);
-        sgStructureIDMethod.invoke(generator, structureId);
-        sgMaturityMethod.invoke(generator, generateMaturitySuggest);
+        if (structureId != null) sgStructureIDMethod.invoke(generator, structureId);
+        sgMaturityMethod.invoke(generator, maturity);
 
         sgRandomPositionMethod.invoke(generator,
             blockSurfacePosFromMethod.invoke(null, surfaceBlockPos),
             placerMethod.invoke(generation.value));
 
-
         sgFromCenterMethod.invoke(generator, true);
+        sgPartiallyMethod.invoke(generator, true, chunkPos);
     }
 
     private static void setValidationWorld(Object generator, World validationWorld) {
@@ -961,6 +1029,7 @@ final class RecurrentComplexAccessors {
         sgMaturityMethod = structureGeneratorClass.getMethod("maturity", generateMaturityClass);
         sgRandomPositionMethod = structureGeneratorClass.getMethod("randomPosition", blockSurfacePosClass, placerClass);
         sgFromCenterMethod = structureGeneratorClass.getMethod("fromCenter", boolean.class);
+        sgPartiallyMethod = structureGeneratorClass.getMethod("partially", boolean.class, ChunkPos.class);
         sgBoundingBoxMethod = structureGeneratorClass.getMethod("boundingBox");
         sgStructureSizeMethod = structureGeneratorClass.getMethod("structureSize");
         sgWorldField = ReflectionHelper.getAccessibleDeclaredField(structureGeneratorClass, "world");
@@ -976,10 +1045,12 @@ final class RecurrentComplexAccessors {
         blockSurfacePosGetXMethod = blockSurfacePosClass.getMethod("getX");
         blockSurfacePosGetZMethod = blockSurfacePosClass.getMethod("getZ");
         generateMaturitySuggest = Enum.valueOf((Class<Enum>) generateMaturityClass, "SUGGEST");
+        generateMaturityFirst = Enum.valueOf((Class<Enum>) generateMaturityClass, "FIRST");
 
         sgTestMethod = structureGeneratorClass.getDeclaredMethod("test");
         sgAllowOverlapsMethod = structureGeneratorClass.getDeclaredMethod("allowOverlaps", boolean.class);
         sgEnvironmentMethod = structureGeneratorClass.getDeclaredMethod("environment");
+        sgSpawnMethod = structureGeneratorClass.getMethod("spawn");
 
         grSucceededMethod = Class.forName(GENERATION_RESULT_CLASS).getDeclaredMethod("succeeded");
 
@@ -990,6 +1061,23 @@ final class RecurrentComplexAccessors {
         }
 
         envBiomeField = Class.forName(ENVIRONMENT_CLASS).getField("biome");
+
+        Class<?> spawnContextClass = Class.forName(STRUCTURE_SPAWN_CONTEXT_CLASS);
+        rcEventBus = (EventBus) Class.forName(RC_EVENT_BUS_CLASS).getField("INSTANCE").get(null);
+        structureGenerationSuggestConstructor = Class.forName(STRUCTURE_GENERATION_EVENT_SUGGEST_CLASS)
+                                                     .getConstructor(structureClass, spawnContextClass);
+        structureGenerationLiteSuggestConstructor =
+            Class.forName(STRUCTURE_GENERATION_EVENT_LITE_SUGGEST_CLASS)
+                 .getConstructor(World.class, String.class, StructureBoundingBox.class, int.class, boolean.class);
+    }
+
+    @Nullable
+    private static Method findRegistryIdMethod(Class<?> registryClass) {
+        for (Method method : registryClass.getMethods()) {
+            if (method.getName().equals("id") && method.getParameterCount() == 1) return method;
+        }
+
+        return null;
     }
 
     private static void initializeNaturalGenerationAccess() throws Exception {
@@ -1016,6 +1104,7 @@ final class RecurrentComplexAccessors {
             rcGenEnabledProviderMethod = rcConfigClass.getMethod("isGenerationEnabled", WorldProvider.class);
             rcMinDistToSpawnField = rcConfigClass.getField("minDistToSpawnForGeneration");
             rcAvoidOverlappingGenerationField = rcConfigClass.getField("avoidOverlappingGeneration");
+            rcHonorStructureGenerationOptionField = rcConfigClass.getField("honorStructureGenerationOption");
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.debug(
                 "Could not access all Recurrent Complex generation settings; cached checks are unavailable", e);

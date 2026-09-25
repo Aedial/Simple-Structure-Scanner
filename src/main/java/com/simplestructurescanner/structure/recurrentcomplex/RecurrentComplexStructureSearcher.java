@@ -141,6 +141,12 @@ public class RecurrentComplexStructureSearcher {
             return searchVillages(worldServer, structureId, origin, maxResults);
         }
 
+        if (!RecurrentComplexAccessors.isStructureGenerationEnabled(worldServer)) {
+            SimpleStructureScanner.LOGGER.info(
+                "Skipping '{}': map features are disabled for Recurrent Complex generation", structureId);
+            return new ArrayList<>();
+        }
+
         List<RecurrentComplexAccessors.RcGeneration> naturalTypes = RecurrentComplexAccessors.naturalGenerationTypes(structure);
         boolean hasNaturalGeneration = naturalTypes == null || !naturalTypes.isEmpty();
         boolean hasStaticGeneration = RecurrentComplexAccessors.hasStaticGeneration(structure);
@@ -567,6 +573,26 @@ public class RecurrentComplexStructureSearcher {
                 }
             }
 
+            // Skip chunks where every target NaturalGeneration entry has non-positive weight
+            if (mayGenerateNaturally && naturalTypes != null) {
+                Biome chunkBiome = biomeAt(worldServer, chunkPos);
+                Double weight = weightByBiome.get(chunkBiome);
+                if (weight == null) {
+                    weight = maxNaturalWeight(naturalTypes, spawnRateTweak,
+                            worldServer.provider, chunkBiome);
+                    weightByBiome.put(chunkBiome, weight);
+                }
+
+                if (weight <= 0) return null;
+            }
+
+            if (!searchStatic && !mayGenerateNaturally) return null;
+
+            if (!RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z)) {
+                captureRandomViaEvent(worldServer, chunkPos, worldSeed);
+                if (!RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z)) return null;
+            }
+
             Random random = RecurrentComplexAccessors.populationRandom(worldSeed, chunkPos);
             List<RecurrentComplexAccessors.RcStaticCandidate> staticCandidates =
                 RecurrentComplexAccessors.staticCandidates(worldServer, chunkPos, random);
@@ -579,7 +605,7 @@ public class RecurrentComplexStructureSearcher {
                     try {
                         RecurrentComplexAccessors.RcPlacement validated =
                             RecurrentComplexAccessors.validateStaticPlacement(
-                                validationWorld, structure, candidate, structureId, chunkPos);
+                                validationWorld, structure, candidate, chunkPos);
                         if (validated == null) {
                             SimpleStructureScanner.LOGGER.debug(
                                 "Static placement rejected '{}' in chunk ({},{})",
@@ -600,64 +626,77 @@ public class RecurrentComplexStructureSearcher {
 
             if (!mayGenerateNaturally) return null;
 
-            // Skip chunks where every target NaturalGeneration entry has non-positive weight
-            if (naturalTypes != null) {
-                Biome chunkBiome = biomeAt(worldServer, chunkPos);
-                Double weight = weightByBiome.get(chunkBiome);
-                if (weight == null) {
-                    weight = maxNaturalWeight(naturalTypes, spawnRateTweak,
-                            worldServer.provider, chunkBiome);
-                    weightByBiome.put(chunkBiome, weight);
-                }
-
-                if (weight <= 0) return null;
-            }
-
-            if (!RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z)) {
-                captureRandomViaEvent(worldServer, chunkPos, worldSeed);
-                if (!RCVRandomCache.has(worldSeed, chunkPos.x, chunkPos.z)) return null;
-            }
-
             List<RecurrentComplexAccessors.RcCandidate> candidates =
                     RecurrentComplexAccessors.naturalCandidates(worldServer, chunkPos, random);
 
             if (candidates.isEmpty()) return null;
 
+            boolean hasTargetCandidate = false;
+            for (RecurrentComplexAccessors.RcCandidate candidate : candidates) {
+                if (candidate.structureValue() == structure.value()) {
+                    hasTargetCandidate = true;
+                    break;
+                }
+            }
+            if (!hasTargetCandidate) return null;
+
+            List<RecurrentComplexAccessors.RcPlacement> blockingNaturalPlacements = new ArrayList<>();
             for (RecurrentComplexAccessors.RcCandidate candidate : candidates) {
                 long seed = random.nextLong();
-                if (candidate.structureValue() == structure.value()) {
-                    RecurrentComplexAccessors.RcGeneration generation = candidate.generation();
-                    if (!RecurrentComplexAccessors.isSpawnLimitResolved(generation, worldServer, structureId)) {
-                        SimpleStructureScanner.LOGGER.debug("Spawn limitation rejected '{}' in chunk ({},{})",
+                if (candidate.structureValue() != structure.value()) {
+                    RecurrentComplexAccessors.RcPlacement blocking =
+                        blockingNaturalPlacement(worldServer, candidate, seed, chunkPos);
+                    if (blocking != null) blockingNaturalPlacements.add(blocking);
+                    continue;
+                }
+
+                RecurrentComplexAccessors.RcGeneration generation = candidate.generation();
+                if (!RecurrentComplexAccessors.isSpawnLimitResolved(generation, worldServer, structureId)) {
+                    SimpleStructureScanner.LOGGER.debug("Spawn limitation rejected '{}' in chunk ({},{})",
+                        structureId, chunkPos.x, chunkPos.z);
+                    continue;
+                }
+
+                World validationWorld = ValidationContextManager.getValidationWorld(worldServer);
+                try {
+                    RecurrentComplexAccessors.RcPlacement validated =
+                        RecurrentComplexAccessors.validatePlacement(validationWorld, structure, generation,
+                            structureId, seed, chunkPos);
+                    if (validated == null) {
+                        SimpleStructureScanner.LOGGER.debug("Placement rejected '{}' in chunk ({},{})",
                             structureId, chunkPos.x, chunkPos.z);
                         continue;
                     }
 
-                    World validationWorld = ValidationContextManager.getValidationWorld(worldServer);
-                    try {
-                        RecurrentComplexAccessors.RcPlacement validated =
-                            RecurrentComplexAccessors.validatePlacement(validationWorld, structure, generation,
-                                structureId, seed, chunkPos);
-                        if (validated == null) {
-                            SimpleStructureScanner.LOGGER.debug("Placement rejected '{}' in chunk ({},{})",
-                                structureId, chunkPos.x, chunkPos.z);
-                            continue;
-                        }
-                        if (RecurrentComplexAccessors.hasBlockingOverlap(worldServer, validated)) {
-                            SimpleStructureScanner.LOGGER.debug(
-                                "Placement overlaps a Recurrent Complex structure '{}' in chunk ({},{})",
-                                structureId, chunkPos.x, chunkPos.z);
-                            continue;
-                        }
-
-                        SimpleStructureScanner.LOGGER.info("Predicted '{}' in chunk ({},{}), center {}",
-                            structureId, chunkPos.x, chunkPos.z, validated.position());
-                        return validated.position();
-                    } catch (Exception e) {
-                        SimpleStructureScanner.LOGGER.warn(
-                            "Could not validate '{}' in chunk ({},{}): {}: {}",
-                            structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
+                    if (hasBlockingNaturalOverlap(blockingNaturalPlacements, validated)) {
+                        SimpleStructureScanner.LOGGER.debug(
+                            "Earlier natural placement overlaps '{}' in chunk ({},{})",
+                            structureId, chunkPos.x, chunkPos.z);
+                        continue;
                     }
+
+                    if (RecurrentComplexAccessors.hasBlockingOverlap(worldServer, validated)) {
+                        SimpleStructureScanner.LOGGER.debug(
+                            "Placement overlaps a Recurrent Complex structure '{}' in chunk ({},{})",
+                            structureId, chunkPos.x, chunkPos.z);
+                        continue;
+                    }
+
+                    if (!RecurrentComplexAccessors.isNaturalGenerationAllowed(validationWorld,
+                            structure, generation, structureId, seed, chunkPos, validated)) {
+                        SimpleStructureScanner.LOGGER.debug(
+                            "Generation event rejected '{}' in chunk ({},{})",
+                            structureId, chunkPos.x, chunkPos.z);
+                        continue;
+                    }
+
+                    SimpleStructureScanner.LOGGER.info("Predicted '{}' in chunk ({},{}), center {}",
+                        structureId, chunkPos.x, chunkPos.z, validated.position());
+                    return validated.position();
+                } catch (Exception e) {
+                    SimpleStructureScanner.LOGGER.warn(
+                        "Could not validate '{}' in chunk ({},{}): {}: {}",
+                        structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
                 }
             }
 
@@ -668,6 +707,42 @@ public class RecurrentComplexStructureSearcher {
                 structureId, chunkPos.x, chunkPos.z, e);
             return null;
         }
+    }
+
+    @Nullable
+    private static RecurrentComplexAccessors.RcPlacement blockingNaturalPlacement(WorldServer worldServer,
+            RecurrentComplexAccessors.RcCandidate candidate, long seed, ChunkPos chunkPos) throws Exception {
+
+        if (!RecurrentComplexAccessors.avoidsOverlappingGeneration()) return null;
+
+        RecurrentComplexAccessors.RcStructure candidateStructure = candidate.structure();
+        if (!RecurrentComplexAccessors.isStructureBlocking(candidateStructure)) return null;
+
+        String candidateId = RecurrentComplexAccessors.structureId(candidateStructure);
+        if (candidateId == null) return null;
+
+        RecurrentComplexAccessors.RcGeneration generation = candidate.generation();
+        if (!RecurrentComplexAccessors.isSpawnLimitResolved(generation, worldServer, candidateId)) return null;
+
+        World validationWorld = ValidationContextManager.getValidationWorld(worldServer);
+        RecurrentComplexAccessors.RcPlacement placement =
+            RecurrentComplexAccessors.validatePlacement(validationWorld, candidateStructure, generation,
+                candidateId, seed, chunkPos);
+        if (placement == null || RecurrentComplexAccessors.hasBlockingOverlap(worldServer, placement)) return null;
+
+        return RecurrentComplexAccessors.isNaturalGenerationAllowed(validationWorld, candidateStructure,
+            generation, candidateId, seed, chunkPos, placement) ? placement : null;
+    }
+
+    private static boolean hasBlockingNaturalOverlap(
+            List<RecurrentComplexAccessors.RcPlacement> blockingNaturalPlacements,
+            RecurrentComplexAccessors.RcPlacement target) {
+
+        for (RecurrentComplexAccessors.RcPlacement placement : blockingNaturalPlacements) {
+            if (placement.intersects(target)) return true;
+        }
+
+        return false;
     }
 
     // ========== Population-event random capture ==========
