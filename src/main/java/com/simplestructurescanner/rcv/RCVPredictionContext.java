@@ -5,7 +5,7 @@ package com.simplestructurescanner.rcv;
  * the original method body to prevent actual world modification.
  * <p>
  * Also carries the capture signal between {@code MixinRCForgeEventHandler} and
- * {@code RecurrentComplexStructureSearcher}: the mixin raises it after storing a
+ * {@code RecurrentComplexStructureSearcher}: the mixin raises it after recording a
  * seed, and the searcher's partial event dispatch stops invoking listeners once
  * it sees it. Lives here (not on the mixin class) because mixin classes cannot
  * be referenced from normal code at runtime.
@@ -14,6 +14,7 @@ public class RCVPredictionContext {
 
     private static volatile boolean predicting = false;
     private static volatile boolean capturedThisPost = false;
+    private static final ThreadLocal<Integer> randomCacheDimension = new ThreadLocal<>();
 
     public static void setPredicting(boolean v) {
         predicting = v;
@@ -31,7 +32,7 @@ public class RCVPredictionContext {
     }
 
     /**
-     * Raised by the mixin after a seed has been captured and stored.
+     * Raised by the mixin after a seed has been captured and recorded.
      */
     public static void signalCaptured() {
         capturedThisPost = true;
@@ -42,5 +43,17 @@ public class RCVPredictionContext {
      */
     public static boolean wasCapturedThisPost() {
         return capturedThisPost;
+    }
+
+    public static void setRandomCacheDimension(int dimensionId) {
+        randomCacheDimension.set(dimensionId);
+    }
+
+    public static Integer getRandomCacheDimension() {
+        return randomCacheDimension.get();
+    }
+
+    public static void clearRandomCacheDimension() {
+        randomCacheDimension.remove();
     }
 }

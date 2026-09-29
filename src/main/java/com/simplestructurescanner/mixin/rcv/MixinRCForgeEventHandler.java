@@ -37,11 +37,19 @@ public class MixinRCForgeEventHandler {
 
             long internalSeed = ((AtomicLong) seedField.get(rand)).get();
             long worldSeed = event.getWorld().getSeed();
+            int dimensionId = event.getWorld().provider.getDimension();
+            boolean predicting = RCVPredictionContext.isPredicting();
 
-            RCVRandomCache.store(worldSeed, event.getChunkX(), event.getChunkZ(), internalSeed);
+            if (predicting) {
+                RCVRandomCache.recordSimulated(worldSeed, dimensionId, event.getChunkX(), event.getChunkZ(),
+                    internalSeed);
+            } else {
+                RCVRandomCache.recordObserved(worldSeed, dimensionId, event.getChunkX(), event.getChunkZ(),
+                    internalSeed);
+            }
             RCVPredictionContext.signalCaptured();
 
-            if (!RCVPredictionContext.isPredicting()) {
+            if (!predicting) {
                 SimpleStructureScanner.LOGGER.debug("Captured Recurrent Complex random seed for chunk({},{}) cacheSize={}",
                         event.getChunkX(), event.getChunkZ(), RCVRandomCache.size());
             } else {

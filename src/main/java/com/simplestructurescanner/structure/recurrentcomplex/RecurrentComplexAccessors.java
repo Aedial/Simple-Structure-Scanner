@@ -178,6 +178,8 @@ final class RecurrentComplexAccessors {
     @Nullable
     private static Method sgSpawnMethod;
     @Nullable
+    private static Method sgInstanceDataMethod;
+    @Nullable
     private static Method grSucceededMethod;
     @Nullable
     private static Field failureDescriptionField;
@@ -386,6 +388,10 @@ final class RecurrentComplexAccessors {
             return seed;
         }
 
+        RcStructure structure() {
+            return structure;
+        }
+
         Object structureValue() {
             return structure.value();
         }
@@ -394,12 +400,11 @@ final class RecurrentComplexAccessors {
     static final class LedgerChunk {
 
         private final boolean checked;
-        @Nullable
-        private final BlockPos structurePosition;
+        private final List<BlockPos> structurePositions;
 
-        private LedgerChunk(boolean checked, @Nullable BlockPos structurePosition) {
+        private LedgerChunk(boolean checked, List<BlockPos> structurePositions) {
             this.checked = checked;
-            this.structurePosition = structurePosition;
+            this.structurePositions = structurePositions;
         }
     }
 
@@ -726,33 +731,33 @@ final class RecurrentComplexAccessors {
 
     /**
      * Reads Recurrent Complex's saved result for a processed chunk.
-     * If the chunk has been processed and contains the specified structure, returns its saved bounding box center.
+     * If the chunk has been processed, returns saved bounding box centers for the specified structure.
      */
     static LedgerChunk ledgerChunk(WorldServer worldServer, ChunkPos chunkPos, String structureId)
             throws Exception {
 
         Object ledger = wsgdGetMethod.invoke(null, worldServer);
         boolean checked = (boolean) wsgdIsChunkCheckedMethod.invoke(ledger, chunkPos);
-        if (!checked) return new LedgerChunk(false, null);
+        if (!checked) return new LedgerChunk(false, new ArrayList<>());
 
+        List<BlockPos> positions = new ArrayList<>();
         for (Object entry : entriesIn(ledger, chunkPos)) {
             String id = (String) wsgdGetStructureIDMethod.invoke(entry);
             if (id.equalsIgnoreCase(structureId)) {
                 StructureBoundingBox boundingBox = (StructureBoundingBox) entryGetBoundingBoxMethod.invoke(entry);
-                return new LedgerChunk(true, boundingBoxCenter(boundingBox));
+                positions.add(boundingBoxCenter(boundingBox));
             }
         }
 
-        return new LedgerChunk(true, null);
+        return new LedgerChunk(true, positions);
     }
 
     static boolean isChecked(LedgerChunk ledgerChunk) {
         return ledgerChunk.checked;
     }
 
-    @Nullable
-    static BlockPos structurePosition(LedgerChunk ledgerChunk) {
-        return ledgerChunk.structurePosition;
+    static List<BlockPos> structurePositions(LedgerChunk ledgerChunk) {
+        return ledgerChunk.structurePositions;
     }
 
     /**
@@ -861,8 +866,29 @@ final class RecurrentComplexAccessors {
     static RcPlacement validateStaticPlacement(World validationWorld, RcStructure structure,
             RcStaticCandidate candidate, ChunkPos chunkPos) throws Exception {
 
-        return validatePlacement(validationWorld, structure, candidate.generation(), null,
-            candidate.seed(), chunkPos, candidate.position(), false, generateMaturityFirst);
+        if (sgConstructor == null || unsafeInstance == null || sgInstanceDataMethod == null ||
+                sgSpawnMethod == null) {
+            throw new IllegalStateException(
+                "Cannot validate Recurrent Complex static placement: generator access is unavailable");
+        }
+
+        Object generator = sgConstructor.newInstance(structure.value);
+        setupGenerator(generator, candidate.generation(), null, candidate.seed(), candidate.position(),
+            chunkPos, generateMaturityFirst);
+        provideTerrain(validationWorld, generator, null, candidate.position(), chunkPos);
+        setValidationWorld(generator, validationWorld);
+
+        Optional<?> instanceData = (Optional<?>) sgInstanceDataMethod.invoke(generator);
+        if (!instanceData.isPresent()) return null;
+
+        Optional<?> spawn = (Optional<?>) sgSpawnMethod.invoke(generator);
+        if (!spawn.isPresent()) return null;
+
+        Optional<?> boundingBoxResult = (Optional<?>) sgBoundingBoxMethod.invoke(generator);
+        if (!boundingBoxResult.isPresent()) return null;
+
+        StructureBoundingBox boundingBox = (StructureBoundingBox) boundingBoxResult.get();
+        return new RcPlacement(boundingBoxCenter(boundingBox), boundingBox);
     }
 
     @Nullable
@@ -878,24 +904,7 @@ final class RecurrentComplexAccessors {
         Object generator = sgConstructor.newInstance(structure.value);
         setupGenerator(generator, generation, structureId, seed, surfaceBlockPos, chunkPos, maturity);
 
-        // Recurrent Complex plans structures before vanilla chunk decoration
-        // Provide the rotated structure footprint before the placer reads terrain
-        if (sgStructureSizeMethod != null && validationWorld instanceof StructureValidationWorld) {
-            try {
-                int[] size = (int[]) sgStructureSizeMethod.invoke(generator);
-                int bbMinX = surfaceBlockPos.getX() - size[0] / 2;
-                int bbMinZ = surfaceBlockPos.getZ() - size[2] / 2;
-                int bbMaxX = bbMinX + size[0];
-                int bbMaxZ = bbMinZ + size[2];
-
-                StructureValidationWorld svw = (StructureValidationWorld) validationWorld;
-                svw.provideChunkRange(bbMinX, bbMinZ, bbMaxX, bbMaxZ);
-            } catch (Exception e) {
-                SimpleStructureScanner.LOGGER.debug(
-                    "Could not provide terrain for '{}' in chunk ({},{}): {}: {}",
-                    structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
-            }
-        }
+        provideTerrain(validationWorld, generator, structureId, surfaceBlockPos, chunkPos);
 
         setValidationWorld(generator, validationWorld);
         sgAllowOverlapsMethod.invoke(generator, true);
@@ -927,6 +936,29 @@ final class RecurrentComplexAccessors {
         }
 
         return new RcPlacement(boundingBoxCenter(boundingBox), boundingBox);
+    }
+
+    private static void provideTerrain(World validationWorld, Object generator, String structureId,
+            BlockPos surfaceBlockPos, ChunkPos chunkPos) {
+
+        // Recurrent Complex plans structures before vanilla chunk decoration
+        // Provide the rotated structure footprint before the placer reads terrain
+        if (sgStructureSizeMethod != null && validationWorld instanceof StructureValidationWorld) {
+            try {
+                int[] size = (int[]) sgStructureSizeMethod.invoke(generator);
+                int bbMinX = surfaceBlockPos.getX() - size[0] / 2;
+                int bbMinZ = surfaceBlockPos.getZ() - size[2] / 2;
+                int bbMaxX = bbMinX + size[0];
+                int bbMaxZ = bbMinZ + size[2];
+
+                StructureValidationWorld svw = (StructureValidationWorld) validationWorld;
+                svw.provideChunkRange(bbMinX, bbMinZ, bbMaxX, bbMaxZ);
+            } catch (Exception e) {
+                SimpleStructureScanner.LOGGER.debug(
+                    "Could not provide terrain for '{}' in chunk ({},{}): {}: {}",
+                    structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
+            }
+        }
     }
 
     static boolean isNaturalGenerationAllowed(World validationWorld, RcStructure structure,
@@ -1051,6 +1083,7 @@ final class RecurrentComplexAccessors {
         sgAllowOverlapsMethod = structureGeneratorClass.getDeclaredMethod("allowOverlaps", boolean.class);
         sgEnvironmentMethod = structureGeneratorClass.getDeclaredMethod("environment");
         sgSpawnMethod = structureGeneratorClass.getMethod("spawn");
+        sgInstanceDataMethod = structureGeneratorClass.getMethod("instanceData");
 
         grSucceededMethod = Class.forName(GENERATION_RESULT_CLASS).getDeclaredMethod("succeeded");
 

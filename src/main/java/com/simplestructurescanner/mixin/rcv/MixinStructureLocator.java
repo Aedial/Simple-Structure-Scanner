@@ -13,11 +13,12 @@ import net.minecraft.util.math.ChunkPos;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.rcv.RCVRandomCache;
+import com.simplestructurescanner.rcv.RCVPredictionContext;
 
 
 /**
- * Replaces the population random in Recurrent Complex's StructureLocator with
- * a cached seed when available, ensuring deterministic prediction results.
+ * Replaces the population random during a scanner lookup with a cached seed
+ * when available, ensuring deterministic prediction results.
  */
 @Mixin(targets = "ivorius.reccomplex.world.gen.feature.StructureLocator", remap = false)
 public class MixinStructureLocator {
@@ -28,7 +29,10 @@ public class MixinStructureLocator {
 
     @Inject(method = "populationRandom", at = @At("RETURN"), cancellable = true, remap = false)
     private static void simplestructurescanner$useCachedRandom(long worldSeed, ChunkPos chunkPos, CallbackInfoReturnable<Random> cir) {
-        long cachedSeed = RCVRandomCache.get(worldSeed, chunkPos.x, chunkPos.z);
+        Integer dimensionId = RCVPredictionContext.getRandomCacheDimension();
+        if (dimensionId == null) return;
+
+        long cachedSeed = RCVRandomCache.get(worldSeed, dimensionId, chunkPos.x, chunkPos.z);
         if (cachedSeed == Long.MIN_VALUE) return;
 
         try {
