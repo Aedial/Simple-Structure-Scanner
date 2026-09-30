@@ -261,8 +261,8 @@ public final class ExternalStructureProviderLoader {
 
             if (object.has("key") || object.has("displayKey")) {
                 SimpleStructureScanner.LOGGER.warn(
-                    "Ignoring provider-local dimension key override for id {} in {}. Use {} instead.",
-                    dimensionId, file.getName(), DimensionInfo.getGeneratedDisplayKey(dimensionId));
+                    "Ignoring provider-local dimension key override for id {} in {}. Labels use the registered dimension type.",
+                    dimensionId, file.getName());
             }
 
             dimensions.add(new DimensionInfo(dimensionId));

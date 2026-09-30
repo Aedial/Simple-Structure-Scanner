@@ -2,10 +2,13 @@ package com.simplestructurescanner.structure;
 
 import javax.annotation.Nullable;
 
+import net.minecraft.world.DimensionType;
+import net.minecraftforge.common.DimensionManager;
+
 
 /**
  * Holds information about a dimension for display purposes.
- * Allows mods to provide both numeric ID and localization key.
+ * Uses the registered dimension type when a provider does not supply a name.
  */
 public class DimensionInfo {
 
@@ -29,7 +32,7 @@ public class DimensionInfo {
     }
 
     /**
-     * Create dimension info using the default localized fallback for this dimension.
+     * Create dimension info using the registered dimension type for display.
      * @param dimensionId The numeric dimension ID
      */
     public DimensionInfo(int dimensionId) {
@@ -55,14 +58,13 @@ public class DimensionInfo {
     }
 
     private static LocalizedText getDefaultDisplayName(int dimensionId) {
-        switch (dimensionId) {
-            case -1: return LocalizedText.translatable("gui.structurescanner.dimension.nether");
-            case 0: return LocalizedText.translatable("gui.structurescanner.dimension.overworld");
-            case 1: return LocalizedText.translatable("gui.structurescanner.dimension.end");
-            default:
-                return LocalizedText.translatableWithFallback(getGeneratedDisplayKey(dimensionId),
-                    LocalizedText.translatable("gui.structurescanner.dimension.unknown", dimensionId));
+        if (DimensionManager.isDimensionRegistered(dimensionId)) {
+            DimensionType dimensionType = DimensionManager.getProviderType(dimensionId);
+            if (dimensionType != null) return LocalizedText.translatable("gui.structurescanner.dimension.unknown",
+                dimensionType.getName(), dimensionId);
         }
+
+        return LocalizedText.translatable("gui.structurescanner.dimension.unknown", dimensionId);
     }
 
     public static String getGeneratedDisplayKey(int dimensionId) {
@@ -89,7 +91,7 @@ public class DimensionInfo {
     }
 
     // Common vanilla dimensions as constants
-    public static final DimensionInfo OVERWORLD = new DimensionInfo(0, "gui.structurescanner.dimension.overworld");
-    public static final DimensionInfo NETHER = new DimensionInfo(-1, "gui.structurescanner.dimension.nether");
-    public static final DimensionInfo END = new DimensionInfo(1, "gui.structurescanner.dimension.end");
+    public static final DimensionInfo OVERWORLD = new DimensionInfo(0);
+    public static final DimensionInfo NETHER = new DimensionInfo(-1);
+    public static final DimensionInfo END = new DimensionInfo(1);
 }

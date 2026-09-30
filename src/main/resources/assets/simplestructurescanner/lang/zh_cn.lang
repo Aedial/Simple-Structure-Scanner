@@ -67,9 +67,6 @@ gui.structurescanner.structures.minecraft.end_ship=末地船
 gui.structurescanner.dimension=维度：%s
 gui.structurescanner.dimension.any=任意
 gui.structurescanner.dimension.unknown=未知（%s）
-gui.structurescanner.dimension.overworld=主世界
-gui.structurescanner.dimension.nether=下界
-gui.structurescanner.dimension.end=末地
 
 # Loot containers - Minecraft
 gui.structurescanner.loot.chest=箱子
@@ -85,12 +82,6 @@ gui.structurescanner.structures.abyssalcraft.omothol_storage=奥穆索储藏室
 gui.structurescanner.structures.abyssalcraft.shoggoth_lair=修格斯巢穴
 gui.structurescanner.structures.abyssalcraft.graveyard=墓园
 
-# Dimensions - AbyssalCraft
-gui.structurescanner.dimension.abyssal_wasteland=深渊荒原
-gui.structurescanner.dimension.dreadlands=恐惧之地
-gui.structurescanner.dimension.omothol=奥穆索
-gui.structurescanner.dimension.dark_realm=黑暗领域
-
 # Loot containers - AbyssalCraft
 gui.structurescanner.loot.abyssalcraft.crate=板条箱
 
@@ -98,9 +89,6 @@ gui.structurescanner.loot.abyssalcraft.crate=板条箱
 gui.structurescanner.structures.aether.bronze_dungeon=青铜地牢
 gui.structurescanner.structures.aether.silver_dungeon=白银地牢
 gui.structurescanner.structures.aether.gold_dungeon=黄金地牢
-
-# Dimensions - Aether
-gui.structurescanner.dimension.aether=天境
 
 # Loot containers - Aether
 gui.structurescanner.loot.aether.reward=藏宝箱

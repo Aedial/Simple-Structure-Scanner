@@ -75,10 +75,8 @@ gui.structurescanner.structures.minecraft.end_ship=End Ship
 # Minecraft: Dimensions + misc
 gui.structurescanner.dimension=Dimension: %s
 gui.structurescanner.dimension.any=Any
+gui.structurescanner.dimension.known=%s (%s)
 gui.structurescanner.dimension.unknown=Unknown (%s)
-gui.structurescanner.dimension.overworld=Overworld
-gui.structurescanner.dimension.nether=Nether
-gui.structurescanner.dimension.end=The End
 
 ## Minecraft: Loot containers
 gui.structurescanner.loot.chest=Chest
@@ -96,12 +94,6 @@ gui.structurescanner.structures.abyssalcraft.omothol_storage=Omothol Storage
 gui.structurescanner.structures.abyssalcraft.shoggoth_lair=Shoggoth Lair
 gui.structurescanner.structures.abyssalcraft.graveyard=Graveyard
 
-## AbyssalCraft: Dimensions
-gui.structurescanner.dimension.abyssal_wasteland=Abyssal Wasteland
-gui.structurescanner.dimension.dreadlands=Dreadlands
-gui.structurescanner.dimension.omothol=Omothol
-gui.structurescanner.dimension.dark_realm=Dark Realm
-
 ## AbyssalCraft: Loot containers
 gui.structurescanner.loot.abyssalcraft.crate=Crate
 
@@ -111,9 +103,6 @@ gui.structurescanner.loot.abyssalcraft.crate=Crate
 gui.structurescanner.structures.aether.bronze_dungeon=Bronze Dungeon
 gui.structurescanner.structures.aether.silver_dungeon=Silver Dungeon
 gui.structurescanner.structures.aether.gold_dungeon=Gold Dungeon
-
-## Aether: Dimensions
-gui.structurescanner.dimension.aether=Aether
 
 ## Aether: Loot containers
 gui.structurescanner.loot.aether.reward=Treasure Chest

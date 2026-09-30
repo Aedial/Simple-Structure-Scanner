@@ -133,10 +133,9 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
     }
 
     private void populateStructureMetadata() {
-        // Create DimensionInfo with localization keys for AC dimensions
-        DimensionInfo abyssalWastelandDim = new DimensionInfo(abyssalWastelandId, "gui.structurescanner.dimension.abyssal_wasteland");
-        DimensionInfo dreadlandsDim = new DimensionInfo(dreadlandsId, "gui.structurescanner.dimension.dreadlands");
-        DimensionInfo omotholDim = new DimensionInfo(omotholId, "gui.structurescanner.dimension.omothol");
+        DimensionInfo abyssalWastelandDim = new DimensionInfo(abyssalWastelandId);
+        DimensionInfo dreadlandsDim = new DimensionInfo(dreadlandsId);
+        DimensionInfo omotholDim = new DimensionInfo(omotholId);
 
         Set<DimensionInfo> abyssalWasteland = Collections.singleton(abyssalWastelandDim);
         Set<DimensionInfo> dreadlands = Collections.singleton(dreadlandsDim);

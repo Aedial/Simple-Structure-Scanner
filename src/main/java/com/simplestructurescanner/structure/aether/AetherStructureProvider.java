@@ -111,7 +111,7 @@ public class AetherStructureProvider extends AbstractStructureProvider {
     }
 
     private void populateStructureMetadata() {
-        Set<DimensionInfo> aetherDim = Collections.singleton(new DimensionInfo(aetherDimensionId, "gui.structurescanner.dimension.aether"));
+        Set<DimensionInfo> aetherDim = Collections.singleton(new DimensionInfo(aetherDimensionId));
 
         // Calculate rarity strings based on spawn chance
         // Silver: 6x6 grid, with chance checks
