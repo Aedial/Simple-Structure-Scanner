@@ -37,6 +37,13 @@ gui.structurescanner.currentDimension.off=Dimensions: All
 gui.structurescanner.provider.minecraft=Minecraft
 gui.structurescanner.provider.aether=The Aether
 gui.structurescanner.provider.abyssalcraft=AbyssalCraft
+gui.structurescanner.provider.iceandfire=Ice and Fire
+gui.structurescanner.providers.pillar=Pillar
+gui.structurescanner.provider.recurrentcomplex=Recurrent Complex
+gui.structurescanner.provider.chocolate_quest=Chocolate Quest Repoured
+gui.structurescanner.provider.dungeon_additions=Unseen's Dungeon Additions
+gui.structurescanner.provider.astralsorcery=Astral Sorcery
+gui.structurescanner.provider.wizardry=Electroblob's Wizardry
 
 # Rarity
 gui.structurescanner.rarity=Rarity: %s
@@ -47,7 +54,9 @@ gui.structurescanner.rarity.unique=Unique
 gui.structurescanner.rarity.fixed_position=Fixed Position
 gui.structurescanner.rarity.one_in_chunks=1 in %d chunks
 
-# Structures - Minecraft
+# Minecraft
+
+## Minecraft: Structures
 gui.structurescanner.structures.minecraft.village=Village
 gui.structurescanner.structures.minecraft.mineshaft=Mineshaft
 gui.structurescanner.structures.minecraft.stronghold=Stronghold
@@ -63,7 +72,7 @@ gui.structurescanner.structures.minecraft.nether_fortress=Nether Fortress
 gui.structurescanner.structures.minecraft.end_city=End City
 gui.structurescanner.structures.minecraft.end_ship=End Ship
 
-# Dimensions - Minecraft + misc
+# Minecraft: Dimensions + misc
 gui.structurescanner.dimension=Dimension: %s
 gui.structurescanner.dimension.any=Any
 gui.structurescanner.dimension.unknown=Unknown (%s)
@@ -71,12 +80,14 @@ gui.structurescanner.dimension.overworld=Overworld
 gui.structurescanner.dimension.nether=Nether
 gui.structurescanner.dimension.end=The End
 
-# Loot containers - Minecraft
+## Minecraft: Loot containers
 gui.structurescanner.loot.chest=Chest
 gui.structurescanner.loot.dispenser=Dispenser
 gui.structurescanner.loot.minecart_chest=Minecart with Chest
 
-# Structures - AbyssalCraft
+# AbyssalCraft
+
+## AbyssalCraft: Structures
 gui.structurescanner.structures.abyssalcraft.aby_stronghold=Abyssal Stronghold
 gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft=Dreadlands Mineshaft
 gui.structurescanner.structures.abyssalcraft.jzahar_temple=J'zahar Temple
@@ -85,30 +96,31 @@ gui.structurescanner.structures.abyssalcraft.omothol_storage=Omothol Storage
 gui.structurescanner.structures.abyssalcraft.shoggoth_lair=Shoggoth Lair
 gui.structurescanner.structures.abyssalcraft.graveyard=Graveyard
 
-# Dimensions - AbyssalCraft
+## AbyssalCraft: Dimensions
 gui.structurescanner.dimension.abyssal_wasteland=Abyssal Wasteland
 gui.structurescanner.dimension.dreadlands=Dreadlands
 gui.structurescanner.dimension.omothol=Omothol
 gui.structurescanner.dimension.dark_realm=Dark Realm
 
-# Loot containers - AbyssalCraft
+## AbyssalCraft: Loot containers
 gui.structurescanner.loot.abyssalcraft.crate=Crate
 
-# Structures - Aether
+# The Aether
+
+## Aether: Structures
 gui.structurescanner.structures.aether.bronze_dungeon=Bronze Dungeon
 gui.structurescanner.structures.aether.silver_dungeon=Silver Dungeon
 gui.structurescanner.structures.aether.gold_dungeon=Gold Dungeon
 
-# Dimensions - Aether
+## Aether: Dimensions
 gui.structurescanner.dimension.aether=Aether
 
-# Loot containers - Aether
+## Aether: Loot containers
 gui.structurescanner.loot.aether.reward=Treasure Chest
 
-# Providers - Ice and Fire
-gui.structurescanner.provider.iceandfire=Ice and Fire
+# Ice and Fire
 
-# Structures - Ice and Fire
+## Ice and Fire: Structures
 gui.structurescanner.structures.iceandfire.fire_dragon_roost=Fire Dragon Roost
 gui.structurescanner.structures.iceandfire.ice_dragon_roost=Ice Dragon Roost
 gui.structurescanner.structures.iceandfire.fire_dragon_cave=Fire Dragon Cave
@@ -122,16 +134,12 @@ gui.structurescanner.structures.iceandfire.hydra_lair=Hydra Lair
 gui.structurescanner.structures.iceandfire.myrmex_hive_desert=Desert Myrmex Hive
 gui.structurescanner.structures.iceandfire.myrmex_hive_jungle=Jungle Myrmex Hive
 
-# Loot containers - Ice and Fire
+## Ice and Fire: Loot containers
 gui.structurescanner.loot.iceandfire.cocoon=Myrmex Cocoon
 
-# Providers - Pillar
-gui.structurescanner.providers.pillar=Pillar
+# Recurrent Complex
 
-# Providers - Recurrent Complex
-gui.structurescanner.provider.recurrentcomplex=Recurrent Complex
-
-# Structures - Recurrent Complex
+## Recurrent Complex: (Default) Structures
 gui.structurescanner.structures.reccomplex.abandoned_wood_tower=Abandoned Wood Tower
 gui.structurescanner.structures.reccomplex.alasca_cedar=Alasca Cedar
 gui.structurescanner.structures.reccomplex.babylon_tower=Babylon Tower
@@ -320,10 +328,14 @@ gui.structurescanner.structures.reccomplex.wood_thorn_big=Wood Thorn Big
 gui.structurescanner.structures.reccomplex.wood_wall_remains=Wood Wall Remains
 gui.structurescanner.structures.reccomplex.wooden_clock_tower=Wooden Clock Tower
 
-# Providers - Dungeon Additions
-gui.structurescanner.provider.dungeon_additions=Unseen's Dungeon Additions
+## Recurrent Complex: Loot containers
+gui.structurescanner.structures.reccomplex.generator=Loot Generator
+gui.structurescanner.structures.reccomplex.artifact=Artifact Generator
+gui.structurescanner.structures.reccomplex.book=Book Generator
 
-# Structures - Dungeon Additions
+# Unseen's Dungeon Additions
+
+## Unseen's Dungeon Additions: Structures
 gui.structurescanner.structures.dungeon_additions.blossom_cave=Blossom Cave
 gui.structurescanner.structures.dungeon_additions.rotten_hold=Rotten Hold
 gui.structurescanner.structures.dungeon_additions.night_lich_tower=Night Lich Tower
@@ -337,10 +349,9 @@ gui.structurescanner.structures.dungeon_additions.trader_post=Trader Post
 gui.structurescanner.structures.dungeon_additions.dark_ruins=Dark Ruins
 gui.structurescanner.structures.dungeon_additions.end_outpost=End Outpost
 
-# Providers - Chocolate Quest Repoured
-gui.structurescanner.provider.chocolate_quest=Chocolate Quest Repoured
+# Chocolate Quest Repoured
 
-# Structures - Chocolate Quest Repoured
+## Chocolate Quest Repoured: Structures
 gui.structurescanner.structures.chocolate_quest.airship=Airship
 gui.structurescanner.structures.chocolate_quest.botaniaisland=Botania Island
 gui.structurescanner.structures.chocolate_quest.bwmmill=Better With Mods Mill
@@ -368,10 +379,22 @@ gui.structurescanner.structures.chocolate_quest.vegetatedcave=Vegetated Cave
 gui.structurescanner.structures.chocolate_quest.volcano=Volcano
 gui.structurescanner.structures.chocolate_quest.wizardrytower=Wizardry Tower
 
-# Loot containers - Recurrent Complex
-gui.structurescanner.structures.reccomplex.generator=Loot Generator
-gui.structurescanner.structures.reccomplex.artifact=Artifact Generator
-gui.structurescanner.structures.reccomplex.book=Book Generator
+# Astral Sorcery
+
+## Astral Sorcery: Structures
+gui.structurescanner.structures.astralsorcery.small_shrine=Small Shrine
+gui.structurescanner.structures.astralsorcery.treasure_shrine=Treasure Shrine
+gui.structurescanner.structures.astralsorcery.desert_shrine=Buried Temple
+gui.structurescanner.structures.astralsorcery.ancient_shrine=Temple
+
+# Wizardry
+
+## Wizardry: Structures
+gui.structurescanner.structures.wizardry.wizard_tower=Wizard Tower
+gui.structurescanner.structures.wizardry.shrine=Shrine
+gui.structurescanner.structures.wizardry.obelisk=Obelisk
+gui.structurescanner.structures.wizardry.library_ruins=Library Ruins
+gui.structurescanner.structures.wizardry.underground_library_ruins=Underground Library Ruins
 
 # Buttons
 gui.structurescanner.blocksButton=[Blocks]

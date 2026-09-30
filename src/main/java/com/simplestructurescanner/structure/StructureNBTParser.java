@@ -1,5 +1,7 @@
 package com.simplestructurescanner.structure;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -56,6 +60,8 @@ import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.IFluidBlock;
+import net.minecraftforge.fml.common.Loader;
+import net.minecraftforge.fml.common.ModContainer;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
@@ -368,21 +374,96 @@ public class StructureNBTParser {
         return parseResource(resourcePath, namespace + ":" + structurePath, extension);
     }
 
+    /**
+     * Parses a standard structure template from an installed mod's assets.
+     */
     @Nullable
-    private static ParsedStructure parseResource(String resourcePath, String structureId,
+    public static ParsedStructure parseInstalledModStructure(String namespace, String structurePath,
             @Nullable StructureParseExtension extension) {
-        try (InputStream stream = StructureNBTParser.class.getResourceAsStream(resourcePath)) {
-            if (stream == null) {
-                SimpleStructureScanner.LOGGER.debug("Structure file not found: {}", resourcePath);
-                return null;
-            }
+        String resourcePath = "assets/" + namespace + "/structures/" + structurePath + ".nbt";
+        String structureId = namespace + ":" + structurePath;
 
-            NBTTagCompound nbt = CompressedStreamTools.readCompressed(stream);
-            return parseNBT(nbt, extension);
+        try (InputStream stream = openInstalledModStructure(namespace, resourcePath)) {
+            return parseStream(stream, structureId, extension);
         } catch (IOException e) {
             SimpleStructureScanner.LOGGER.warn("Failed to parse structure {}: {}", structureId, e.getMessage());
             return null;
         }
+    }
+
+    @Nullable
+    private static InputStream openInstalledModStructure(String namespace, String resourcePath) throws IOException {
+        InputStream classpathStream = Loader.instance().getModClassLoader().getResourceAsStream(resourcePath);
+        if (classpathStream != null) return classpathStream;
+
+        ModContainer modContainer = Loader.instance().getIndexedModList().get(namespace);
+        File modSource = modContainer != null ? modContainer.getSource() : null;
+        if (modSource == null) return null;
+
+        if (modSource.isFile()) return openArchiveResource(modSource, resourcePath);
+        if (modSource.isDirectory()) return openDirectoryResource(modSource, resourcePath);
+
+        return null;
+    }
+
+    @Nullable
+    private static InputStream openDirectoryResource(File modSource, String resourcePath) throws IOException {
+        File[] candidates = {
+            new File(modSource, resourcePath),
+            new File(modSource, "src/main/resources/" + resourcePath),
+            new File(modSource, "build/resources/main/" + resourcePath)
+        };
+
+        for (File candidate : candidates) {
+            if (candidate.isFile()) return Files.newInputStream(candidate.toPath());
+        }
+
+        return null;
+    }
+
+    @Nullable
+    private static InputStream openArchiveResource(File archiveFile, String resourcePath) throws IOException {
+        try (ZipFile zipFile = new ZipFile(archiveFile)) {
+            ZipEntry entry = zipFile.getEntry(resourcePath);
+            if (entry == null) return null;
+
+            try (InputStream stream = zipFile.getInputStream(entry)) {
+                return new ByteArrayInputStream(readFully(stream));
+            }
+        }
+    }
+
+    private static byte[] readFully(InputStream stream) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int read;
+
+        while ((read = stream.read(buffer)) != -1) output.write(buffer, 0, read);
+
+        return output.toByteArray();
+    }
+
+    @Nullable
+    private static ParsedStructure parseResource(String resourcePath, String structureId,
+            @Nullable StructureParseExtension extension) {
+        try (InputStream stream = StructureNBTParser.class.getResourceAsStream(resourcePath)) {
+            return parseStream(stream, structureId, extension);
+        } catch (IOException e) {
+            SimpleStructureScanner.LOGGER.warn("Failed to parse structure {}: {}", structureId, e.getMessage());
+            return null;
+        }
+    }
+
+    @Nullable
+    private static ParsedStructure parseStream(@Nullable InputStream stream, String structureId,
+            @Nullable StructureParseExtension extension) throws IOException {
+        if (stream == null) {
+            SimpleStructureScanner.LOGGER.debug("Structure file not found: {}", structureId);
+            return null;
+        }
+
+        NBTTagCompound nbt = CompressedStreamTools.readCompressed(stream);
+        return parseNBT(nbt, extension);
     }
 
     /**

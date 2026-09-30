@@ -18,14 +18,28 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 
 ### List of supported structures :
   - Vanilla Minecraft structures.
-  - Dungeons from the Aether mod.
-  - Some specific structures from AbyssalCraft.
-  - Ice and Fire's structures (none can be searched for, due to being non-determinstic).
   - Unseen's Dungeon Additions structures.
   - Custom structures from the Pillar mod. Due to how search works, any change to the structure's list will break search for already generated structures, as it changes the structure's index in the search process. This is a limitation of the mod, not a bug.
   - Default and custom structures from Recurrent Complex.
   - Default and custom structures from Chocolate Quest Repoured.
+  - Dungeons from the Aether mod.
+  - A few specific structures from AbyssalCraft.
+  - Ice and Fire's structures (none can be searched for, due to being non-deterministic).
 
+
+### List of structures that support search :
+- Vanilla Minecraft: All
+- Unseen's Dungeon Additions: All
+- Pillar: All
+- Recurrent Complex: All
+- Chocolate Quest Repoured: All
+- The Aether: Silver and Gold dungeons
+- AbyssalCraft: Stronghold
+- Ice and Fire: None
+- Astral Sorcery: None
+- Wizardry: None
+
+Structures that cannot be searched are non-deterministic, and would require substantial processing power to determine their locations reliably, making them impractical to include in the search functionality.
 
 ### JEI integration
 The mod adds 3 JEI categories for each structure: Preview, Blocks, and Loot. Due to the sheer number of structures that can be registered and visibility constraints, the JEI categories are built in a background thread, and may show missing or incomplete content until the warmup is finished (notified by a log message), as to not freeze the client on first JEI match. The warmup is re-run when the client connects to a server, so that the JEI categories are built with the correct visibility and search blacklists.
