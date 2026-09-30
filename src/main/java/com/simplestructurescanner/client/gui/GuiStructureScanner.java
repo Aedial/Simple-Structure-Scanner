@@ -1472,8 +1472,7 @@ public class GuiStructureScanner extends GuiScreen {
 
         private int getScrollbarThumbHeight() {
             int totalRows = filteredStructures.size();
-
-            if (totalRows <= 0) return height;
+            if (totalRows == 0) return height;
 
             return Math.max(20, Math.round((float) getVisibleRowCount() / totalRows * height));
         }

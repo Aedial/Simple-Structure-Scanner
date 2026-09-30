@@ -71,15 +71,13 @@ public class GuiHudPositionSelector extends GuiScreen {
             int btnX = positionsX[btn % 3];
             int btnY = positionsY[btn / 3];
             String label = buttonLabels[btn];
-            int index = POSITIONS[btn].ordinal();
-
-            buttonList.add(new GuiButton(index, btnX, btnY, btnW, btnH, label));
+            buttonList.add(new GuiButton(btn, btnX, btnY, btnW, btnH, label));
         }
     }
 
     @Override
     protected void actionPerformed(GuiButton button) {
-        if (button.id >= POSITIONS[0].ordinal() && button.id <= POSITIONS[POSITIONS.length - 1].ordinal()) {
+        if (button.id >= 0 && button.id < POSITIONS.length) {
             ModConfig.setClientHudPosition(POSITIONS[button.id]);
         }
     }

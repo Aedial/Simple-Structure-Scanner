@@ -10,7 +10,6 @@ import java.util.Set;
 import javax.annotation.Nullable;
 
 import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import net.minecraft.client.Minecraft;

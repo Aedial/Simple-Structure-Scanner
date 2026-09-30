@@ -1,12 +1,16 @@
 package com.simplestructurescanner.network;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import io.netty.buffer.ByteBuf;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.common.network.ByteBufUtils;
 import net.minecraftforge.fml.common.network.simpleimpl.IMessage;
@@ -28,6 +32,7 @@ public class PacketRequestStructureSearch implements IMessage {
     private int skipCount;
 
     private static final int MAX_CACHE_RESULTS = 100;
+    private static final Set<String> reportedSearchFailures = new HashSet<>();
 
     public PacketRequestStructureSearch() {
     }
@@ -66,6 +71,19 @@ public class PacketRequestStructureSearch implements IMessage {
                 ResourceLocation structureId = message.structureId;
                 BlockPos playerPos = message.playerPos;
                 int skipCount = message.skipCount;
+
+                String failureMessage = StructureProviderRegistry.getSearchFailureMessage(structureId);
+                if (failureMessage != null) {
+                    if (reportedSearchFailures.add(player.getUniqueID() + ":" + failureMessage)) {
+                        player.sendMessage(new TextComponentTranslation(failureMessage));
+                    }
+
+                    NetworkHandler.INSTANCE.sendTo(
+                        new PacketStructureSearchResult(structureId, Collections.emptyList(), playerPos),
+                        player
+                    );
+                    return;
+                }
 
                 // Try batch search first
                 List<BlockPos> positions = StructureProviderRegistry.findAllNearby(

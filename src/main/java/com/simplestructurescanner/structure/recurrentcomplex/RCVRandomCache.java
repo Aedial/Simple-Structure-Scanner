@@ -1,4 +1,4 @@
-package com.simplestructurescanner.rcv;
+package com.simplestructurescanner.structure.recurrentcomplex;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -110,10 +110,6 @@ public final class RCVRandomCache {
             result = 31 * result + chunkX;
             return 31 * result + chunkZ;
         }
-    }
-
-    public static synchronized int size() {
-        return SEEDS.size();
     }
 
     public static synchronized void clear() {

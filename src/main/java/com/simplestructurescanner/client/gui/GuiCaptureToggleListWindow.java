@@ -3,7 +3,6 @@ package com.simplestructurescanner.client.gui;
 import java.util.List;
 
 import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;

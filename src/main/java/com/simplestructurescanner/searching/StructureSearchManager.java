@@ -1,6 +1,7 @@
 package com.simplestructurescanner.searching;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -11,6 +12,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.I18n;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
 
 import com.simplestructurescanner.config.ModConfig;
@@ -41,6 +43,7 @@ public class StructureSearchManager {
     private static final Map<ResourceLocation, Integer> structureColors = new LinkedHashMap<>();
     private static final Set<Integer> usedColorIndices = new LinkedHashSet<>();
     private static final Map<ResourceLocation, Integer> skipOffsets = new LinkedHashMap<>();
+    private static final Set<String> reportedSearchFailures = new HashSet<>();
 
     private static final class SearchCacheKey {
         private final long worldId;
@@ -429,6 +432,16 @@ public class StructureSearchManager {
 
         if (mc.isSingleplayer() && mc.getIntegratedServer() != null) {
             World serverWorld = mc.getIntegratedServer().getWorld(world.provider.getDimension());
+            String failureMessage = StructureProviderRegistry.getSearchFailureMessage(id);
+            if (failureMessage != null) {
+                if (reportedSearchFailures.add(failureMessage)) {
+                    mc.player.sendMessage(new TextComponentTranslation(failureMessage));
+                }
+
+                lastKnownLocations.remove(id);
+                return;
+            }
+
             processSingleplayerSearch(serverWorld, id, playerPos, skipOffset, cacheKey);
             return;
         }
@@ -627,6 +640,7 @@ public class StructureSearchManager {
         locationCache.clear();
         nonBatchStructures.clear();
         lastSearchContext = null;
+        reportedSearchFailures.clear();
         saveToConfig();
     }
 
@@ -640,6 +654,7 @@ public class StructureSearchManager {
         nonBatchStructures.clear();
         lastSearchContext = null;
         pendingSearches.clear();
+        reportedSearchFailures.clear();
 
         // Re-queue searches for all tracked structures
         for (ResourceLocation id : searchedStructures) {

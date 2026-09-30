@@ -8,7 +8,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import com.simplestructurescanner.rcv.RCVPredictionContext;
+import com.simplestructurescanner.structure.recurrentcomplex.RCVPredictionContext;
 
 
 /**
@@ -35,6 +35,7 @@ import com.simplestructurescanner.rcv.RCVPredictionContext;
  *       unaffected — it doesn't go through MapGenStructureHook</li>
  * </ul>
  */
+@SuppressWarnings("public-target")
 @Mixin(targets = "ivorius.reccomplex.world.gen.feature.structure.MapGenStructureHook", remap = false)
 public class MixinMapGenStructureHook {
 

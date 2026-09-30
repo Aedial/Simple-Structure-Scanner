@@ -55,6 +55,15 @@ public interface StructureProvider {
     boolean canBeSearched(ResourceLocation structureId);
 
     /**
+     * Gets the message shown when this provider cannot search the requested structure.
+     * @return Translation key, or null when searching can continue.
+     */
+    @Nullable
+    default String getSearchFailureMessage(ResourceLocation structureId) {
+        return null;
+    }
+
+    /**
      * Get information about a specific structure.
      * @param structureId The structure ID
      * @return Structure info, or null if not found

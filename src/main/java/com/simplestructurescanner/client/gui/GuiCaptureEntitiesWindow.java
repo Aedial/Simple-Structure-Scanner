@@ -153,8 +153,7 @@ public class GuiCaptureEntitiesWindow extends AbstractEntityBrowserWindow<GuiCap
         List<EntityGroup> aggregatedEntities = new ArrayList<>(groupedEntities.values());
         aggregatedEntities.sort((first, second) -> {
             int countCompare = Integer.compare(second.count, first.count);
-            if (countCompare != 0)
-                return countCompare;
+            if (countCompare != 0) return countCompare;
 
             return first.entityId.toString().compareTo(second.entityId.toString());
         });

@@ -420,15 +420,12 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
             List<StructureInfo.StructureLayer> layers = preview.buildLayers();
             if (!includeContents && layers.isEmpty()) return null;
 
-            List<BlockEntry> blocks = includeContents && contents != null
-                ? contents.buildBlocks()
-                : Collections.emptyList();
-            List<EntityEntry> entities = includeContents && contents != null
-                ? contents.buildEntities()
-                : Collections.emptyList();
-            List<LootEntry> lootEntries = includeContents && contents != null
-                ? contents.buildLootEntries()
-                : Collections.emptyList();
+            List<BlockEntry> blocks = includeContents ? contents.buildBlocks()
+                                                      : Collections.emptyList();
+            List<EntityEntry> entities = includeContents ? contents.buildEntities()
+                                                         : Collections.emptyList();
+            List<LootEntry> lootEntries = includeContents ? contents.buildLootEntries()
+                                                          : Collections.emptyList();
             if (includeContents && layers.isEmpty() && blocks.isEmpty() && entities.isEmpty() && lootEntries.isEmpty()) {
                 return null;
             }
@@ -578,7 +575,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
 
     @Nullable
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private Object resolveDungeonGeneratorType(String generatorType) throws ReflectionException {
+    private Object resolveDungeonGeneratorType(String generatorType) {
         try {
             return Enum.valueOf((Class<Enum>) dungeonGeneratorEnumClass, generatorType.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
@@ -588,7 +585,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
 
     @Nullable
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private Object resolveDungeonSpawnType() throws ReflectionException {
+    private Object resolveDungeonSpawnType() {
         try {
             return Enum.valueOf((Class<Enum>) dungeonSpawnTypeClass, "DUNGEON_GENERATION");
         } catch (IllegalArgumentException e) {

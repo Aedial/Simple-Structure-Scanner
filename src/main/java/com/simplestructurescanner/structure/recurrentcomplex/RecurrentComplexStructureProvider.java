@@ -1013,11 +1013,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
                         continue;
                     }
 
-                    NaturalRarityCategory rarityCategory = categories.get(category);
-                    if (rarityCategory == null) {
-                        rarityCategory = new NaturalRarityCategory(category);
-                        categories.put(category, rarityCategory);
-                    }
+                    NaturalRarityCategory rarityCategory = categories.computeIfAbsent(category,
+                        NaturalRarityCategory::new);
 
                     entries.add(new NaturalRarityEntry(rawId, generationType, rarityCategory,
                         spawnRateTweak));
@@ -1110,18 +1107,14 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
                 if (targetChance <= 0.0D) continue;
 
-                double failure = failureByStructure.containsKey(target.getKey())
-                    ? failureByStructure.get(target.getKey()) : 1.0D;
+                double failure = failureByStructure.getOrDefault(target.getKey(), 1.0D);
                 failureByStructure.put(target.getKey(), failure * (1.0D - targetChance));
             }
         }
 
         for (Map.Entry<String, Double> entry : failureByStructure.entrySet()) {
-            NaturalRarityAccumulator rate = rates.get(entry.getKey());
-            if (rate == null) {
-                rate = new NaturalRarityAccumulator();
-                rates.put(entry.getKey(), rate);
-            }
+            NaturalRarityAccumulator rate = rates.computeIfAbsent(entry.getKey(),
+                k -> new NaturalRarityAccumulator());
 
             rate.add(1.0D - entry.getValue());
         }
@@ -1371,6 +1364,13 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
     @Override
     @Nullable
+    public String getSearchFailureMessage(ResourceLocation structureId) {
+        return RecurrentComplexStructureSearcher.isMixinBooterAvailable() ? null
+            : "chat.structurescanner.search.reccomplexMixinBooterRequired";
+    }
+
+    @Override
+    @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {
         return RecurrentComplexStructureSearcher.findNearest(world, structureId, pos, skipCount, locationFilter);
@@ -1491,8 +1491,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         private double totalWeight;
 
         private void add(String structureId, double weight) {
-            Double existing = structureWeights.get(structureId);
-            structureWeights.put(structureId, (existing != null ? existing : 0.0D) + weight);
+            structureWeights.compute(structureId,
+                (k, existing) -> (existing != null ? existing : 0.0D) + weight);
             totalWeight += weight;
         }
     }

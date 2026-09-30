@@ -1,12 +1,13 @@
-package com.simplestructurescanner.rcv;
+package com.simplestructurescanner.structure.recurrentcomplex;
+
 
 /**
  * Flag holder controlling whether simulated Recurrent Complex events should cancel
  * the original method body to prevent actual world modification.
  * <p>
  * Also carries the capture signal between {@code MixinRCForgeEventHandler} and
- * {@code RecurrentComplexStructureSearcher}: the mixin raises it after recording a
- * seed, and the searcher's partial event dispatch stops invoking listeners once
+ * {@code RecurrentComplexStructureSearcher}: the mixin raises it after simulated
+ * capture, and the searcher's partial event dispatch stops invoking listeners once
  * it sees it. Lives here (not on the mixin class) because mixin classes cannot
  * be referenced from normal code at runtime.
  */
@@ -32,14 +33,14 @@ public class RCVPredictionContext {
     }
 
     /**
-     * Raised by the mixin after a seed has been captured and recorded.
+     * Raised by the mixin after simulated seed capture.
      */
     public static void signalCaptured() {
         capturedThisPost = true;
     }
 
     /**
-     * True if the mixin captured a seed since the last reset.
+     * True if the mixin captured a simulated seed since the last reset.
      */
     public static boolean wasCapturedThisPost() {
         return capturedThisPost;

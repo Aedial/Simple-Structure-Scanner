@@ -201,8 +201,7 @@ public final class StructureCaptureService {
 
         containerSummaries.sort((first, second) -> {
             int countCompare = Integer.compare(second.getContainerCount(), first.getContainerCount());
-            if (countCompare != 0)
-                return countCompare;
+            if (countCompare != 0) return countCompare;
 
             return first.getSerializedKey().compareTo(second.getSerializedKey());
         });

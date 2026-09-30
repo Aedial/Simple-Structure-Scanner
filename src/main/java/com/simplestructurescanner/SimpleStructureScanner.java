@@ -9,6 +9,9 @@ import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLLoadCompleteEvent;
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
+import net.minecraftforge.fml.common.event.FMLServerStoppedEvent;
+
+import com.simplestructurescanner.structure.recurrentcomplex.RCVRandomCache;
 
 
 @Mod(
@@ -44,5 +47,10 @@ public class SimpleStructureScanner {
     @Mod.EventHandler
     public void loadComplete(FMLLoadCompleteEvent event) {
         proxy.loadComplete(event);
+    }
+
+    @Mod.EventHandler
+    public void serverStopped(FMLServerStoppedEvent event) {
+        RCVRandomCache.clear();
     }
 }

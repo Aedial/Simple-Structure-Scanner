@@ -578,3 +578,4 @@ chat.structurescanner.capture.empty=No blocks or entities were found inside that
 chat.structurescanner.capture.emptyAfterExclusions=Nothing would remain after the current exclusions.
 chat.structurescanner.capture.saved=Saved capture to %s
 chat.structurescanner.capture.saveFailed=Failed to save the structure capture.
+chat.structurescanner.search.reccomplexMixinBooterRequired=Recurrent Complex search requires MixinBooter.

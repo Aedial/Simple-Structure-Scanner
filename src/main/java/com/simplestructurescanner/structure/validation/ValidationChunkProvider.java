@@ -18,7 +18,7 @@ import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.gen.IChunkGenerator;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.rcv.RCVPredictionContext;
+import com.simplestructurescanner.structure.recurrentcomplex.RCVPredictionContext;
 
 /**
  * Generates and caches chunks for {@link StructureValidationWorld}.
@@ -82,7 +82,7 @@ public class ValidationChunkProvider implements IChunkProvider {
             ctor.setAccessible(true);
             validationGenerator = (IChunkGenerator) ctor.newInstance(
                 world, seed, mapFeatures, genOptions);
-            SimpleStructureScanner.LOGGER.info(
+            SimpleStructureScanner.LOGGER.debug(
                 "Created validation chunk generator {} for seed {} (map features: {})",
                 validationGenerator.getClass().getSimpleName(), seed, mapFeatures);
         } catch (Exception e) {
@@ -169,7 +169,7 @@ public class ValidationChunkProvider implements IChunkProvider {
      * <p>
      * {@link RCVPredictionContext} skips Recurrent Complex's structure hook,
      * which requires a {@code WorldServer}.
-     *
+     * <p>
      * FIXME: Move the RCV part to RC, this level of coupling is disgusting.
      *
      * @return true when decoration succeeds or the chunk was already decorated

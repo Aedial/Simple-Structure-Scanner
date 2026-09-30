@@ -8,11 +8,12 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Semantic Versioning: https://semver.org/spec/v2.0.0.html
 
 
-## [1.4.0] - 2026-??-??
+## [1.4.0] - 2026-09-30
 ### Added
 - Add optional VoxelMap waypoint creation to the Structure Scanner Map button, reusing the located structure's coordinates and color.
 - Add Recurrent Complex structure search support, allowing you to locate them in-world.
 - Add rarity information to natural Recurrent Complex structures (as opposed to fixed or village-bound).
+- Add support for JourneyMap 6.X.X waypoints (would crash when attempting to create them, as the API changed between 5.X.X and 6.X.X).
 
 ### Fixed
 - Fix the Structure Scanner list scrollbar so it can be dragged properly again, and make wheel scrolling advance by whole structure entries instead of fractional offsets.

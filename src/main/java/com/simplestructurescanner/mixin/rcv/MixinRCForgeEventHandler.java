@@ -1,6 +1,5 @@
 package com.simplestructurescanner.mixin.rcv;
 
-import java.lang.reflect.Field;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -12,19 +11,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import net.minecraftforge.event.terraingen.PopulateChunkEvent;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.rcv.RCVRandomCache;
-import com.simplestructurescanner.rcv.RCVPredictionContext;
+import com.simplestructurescanner.structure.recurrentcomplex.RCVRandomCache;
+import com.simplestructurescanner.structure.recurrentcomplex.RCVPredictionContext;
+import com.simplestructurescanner.structure.recurrentcomplex.RCVRandomSeedAccess;
 
 
 /**
  * Captures the Recurrent Complex decoration random seed at the HEAD of the
  * chunk-populate handler and cancels the original body during prediction.
  */
+@SuppressWarnings("public-target")
 @Mixin(targets = "ivorius.reccomplex.events.handlers.RCForgeEventHandler", remap = false)
 public class MixinRCForgeEventHandler {
-
-    private static volatile boolean seedFieldReady = false;
-    private static Field cachedSeedField = null;
 
     @Inject(method = "onPreChunkDecoration", at = @At("HEAD"), cancellable = true, remap = false)
     public void simplestructurescanner$captureRandom(PopulateChunkEvent.Pre event, CallbackInfo ci) {
@@ -32,10 +30,11 @@ public class MixinRCForgeEventHandler {
             Random rand = event.getRand();
             if (rand == null) return;
 
-            Field seedField = getCachedSeedField();
-            if (seedField == null) return;
+            AtomicLong randomSeed = RCVRandomSeedAccess.getSeedAtomic(rand);
+            if (randomSeed == null) return;
 
-            long internalSeed = ((AtomicLong) seedField.get(rand)).get();
+            long internalSeed = randomSeed.get();
+
             long worldSeed = event.getWorld().getSeed();
             int dimensionId = event.getWorld().provider.getDimension();
             boolean predicting = RCVPredictionContext.isPredicting();
@@ -43,39 +42,14 @@ public class MixinRCForgeEventHandler {
             if (predicting) {
                 RCVRandomCache.recordSimulated(worldSeed, dimensionId, event.getChunkX(), event.getChunkZ(),
                     internalSeed);
+                RCVPredictionContext.signalCaptured();
+                ci.cancel();
             } else {
                 RCVRandomCache.recordObserved(worldSeed, dimensionId, event.getChunkX(), event.getChunkZ(),
                     internalSeed);
             }
-            RCVPredictionContext.signalCaptured();
-
-            if (!predicting) {
-                SimpleStructureScanner.LOGGER.debug("Captured Recurrent Complex random seed for chunk({},{}) cacheSize={}",
-                        event.getChunkX(), event.getChunkZ(), RCVRandomCache.size());
-            } else {
-                ci.cancel();
-            }
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.warn("Failed to capture Recurrent Complex random seed", e);
-        }
-    }
-
-    private static Field getCachedSeedField() {
-        if (seedFieldReady) return cachedSeedField;
-
-        synchronized (MixinRCForgeEventHandler.class) {
-            if (seedFieldReady) return cachedSeedField;
-
-            seedFieldReady = true;
-            try {
-                cachedSeedField = Random.class.getDeclaredField("seed");
-                cachedSeedField.setAccessible(true);
-                SimpleStructureScanner.LOGGER.debug("Random.seed field initialized for Recurrent Complex mixin");
-            } catch (Exception e) {
-                SimpleStructureScanner.LOGGER.warn("Failed to get Random.seed field for Recurrent Complex mixin", e);
-            }
-
-            return cachedSeedField;
         }
     }
 }

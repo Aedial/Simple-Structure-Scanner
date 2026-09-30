@@ -21,7 +21,6 @@ import net.minecraft.world.WorldServer;
 import net.minecraft.world.WorldProvider;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.chunk.Chunk;
-import net.minecraft.world.gen.ChunkProviderServer;
 import net.minecraft.world.gen.IChunkGenerator;
 import net.minecraft.world.gen.structure.MapGenVillage;
 import net.minecraft.world.gen.structure.StructureBoundingBox;
@@ -29,10 +28,9 @@ import net.minecraft.world.gen.structure.StructureComponent;
 import net.minecraft.world.gen.structure.StructureStart;
 
 import net.minecraftforge.event.terraingen.PopulateChunkEvent;
+import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.rcv.RCVRandomCache;
-import com.simplestructurescanner.rcv.RCVPredictionContext;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.validation.ValidationContextManager;
@@ -55,6 +53,7 @@ public class RecurrentComplexStructureSearcher {
 
     private static final int SEARCH_RADIUS_CHUNKS = 64;
     private static final long MAX_SCAN_TIME_MS = 10000;
+    private static final String MIXIN_BOOTER_MOD_ID = "mixinbooter";
 
     // Stops later event dispatch after a listener fails in the validation world
     private static volatile boolean busPostBroken = false;
@@ -67,10 +66,15 @@ public class RecurrentComplexStructureSearcher {
 
     // ========== Public API ==========
 
+    public static boolean isMixinBooterAvailable() {
+        return Loader.isModLoaded(MIXIN_BOOTER_MOD_ID);
+    }
+
     @Nullable
     public static StructureLocation findNearest(World world, ResourceLocation structureId,
             BlockPos pos, int skipCount, @Nullable Predicate<BlockPos> locationFilter) {
 
+        if (!isMixinBooterAvailable()) return null;
         if (!RecurrentComplexAccessors.isAvailable()) return null;
 
         WorldServer worldServer = resolveWorldServer(world);
@@ -101,6 +105,7 @@ public class RecurrentComplexStructureSearcher {
     public static List<BlockPos> findAllNearby(World world, ResourceLocation structureId,
             BlockPos pos, int maxResults) {
 
+        if (!isMixinBooterAvailable()) return new ArrayList<>();
         if (!RecurrentComplexAccessors.isAvailable()) return null;
 
         WorldServer worldServer = resolveWorldServer(world);
@@ -142,7 +147,7 @@ public class RecurrentComplexStructureSearcher {
         }
 
         if (!RecurrentComplexAccessors.isStructureGenerationEnabled(worldServer)) {
-            SimpleStructureScanner.LOGGER.info(
+            SimpleStructureScanner.LOGGER.debug(
                 "Skipping '{}': map features are disabled for Recurrent Complex generation", structureId);
             return new ArrayList<>();
         }
@@ -151,7 +156,7 @@ public class RecurrentComplexStructureSearcher {
         boolean hasNaturalGeneration = naturalTypes == null || !naturalTypes.isEmpty();
         boolean hasStaticGeneration = RecurrentComplexAccessors.hasStaticGeneration(structure);
         if (!hasNaturalGeneration && !hasStaticGeneration) {
-            SimpleStructureScanner.LOGGER.info("Skipping '{}': it has no supported generation entries",
+            SimpleStructureScanner.LOGGER.debug("Skipping '{}': it has no supported generation entries",
                 structureId);
             return new ArrayList<>();
         }
@@ -194,7 +199,7 @@ public class RecurrentComplexStructureSearcher {
             }
         }
 
-        SimpleStructureScanner.LOGGER.info(
+        SimpleStructureScanner.LOGGER.debug(
             "Searching for Recurrent Complex structure '{}' from {} within {} chunks; limit {}",
             structureId, origin, SEARCH_RADIUS_CHUNKS, maxResults);
 
@@ -243,10 +248,17 @@ public class RecurrentComplexStructureSearcher {
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
-        SimpleStructureScanner.LOGGER.info(
-            "Recurrent Complex search for '{}' completed in {} ms: scanned {} chunks, used {} cached random states, " +
-                "posted {} events, and found {} results",
-            structureId, elapsed, chunksSearched, cacheHits, eventsFired, results.size());
+        if (elapsed < 1_000) {  // Only log as info if the search takes more than 1 second
+            SimpleStructureScanner.LOGGER.debug(
+                "Recurrent Complex search for '{}' completed in {} ms: scanned {} chunks, used {} cached random states, " +
+                    "posted {} events, and found {} results",
+                structureId, elapsed, chunksSearched, cacheHits, eventsFired, results.size());
+        } else {
+            SimpleStructureScanner.LOGGER.info(
+                "Recurrent Complex search for '{}' completed in {} ms: scanned {} chunks, used {} cached random states, " +
+                    "posted {} events, and found {} results",
+                structureId, elapsed, chunksSearched, cacheHits, eventsFired, results.size());
+        }
 
         return results;
     }
@@ -392,9 +404,9 @@ public class RecurrentComplexStructureSearcher {
         long worldSeed = worldServer.getSeed();
         long startTime = System.currentTimeMillis();
 
-        SimpleStructureScanner.LOGGER.info(
-                "Searching villages for Recurrent Complex structure '{}' from {}; limit {}",
-                structureId, origin, maxResults);
+        SimpleStructureScanner.LOGGER.debug(
+            "Searching villages for Recurrent Complex structure '{}' from {}; limit {}",
+            structureId, origin, maxResults);
 
         // Read the MapGenBase seed multipliers for this world
         Random seedRand = new Random(worldSeed);
@@ -435,7 +447,7 @@ public class RecurrentComplexStructureSearcher {
                 if (piecePos != null) {
                     villagesWithTarget++;
                     results.add(piecePos);
-                    SimpleStructureScanner.LOGGER.info(
+                    SimpleStructureScanner.LOGGER.debug(
                         "Found '{}' in village chunk ({},{}), structure center {}",
                         structureId, villageChunkX, villageChunkZ, piecePos);
                     if (results.size() >= maxResults) break;
@@ -446,9 +458,9 @@ public class RecurrentComplexStructureSearcher {
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
-        SimpleStructureScanner.LOGGER.info(
-                "Village search for '{}' completed in {} ms: checked {} villages and found {} results",
-                structureId, elapsed, villagesChecked, results.size());
+        SimpleStructureScanner.LOGGER.debug(
+            "Village search for '{}' completed in {} ms: checked {} villages and found {} results",
+            structureId, elapsed, villagesChecked, results.size());
 
         return results;
     }
@@ -474,15 +486,13 @@ public class RecurrentComplexStructureSearcher {
             StructureStart village = new MapGenVillage.Start(worldServer,
                 villageRand, villageChunkX, villageChunkZ, 0);
             List<StructureComponent> components = village.getComponents();
-            if (components == null) return null;
 
             // Find the requested Recurrent Complex piece
             for (StructureComponent component : components) {
                 if (RecurrentComplexAccessors.isVillagePiece(component)) {
                     String pieceStructureId = RecurrentComplexAccessors.villagePieceStructureId(component);
                     if (structureId.equalsIgnoreCase(pieceStructureId)) {
-                        StructureBoundingBox bb = component.getBoundingBox();
-                        if (bb != null) return boundingBoxCenter(bb);
+                        return boundingBoxCenter(component.getBoundingBox());
                     }
                 }
             }
@@ -539,9 +549,8 @@ public class RecurrentComplexStructureSearcher {
             boolean realChunkLoaded = loadedChunk != null;
 
             boolean generatedOnDisk = false;
-            if (!realChunkLoaded && worldServer.getChunkProvider() instanceof ChunkProviderServer) {
-                generatedOnDisk = ((ChunkProviderServer) worldServer.getChunkProvider())
-                        .isChunkGeneratedAt(chunkPos.x, chunkPos.z);
+            if (!realChunkLoaded) {
+                generatedOnDisk = worldServer.getChunkProvider().isChunkGeneratedAt(chunkPos.x, chunkPos.z);
             }
 
             if ((realChunkLoaded || generatedOnDisk) && RecurrentComplexAccessors.hasLedgerAccess()) {
@@ -624,7 +633,7 @@ public class RecurrentComplexStructureSearcher {
                                 structureId, chunkPos.x, chunkPos.z);
                             continue;
                         }
-                        SimpleStructureScanner.LOGGER.info("Predicted static '{}' in chunk ({},{}), center {}",
+                        SimpleStructureScanner.LOGGER.debug("Predicted static '{}' in chunk ({},{}), center {}",
                             structureId, chunkPos.x, chunkPos.z, validated.position());
                         results.add(validated.position());
                     } catch (Exception e) {
@@ -713,7 +722,7 @@ public class RecurrentComplexStructureSearcher {
                         continue;
                     }
 
-                    SimpleStructureScanner.LOGGER.info("Predicted '{}' in chunk ({},{}), center {}",
+                    SimpleStructureScanner.LOGGER.debug("Predicted '{}' in chunk ({},{}), center {}",
                         structureId, chunkPos.x, chunkPos.z, validated.position());
                     results.add(validated.position());
                     if (RecurrentComplexAccessors.avoidsOverlappingGeneration() &&

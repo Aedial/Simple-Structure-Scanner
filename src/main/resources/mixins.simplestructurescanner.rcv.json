@@ -9,10 +9,6 @@
         "MixinStructureLocator",
         "MixinMapGenStructureHook"
     ],
-    "server": [
-        "MixinRCForgeEventHandler",
-        "MixinStructureLocator",
-        "MixinMapGenStructureHook"
-    ],
+    "server": [],
     "client": []
 }

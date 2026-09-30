@@ -270,9 +270,7 @@ final class StructureJeiRecipes {
 
         SimpleStructureScanner.LOGGER.info(
             "Starting JEI structure warmup: {} ({} visible structures, {} ms/tick main-thread loot budget)",
-            warmupReason,
-            Integer.valueOf(request.seeds.size()),
-            Double.valueOf(roundMillis(LOOT_WARMUP_BUDGET_NS))
+            warmupReason, request.seeds.size(), roundMillis(LOOT_WARMUP_BUDGET_NS)
         );
 
         Thread previousThread = buildThread;
@@ -563,15 +561,13 @@ final class StructureJeiRecipes {
         if (warmup == null || warmup.buildId != state.buildId) return;
 
         SimpleStructureScanner.LOGGER.info(
-            "Finished JEI structure warmup: {} visible structures, {} block item keys, {} block fluid keys, {} static loot keys, {} dynamic loot sources, {} ms off-thread indexing, {} ms main-thread loot, {} ms total",
-            Integer.valueOf(warmup.visibleStructureCount),
-            Integer.valueOf(warmup.blockItemKeyCount),
-            Integer.valueOf(warmup.blockFluidKeyCount),
-            Integer.valueOf(warmup.staticLootKeyCount),
-            Integer.valueOf(warmup.dynamicLootSourceCount),
-            Double.valueOf(roundMillis(warmup.backgroundNanos)),
-            Double.valueOf(roundMillis(warmup.mainThreadLootNanos)),
-            Double.valueOf(roundMillis(System.nanoTime() - warmup.startNanos))
+            "Finished JEI structure warmup: {} visible structures, {} block item keys, " +
+            "{} fluid block keys, {} static loot keys, {} dynamic loot sources, " +
+            "{} ms off-thread indexing, {} ms main-thread loot, {} ms total",
+            warmup.visibleStructureCount, warmup.blockItemKeyCount, warmup.blockFluidKeyCount,
+            warmup.staticLootKeyCount, warmup.dynamicLootSourceCount,
+            roundMillis(warmup.backgroundNanos), roundMillis(warmup.mainThreadLootNanos),
+            roundMillis(System.nanoTime() - warmup.startNanos)
         );
 
         activeWarmup = null;

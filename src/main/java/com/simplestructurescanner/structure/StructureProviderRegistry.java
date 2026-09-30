@@ -217,6 +217,17 @@ public class StructureProviderRegistry {
             provider.getProviderId(), structureId, dimensionId, provider.canBeSearched(structureId));
     }
 
+    /**
+     * Gets the message shown when a provider cannot perform this search.
+     */
+    @Nullable
+    public static String getSearchFailureMessage(ResourceLocation structureId) {
+        StructureProvider provider = getProviderForStructure(structureId);
+        if (provider == null) return null;
+
+        return provider.getSearchFailureMessage(structureId);
+    }
+
     public static boolean isStructureHiddenInDimension(ResourceLocation structureId, int dimensionId) {
         StructureProvider provider = getProviderForStructure(structureId);
         if (provider == null) return false;

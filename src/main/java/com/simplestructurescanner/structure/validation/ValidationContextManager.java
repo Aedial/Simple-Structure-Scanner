@@ -74,7 +74,7 @@ public class ValidationContextManager {
         Field field = ReflectionHelper.findAccessibleDeclaredField(
             WorldProvider.class, "biomeProvider", "field_201645_s");
         if (field != null) {
-            SimpleStructureScanner.LOGGER.info(
+            SimpleStructureScanner.LOGGER.debug(
                 "Successfully accessed WorldProvider.biomeProvider field as: {}", field.getName());
             return field;
         }
@@ -83,7 +83,7 @@ public class ValidationContextManager {
         try {
             field = ReflectionHelper.findAccessibleDeclaredField(WorldProvider.class, BiomeProvider.class);
             if (field != null) {
-                SimpleStructureScanner.LOGGER.info("Found WorldProvider.biomeProvider field by type: {}", field.getName());
+                SimpleStructureScanner.LOGGER.debug("Found WorldProvider.biomeProvider field by type: {}", field.getName());
                 return field;
             }
         } catch (ReflectionException e) {
@@ -104,7 +104,7 @@ public class ValidationContextManager {
         try {
             field = ReflectionHelper.findAccessibleDeclaredField(WorldProvider.class, World.class);
             if (field != null) {
-                SimpleStructureScanner.LOGGER.info("Found WorldProvider.world field by type: {}", field.getName());
+                SimpleStructureScanner.LOGGER.debug("Found WorldProvider.world field by type: {}", field.getName());
                 return field;
             }
         } catch (ReflectionException e) {
@@ -309,7 +309,7 @@ public class ValidationContextManager {
         // getMapStorage() and NPE without this.
         copyMapStorage(realWorld, validationWorld);
 
-        SimpleStructureScanner.LOGGER.info("Created StructureValidationWorld for dimension {}", dimension);
+        SimpleStructureScanner.LOGGER.debug("Created StructureValidationWorld for dimension {}", dimension);
 
         return validationWorld;
     }

@@ -17,8 +17,6 @@ import javax.annotation.Nullable;
 
 import org.apache.commons.lang3.tuple.Pair;
 
-import sun.misc.Unsafe;
-
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.World;
@@ -35,7 +33,6 @@ import net.minecraftforge.fml.common.eventhandler.EventBus;
 import net.minecraftforge.fml.common.eventhandler.IEventListener;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.rcv.RCVPredictionContext;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.validation.StructureValidationWorld;
 
@@ -160,7 +157,9 @@ final class RecurrentComplexAccessors {
     private static Field sgWorldField;
     private static long sgWorldFieldOffset;
     @Nullable
-    private static Unsafe unsafeInstance;
+    private static Object unsafeInstance;
+    @Nullable
+    private static Method unsafePutObjectMethod;
     @Nullable
     private static Method placerMethod;
     @Nullable
@@ -495,8 +494,7 @@ final class RecurrentComplexAccessors {
         if (chunksByDistanceMethod == null) return null;
 
         try {
-            List<ChunkPos> chunks = (List<ChunkPos>) chunksByDistanceMethod.invoke(null, origin, radius);
-            return chunks;
+            return (List<ChunkPos>) chunksByDistanceMethod.invoke(null, origin, radius);
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.debug("Could not list chunks by distance", e);
             return null;
@@ -866,8 +864,8 @@ final class RecurrentComplexAccessors {
     static RcPlacement validateStaticPlacement(World validationWorld, RcStructure structure,
             RcStaticCandidate candidate, ChunkPos chunkPos) throws Exception {
 
-        if (sgConstructor == null || unsafeInstance == null || sgInstanceDataMethod == null ||
-                sgSpawnMethod == null) {
+        if (sgConstructor == null || unsafeInstance == null || unsafePutObjectMethod == null ||
+                sgInstanceDataMethod == null || sgSpawnMethod == null) {
             throw new IllegalStateException(
                 "Cannot validate Recurrent Complex static placement: generator access is unavailable");
         }
@@ -896,7 +894,7 @@ final class RecurrentComplexAccessors {
             RcGeneration generation, String structureId, long seed, ChunkPos chunkPos,
             BlockPos surfaceBlockPos, boolean checkNaturalWeight, Object maturity) throws Exception {
 
-        if (sgConstructor == null || unsafeInstance == null) {
+        if (sgConstructor == null || unsafeInstance == null || unsafePutObjectMethod == null) {
             throw new IllegalStateException(
                 "Cannot validate Recurrent Complex placement: generator access is unavailable");
         }
@@ -926,7 +924,7 @@ final class RecurrentComplexAccessors {
         Object environment = sgEnvironmentMethod.invoke(generator);
         Biome biome = (Biome) envBiomeField.get(environment);
         if (checkNaturalWeight && biome != null) {
-            double weight = generationWeight(generation, ((World) validationWorld).provider, biome);
+            double weight = generationWeight(generation, validationWorld.provider, biome);
             if (weight <= 0) {
                 SimpleStructureScanner.LOGGER.debug(
                     "Rejected '{}' in chunk ({},{}): biome {} has invalid generation weight ({})",
@@ -1021,9 +1019,8 @@ final class RecurrentComplexAccessors {
         sgPartiallyMethod.invoke(generator, true, chunkPos);
     }
 
-    private static void setValidationWorld(Object generator, World validationWorld) {
-        // FIXME: May be removed in future java version, erf...
-        unsafeInstance.putObject(generator, sgWorldFieldOffset, validationWorld);
+    private static void setValidationWorld(Object generator, World validationWorld) throws Exception {
+        unsafePutObjectMethod.invoke(unsafeInstance, generator, sgWorldFieldOffset, validationWorld);
     }
 
     private static String extractFailureDescription(Object testResult) {
@@ -1067,10 +1064,12 @@ final class RecurrentComplexAccessors {
         sgWorldField = ReflectionHelper.getAccessibleDeclaredField(structureGeneratorClass, "world");
 
         // Unsafe assigns the validation world without StructureGenerator's WorldServer type check
-        unsafeInstance = (Unsafe) ReflectionHelper.getAccessibleDeclaredField(Unsafe.class, "theUnsafe")
-                                                  .get(null);
-        // FIXME: Same issue as above...
-        sgWorldFieldOffset = unsafeInstance.objectFieldOffset(sgWorldField);
+        // Internal Java API, may be removed in future Java versions, so we reflect for safety
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        unsafeInstance = ReflectionHelper.getAccessibleDeclaredField(unsafeClass, "theUnsafe").get(null);
+        Method unsafeObjectFieldOffsetMethod = unsafeClass.getMethod("objectFieldOffset", Field.class);
+        unsafePutObjectMethod = unsafeClass.getMethod("putObject", Object.class, long.class, Object.class);
+        sgWorldFieldOffset = (Long) unsafeObjectFieldOffsetMethod.invoke(unsafeInstance, sgWorldField);
 
         placerMethod = generationTypeClass.getMethod("placer");
         blockSurfacePosFromMethod = blockSurfacePosClass.getMethod("from", BlockPos.class);

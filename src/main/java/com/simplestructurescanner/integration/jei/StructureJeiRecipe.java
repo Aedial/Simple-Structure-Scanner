@@ -3,6 +3,7 @@ package com.simplestructurescanner.integration.jei;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -115,20 +116,20 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     /** Current page for the grid-based blocks and loot tabs. */
     private int page = 0;
 
-    private SmallVanillaButton prevPageButton = new SmallVanillaButton(
+    private final SmallVanillaButton prevPageButton = new SmallVanillaButton(
         0, PREV_PAGE_BUTTON_X, PAGE_BUTTON_Y, BUTTON_SIZE, "<");
-    private SmallVanillaButton nextPageButton = new SmallVanillaButton(
+    private final SmallVanillaButton nextPageButton = new SmallVanillaButton(
         1, NEXT_PAGE_BUTTON_X, PAGE_BUTTON_Y, BUTTON_SIZE, ">");
-    private SmallVanillaButton scannerButton = new SmallVanillaButton(
+    private final SmallVanillaButton scannerButton = new SmallVanillaButton(
         2, SCANNER_BUTTON_X, INNER_TAB_Y, BUTTON_SIZE, "S");
-    private SmallVanillaButton previewButton = new SmallVanillaButton(
+    private final SmallVanillaButton previewButton = new SmallVanillaButton(
         3, getTabX(StructureJeiView.PREVIEW), INNER_TAB_Y, BUTTON_SIZE, StructureJeiView.PREVIEW.getButtonLabel());
-    private SmallVanillaButton blocksButton = new SmallVanillaButton(
+    private final SmallVanillaButton blocksButton = new SmallVanillaButton(
         4, getTabX(StructureJeiView.BLOCKS), INNER_TAB_Y, BUTTON_SIZE, StructureJeiView.BLOCKS.getButtonLabel());
-    private SmallVanillaButton lootButton = new SmallVanillaButton(
+    private final SmallVanillaButton lootButton = new SmallVanillaButton(
         5, getTabX(StructureJeiView.LOOT), INNER_TAB_Y, BUTTON_SIZE, StructureJeiView.LOOT.getButtonLabel());
 
-    private SmallVanillaButton[] BUTTONS = new SmallVanillaButton[] {
+    private final SmallVanillaButton[] BUTTONS = new SmallVanillaButton[] {
         prevPageButton, nextPageButton, scannerButton, previewButton, blocksButton, lootButton
     };
 
@@ -810,9 +811,8 @@ public class StructureJeiRecipe implements IRecipeWrapper {
                 displayStack.setCount(1);
 
                 String aggregationKey = LootTableResolver.createAggregationKey(displayStack);
-                LootDisplayEntry displayEntry = lootByKey.computeIfAbsent(
-                        aggregationKey,
-                        k -> new LootDisplayEntry(displayStack));
+                LootDisplayEntry displayEntry = lootByKey.computeIfAbsent(aggregationKey,
+                    k -> new LootDisplayEntry(displayStack));
 
                 displayEntry.addContribution(
                     possibleDrop.dropCount,
@@ -823,15 +823,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         }
 
         List<LootDisplayEntry> lootEntries = new ArrayList<>(lootByKey.values());
-        lootEntries.sort((first, second) -> {
-            int dropOrder = Integer.compare(second.totalDropCount, first.totalDropCount);
-            if (dropOrder != 0) return dropOrder;
-
-            int sourceOrder = Integer.compare(second.sourceCount, first.sourceCount);
-            if (sourceOrder != 0) return sourceOrder;
-
-            return first.stack.getDisplayName().compareToIgnoreCase(second.stack.getDisplayName());
-        });
+        lootEntries.sort(Comparator.naturalOrder());
 
         List<ItemStack> lootOutputs = new ArrayList<>(lootEntries.size());
         for (LootDisplayEntry entry : lootEntries) lootOutputs.add(entry.stack.copy());
@@ -1151,7 +1143,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     /**
      * Aggregated loot row used by the loot tab after equivalent drops are merged.
      */
-    private static class LootDisplayEntry {
+    private static class LootDisplayEntry implements Comparable<LootDisplayEntry> {
         private final ItemStack stack;
         private int sourceCount;
         private int totalDropCount;
@@ -1162,6 +1154,17 @@ public class StructureJeiRecipe implements IRecipeWrapper {
             this.stack = stack;
             this.sourceCount = 0;
             this.totalDropCount = 0;
+        }
+
+        @Override
+        public int compareTo(LootDisplayEntry other) {
+            int dropOrder = Integer.compare(other.totalDropCount, this.totalDropCount);
+            if (dropOrder != 0) return dropOrder;
+
+            int sourceOrder = Integer.compare(other.sourceCount, this.sourceCount);
+            if (sourceOrder != 0) return sourceOrder;
+
+            return this.stack.getDisplayName().compareToIgnoreCase(other.stack.getDisplayName());
         }
 
         private void addContribution(int dropCount, boolean newSource, boolean fixed) {
