@@ -37,6 +37,13 @@ gui.structurescanner.currentDimension.off=维度：全部
 gui.structurescanner.provider.minecraft=Minecraft
 gui.structurescanner.provider.aether=天境（The Aether）
 gui.structurescanner.provider.abyssalcraft=深渊国度（AbyssalCraft）
+gui.structurescanner.provider.iceandfire=冰火传说（Ice and Fire）
+gui.structurescanner.providers.pillar=Pillar
+gui.structurescanner.provider.recurrentcomplex=自然建筑生成（Recurrent Complex）
+gui.structurescanner.provider.chocolate_quest=寻找巧克力重铸版（Chocolate Quest Repoured）
+gui.structurescanner.provider.dungeon_additions=Unseen's Dungeon Additions
+gui.structurescanner.provider.astralsorcery=星辉魔法（Astral Sorcery）
+gui.structurescanner.provider.wizardry=巫术学（Electroblob's Wizardry）
 
 # Rarity
 gui.structurescanner.rarity=稀有度：%s
@@ -47,7 +54,9 @@ gui.structurescanner.rarity.unique=独有
 gui.structurescanner.rarity.fixed_position=固定位置
 gui.structurescanner.rarity.one_in_chunks=每%d个区块生成1个
 
-# Structures - Minecraft
+# Minecraft
+
+## Minecraft: Structures
 gui.structurescanner.structures.minecraft.village=村庄
 gui.structurescanner.structures.minecraft.mineshaft=废弃矿井
 gui.structurescanner.structures.minecraft.stronghold=要塞
@@ -63,17 +72,20 @@ gui.structurescanner.structures.minecraft.nether_fortress=下界要塞
 gui.structurescanner.structures.minecraft.end_city=末地城
 gui.structurescanner.structures.minecraft.end_ship=末地船
 
-# Dimensions - Minecraft + misc
+# Minecraft: Dimensions + misc
 gui.structurescanner.dimension=维度：%s
 gui.structurescanner.dimension.any=任意
+gui.structurescanner.dimension.known=%s（%s）
 gui.structurescanner.dimension.unknown=未知（%s）
 
-# Loot containers - Minecraft
+## Minecraft: Loot containers
 gui.structurescanner.loot.chest=箱子
 gui.structurescanner.loot.dispenser=发射器
 gui.structurescanner.loot.minecart_chest=运输矿车
 
-# Structures - AbyssalCraft
+# AbyssalCraft
+
+## AbyssalCraft: Structures
 gui.structurescanner.structures.abyssalcraft.aby_stronghold=深渊要塞
 gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft=恐惧之地矿井
 gui.structurescanner.structures.abyssalcraft.jzahar_temple=扎哈尔神殿
@@ -82,21 +94,22 @@ gui.structurescanner.structures.abyssalcraft.omothol_storage=奥穆索储藏室
 gui.structurescanner.structures.abyssalcraft.shoggoth_lair=修格斯巢穴
 gui.structurescanner.structures.abyssalcraft.graveyard=墓园
 
-# Loot containers - AbyssalCraft
+## AbyssalCraft: Loot containers
 gui.structurescanner.loot.abyssalcraft.crate=板条箱
 
-# Structures - Aether
+# The Aether
+
+## Aether: Structures
 gui.structurescanner.structures.aether.bronze_dungeon=青铜地牢
 gui.structurescanner.structures.aether.silver_dungeon=白银地牢
 gui.structurescanner.structures.aether.gold_dungeon=黄金地牢
 
-# Loot containers - Aether
+## Aether: Loot containers
 gui.structurescanner.loot.aether.reward=藏宝箱
 
-# Providers - Ice and Fire
-gui.structurescanner.provider.iceandfire=冰火传说（Ice and Fire）
+# Ice and Fire
 
-# Structures - Ice and Fire
+## Ice and Fire: Structures
 gui.structurescanner.structures.iceandfire.fire_dragon_roost=火龙巢
 gui.structurescanner.structures.iceandfire.ice_dragon_roost=冰龙巢
 gui.structurescanner.structures.iceandfire.fire_dragon_cave=火龙穴
@@ -110,14 +123,10 @@ gui.structurescanner.structures.iceandfire.hydra_lair=九头蛇巢穴
 gui.structurescanner.structures.iceandfire.myrmex_hive_desert=沙漠恐蚁巢穴
 gui.structurescanner.structures.iceandfire.myrmex_hive_jungle=丛林恐蚁巢穴
 
-# Loot containers - Ice and Fire
+## Ice and Fire: Loot containers
 gui.structurescanner.loot.iceandfire.cocoon=蚁茧
 
-# Providers - Pillar
-gui.structurescanner.providers.pillar=Pillar
-
-# Providers - Recurrent Complex
-gui.structurescanner.provider.recurrentcomplex=Recurrent Complex
+# Recurrent Complex
 
 # Structures - Recurrent Complex
 gui.structurescanner.structures.reccomplex.abandoned_wood_tower=废弃木塔
@@ -308,10 +317,14 @@ gui.structurescanner.structures.reccomplex.wood_thorn_big=大型木荆棘
 gui.structurescanner.structures.reccomplex.wood_wall_remains=木墙遗迹
 gui.structurescanner.structures.reccomplex.wooden_clock_tower=木制钟楼
 
-# Providers - Dungeon Additions
-gui.structurescanner.provider.dungeon_additions=Unseen's Dungeon Additions
+## Recurrent Complex: Loot containers
+gui.structurescanner.structures.reccomplex.generator=战利品生成器
+gui.structurescanner.structures.reccomplex.artifact=神器生成器
+gui.structurescanner.structures.reccomplex.book=书生成器
 
-# Structures - Dungeon Additions
+# Unseen's Dungeon Additions
+
+## Unseen's Dungeon Additions: Structures
 gui.structurescanner.structures.dungeon_additions.blossom_cave=繁花洞穴
 gui.structurescanner.structures.dungeon_additions.rotten_hold=腐烂要塞
 gui.structurescanner.structures.dungeon_additions.night_lich_tower=暗夜巫妖塔
@@ -325,10 +338,9 @@ gui.structurescanner.structures.dungeon_additions.trader_post=商栈
 gui.structurescanner.structures.dungeon_additions.dark_ruins=黑暗废墟
 gui.structurescanner.structures.dungeon_additions.end_outpost=末地前哨站
 
-# Providers - Chocolate Quest Repoured
-gui.structurescanner.provider.chocolate_quest=寻找巧克力重铸版
+# Chocolate Quest Repoured
 
-# Structures - Chocolate Quest Repoured
+## Chocolate Quest Repoured: Structures
 gui.structurescanner.structures.chocolate_quest.airship=飞艇
 gui.structurescanner.structures.chocolate_quest.botaniaisland=植物魔法岛屿
 gui.structurescanner.structures.chocolate_quest.bwmmill=Better With Mods风车
@@ -356,10 +368,22 @@ gui.structurescanner.structures.chocolate_quest.vegetatedcave=植被洞穴
 gui.structurescanner.structures.chocolate_quest.volcano=火山
 gui.structurescanner.structures.chocolate_quest.wizardrytower=巫师塔
 
-# Loot containers - Recurrent Complex
-gui.structurescanner.structures.reccomplex.generator=战利品生成器
-gui.structurescanner.structures.reccomplex.artifact=神器生成器
-gui.structurescanner.structures.reccomplex.book=书生成器
+# Astral Sorcery
+
+## Astral Sorcery: Structures
+gui.structurescanner.structures.astralsorcery.small_shrine=小型神殿
+gui.structurescanner.structures.astralsorcery.treasure_shrine=矿藏神殿
+gui.structurescanner.structures.astralsorcery.desert_shrine=被掩埋的神殿
+gui.structurescanner.structures.astralsorcery.ancient_shrine=神殿
+
+# Wizardry
+
+## Wizardry: Structures
+gui.structurescanner.structures.wizardry.wizard_tower=巫师塔
+gui.structurescanner.structures.wizardry.shrine=圣祠
+gui.structurescanner.structures.wizardry.obelisk=方尖碑
+gui.structurescanner.structures.wizardry.library_ruins=图书馆遗迹
+gui.structurescanner.structures.wizardry.underground_library_ruins=地下图书馆遗迹
 
 # Buttons
 gui.structurescanner.blocksButton=[方块]
@@ -407,6 +431,7 @@ gui.structurescanner.entities.noEntities=未找到实体
 
 # Preview Window
 gui.structurescanner.previewTooltip=点击以放大预览
+gui.structurescanner.preview.loading=正在加载预览
 gui.structurescanner.preview.title=预览：%s
 gui.structurescanner.preview.unavailable=无可用预览
 gui.structurescanner.entities.count=%d种实体
@@ -565,3 +590,4 @@ chat.structurescanner.capture.empty=该捕获区域内未找到任何方块或�
 chat.structurescanner.capture.emptyAfterExclusions=在当前排除项下，将不存在剩余内容。
 chat.structurescanner.capture.saved=捕获已保存至%s
 chat.structurescanner.capture.saveFailed=保存结构捕获失败。
+chat.structurescanner.search.reccomplexMixinBooterRequired=自然建筑生成（Recurrent Complex）结构搜索需要安装MixinBooter。
