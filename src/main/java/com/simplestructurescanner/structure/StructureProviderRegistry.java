@@ -3,9 +3,11 @@ package com.simplestructurescanner.structure;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
@@ -15,6 +17,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.structure.abyssalcraft.AbyssalCraftStructureProvider;
 import com.simplestructurescanner.structure.aether.AetherStructureProvider;
 import com.simplestructurescanner.structure.astralsorcery.AstralSorceryStructureProvider;
@@ -35,6 +38,7 @@ import com.simplestructurescanner.structure.wizardry.WizardryStructureProvider;
 public class StructureProviderRegistry {
     private static final List<StructureProvider> providers = new ArrayList<>();
     private static final Map<ResourceLocation, StructureProvider> structureToProvider = new LinkedHashMap<>();
+    private static final Set<String> disabledProviderIds = new HashSet<>();
     private static boolean initialized = false;
     private static long revision = 0L;
 
@@ -59,6 +63,7 @@ public class StructureProviderRegistry {
     public static void discoverProviders() {
         if (initialized) return;
 
+        disabledProviderIds.clear();
         StructureSearchOverrides.load();
 
         for (Class<? extends StructureProvider> providerClass : providerClasses) {
@@ -68,6 +73,7 @@ public class StructureProviderRegistry {
                     SimpleStructureScanner.LOGGER.debug("Skipping unavailable provider: {}", provider.getProviderId());
                     continue;
                 }
+                if (!shouldDiscoverProvider(provider.getProviderId())) continue;
 
                 registerProvider(provider);
             } catch (Exception e) {
@@ -80,13 +86,24 @@ public class StructureProviderRegistry {
                 SimpleStructureScanner.LOGGER.debug("Skipping unavailable external provider: {}", provider.getProviderId());
                 continue;
             }
+            if (!shouldDiscoverProvider(provider.getProviderId())) continue;
 
             registerProvider(provider);
         }
 
+        SimpleStructureScannerConfig.saveIfChanged();
         initialized = true;
         revision++;
         SimpleStructureScanner.LOGGER.info("Registered {} structure providers", providers.size());
+    }
+
+    public static boolean shouldDiscoverProvider(String providerId) {
+        if (SimpleStructureScannerConfig.isProviderEnabled(providerId)) return true;
+
+        if (disabledProviderIds.add(providerId)) {
+            SimpleStructureScanner.LOGGER.info("Disabled {} structure provider via config", providerId);
+        }
+        return false;
     }
 
     public static void reloadProviders() {

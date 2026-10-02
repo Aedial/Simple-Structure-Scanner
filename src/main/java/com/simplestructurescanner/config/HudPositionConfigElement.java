@@ -15,6 +15,9 @@ import net.minecraftforge.fml.client.config.IConfigElement;
  */
 public class HudPositionConfigElement implements IConfigElement {
 
+    private static final SimpleStructureScannerConfig.HudPosition DEFAULT_POSITION =
+        SimpleStructureScannerConfig.HudPosition.TOP_LEFT;
+
     @Override
     public boolean isProperty() {
         return true;
@@ -77,12 +80,12 @@ public class HudPositionConfigElement implements IConfigElement {
 
     @Override
     public boolean isDefault() {
-        return ModConfig.getClientHudPosition() == ModConfig.HudPosition.TOP_LEFT;
+        return SimpleStructureScannerConfig.getClientHudPosition() == DEFAULT_POSITION;
     }
 
     @Override
     public Object getDefault() {
-        return ModConfig.HudPosition.TOP_LEFT.name();
+        return DEFAULT_POSITION.name();
     }
 
     @Override
@@ -92,7 +95,7 @@ public class HudPositionConfigElement implements IConfigElement {
 
     @Override
     public void setToDefault() {
-        ModConfig.setClientHudPosition(ModConfig.HudPosition.TOP_LEFT);
+        SimpleStructureScannerConfig.setClientHudPosition(DEFAULT_POSITION);
     }
 
     @Override
@@ -112,7 +115,7 @@ public class HudPositionConfigElement implements IConfigElement {
 
     @Override
     public Object get() {
-        return ModConfig.getClientHudPosition().name();
+        return SimpleStructureScannerConfig.getClientHudPosition().name();
     }
 
     @Override
@@ -124,7 +127,8 @@ public class HudPositionConfigElement implements IConfigElement {
     public void set(Object value) {
         if (value instanceof String) {
             try {
-                ModConfig.setClientHudPosition(ModConfig.HudPosition.valueOf((String) value));
+                SimpleStructureScannerConfig.setClientHudPosition(
+                    SimpleStructureScannerConfig.HudPosition.valueOf((String) value));
             } catch (IllegalArgumentException e) {
                 // Ignore invalid values
             }
@@ -138,11 +142,10 @@ public class HudPositionConfigElement implements IConfigElement {
 
     @Override
     public String[] getValidValues() {
-        ModConfig.HudPosition[] positions = ModConfig.HudPosition.values();
+        SimpleStructureScannerConfig.HudPosition[] positions = SimpleStructureScannerConfig.HudPosition.values();
+
         String[] result = new String[positions.length];
-        for (int i = 0; i < positions.length; i++) {
-            result[i] = positions[i].name();
-        }
+        for (int i = 0; i < positions.length; i++) result[i] = positions[i].name();
 
         return result;
     }

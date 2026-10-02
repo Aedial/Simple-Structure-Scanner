@@ -20,7 +20,7 @@ public class ConfigGuiFactory implements IModGuiFactory {
 
     @Override
     public GuiScreen createConfigGui(GuiScreen parentScreen) {
-        return new ModGuiConfig(parentScreen);
+        return new SimpleStructureScannerGuiConfig(parentScreen);
     }
 
     @Override

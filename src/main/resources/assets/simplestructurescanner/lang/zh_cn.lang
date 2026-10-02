@@ -35,11 +35,11 @@ gui.structurescanner.currentDimension.off=维度：全部
 
 # Providers
 gui.structurescanner.provider.minecraft=Minecraft
-gui.structurescanner.provider.aether=天境（The Aether）
+gui.structurescanner.provider.aether_legacy=天境（The Aether）
 gui.structurescanner.provider.abyssalcraft=深渊国度（AbyssalCraft）
 gui.structurescanner.provider.iceandfire=冰火传说（Ice and Fire）
-gui.structurescanner.providers.pillar=Pillar
-gui.structurescanner.provider.recurrentcomplex=自然建筑生成（Recurrent Complex）
+gui.structurescanner.provider.pillar=Pillar
+gui.structurescanner.provider.reccomplex=自然建筑生成（Recurrent Complex）
 gui.structurescanner.provider.chocolate_quest=寻找巧克力重铸版（Chocolate Quest Repoured）
 gui.structurescanner.provider.dungeon_additions=Unseen's Dungeon Additions
 gui.structurescanner.provider.astralsorcery=星辉魔法（Astral Sorcery）
@@ -65,11 +65,11 @@ gui.structurescanner.structures.minecraft.desert_temple=沙漠神庙
 gui.structurescanner.structures.minecraft.jungle_temple=丛林神庙
 gui.structurescanner.structures.minecraft.witch_hut=沼泽小屋
 gui.structurescanner.structures.minecraft.igloo=雪屋
-gui.structurescanner.structures.minecraft.ocean_monument=海底神殿
-gui.structurescanner.structures.minecraft.woodland_mansion=林地府邸
+gui.structurescanner.structures.minecraft.monument=海底神殿
+gui.structurescanner.structures.minecraft.mansion=林地府邸
 gui.structurescanner.structures.minecraft.dungeon=地牢
-gui.structurescanner.structures.minecraft.nether_fortress=下界要塞
-gui.structurescanner.structures.minecraft.end_city=末地城
+gui.structurescanner.structures.minecraft.fortress=下界要塞
+gui.structurescanner.structures.minecraft.endcity=末地城
 gui.structurescanner.structures.minecraft.end_ship=末地船
 
 # Minecraft: Dimensions + misc
@@ -100,9 +100,9 @@ gui.structurescanner.loot.abyssalcraft.crate=板条箱
 # The Aether
 
 ## Aether: Structures
-gui.structurescanner.structures.aether.bronze_dungeon=青铜地牢
-gui.structurescanner.structures.aether.silver_dungeon=白银地牢
-gui.structurescanner.structures.aether.gold_dungeon=黄金地牢
+gui.structurescanner.structures.aether_legacy.bronze_dungeon=青铜地牢
+gui.structurescanner.structures.aether_legacy.silver_dungeon=白银地牢
+gui.structurescanner.structures.aether_legacy.gold_dungeon=黄金地牢
 
 ## Aether: Loot containers
 gui.structurescanner.loot.aether.reward=藏宝箱
@@ -482,28 +482,22 @@ commands.structurescanner.blacklist.condition.stage=当阶段%1$s存在时
 commands.structurescanner.blacklist.condition.nostage=当阶段%1$s缺失时
 
 # Config descriptions
-config.structurescanner.client.enableSearch.desc=全局启用或禁用结构搜索功能
-config.structurescanner.client.i18nNames.desc=在UI中使用本地化名称代替原始ID
-config.structurescanner.client.lastSelectedStructure.desc=最后选中的结构ID（跨会话保存）
-config.structurescanner.client.filterText.desc=最后的过滤文本（跨会话保存）
-config.structurescanner.client.showNonSearchable.desc=记住是否在结构列表中显示不可搜索的结构
-config.structurescanner.client.showCurrentDimensionOnly.desc=记住是否将结构列表限制为仅当前维度
-config.structurescanner.client.searchedStructureIds.desc=当前被搜索的结构ID列表
-config.structurescanner.client.structureWhitelist.desc=允许搜索的结构ID白名单（支持部分匹配）。优先级高于黑名单。在其后添加";半径"可使其变为局部搜索（例如，"village;1000"仅允许1000格范围内的村庄结构搜索）。
-config.structurescanner.client.structureBlacklist.desc=禁止搜索的结构ID黑名单（支持部分匹配）。在其后添加";半径"可使其变为局部限制（例如，"minecraft:;500"会阻止500格以外的原版结构搜索）。
-config.structurescanner.client.showBlocks.desc=在详细信息面板中显示构成该结构的方块
-config.structurescanner.client.showEntities.desc=在详细信息面板中显示构成该结构的实体
-config.structurescanner.client.showLootTables.desc=在详细信息面板中显示构成该结构的战利品表
-config.structurescanner.client.enableJeiCategories.desc=启用结构扫描器的JEI类别。禁用该选项相当于分别禁用以下的每个类别。
-config.structurescanner.client.enableJeiPreview.desc=启用结构扫描器的JEI预览类别。
-config.structurescanner.client.enableJeiBlocks.desc=启用结构扫描器的JEI方块类别。
-config.structurescanner.client.enableJeiLoot.desc=启用结构扫描器的JEI战利品类别。
-config.structurescanner.client.hudEnabled.desc=启用或禁用显示被搜索结构的HUD叠加层
-config.structurescanner.client.hudPaddingExternal.desc=HUD叠加层与屏幕边缘的边距
-config.structurescanner.client.hudPaddingInternal.desc=HUD框体内部的边距
-config.structurescanner.client.hudLineSpacing.desc=HUD叠加层中文本的行间距
-config.structurescanner.client.blacklistedLocations.desc=结构位置的黑名单列表，格式为"世界ID|结构ID|x|y|z"。搜索时不会匹配这些位置。
-config.structurescanner.server.enableSearch.desc=在服务端启用或禁用结构搜索（需要在服务器端安装）
+config.structurescanner.client.enableSearch.tooltip=全局启用或禁用结构搜索功能
+config.structurescanner.client.structureWhitelist.tooltip=允许搜索的结构ID白名单（支持部分匹配）。优先级高于黑名单。在其后添加";半径"可使其变为局部搜索（例如，"village;1000"仅允许1000格范围内的村庄结构搜索）。
+config.structurescanner.client.structureBlacklist.tooltip=禁止搜索的结构ID黑名单（支持部分匹配）。在其后添加";半径"可使其变为局部限制（例如，"minecraft:;500"会阻止500格以外的原版结构搜索）。
+config.structurescanner.client.showBlocks.tooltip=在详细信息面板中显示构成该结构的方块
+config.structurescanner.client.showEntities.tooltip=在详细信息面板中显示构成该结构的实体
+config.structurescanner.client.showLootTables.tooltip=在详细信息面板中显示构成该结构的战利品表
+config.structurescanner.client.enableJeiCategories.tooltip=启用结构扫描器的JEI类别。禁用该选项相当于分别禁用以下的每个类别。
+config.structurescanner.client.enableJeiPreview.tooltip=启用结构扫描器的JEI预览类别。
+config.structurescanner.client.enableJeiBlocks.tooltip=启用结构扫描器的JEI方块类别。
+config.structurescanner.client.enableJeiLoot.tooltip=启用结构扫描器的JEI战利品类别。
+config.structurescanner.client.hudEnabled.tooltip=启用或禁用显示被搜索结构的HUD叠加层
+config.structurescanner.client.hudPosition=HUD位置
+config.structurescanner.client.hudPaddingExternal.tooltip=HUD叠加层与屏幕边缘的边距
+config.structurescanner.client.hudPaddingInternal.tooltip=HUD框体内部的边距
+config.structurescanner.client.hudLineSpacing.tooltip=HUD叠加层中文本的行间距
+config.structurescanner.server.enableSearch.tooltip=在服务端启用或禁用结构搜索（需要在服务器端安装）
 config.structurescanner.title=简易结构扫描器设置
 
 # HUD Position

@@ -15,7 +15,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraft.world.World;
 
-import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.network.NetworkHandler;
 import com.simplestructurescanner.network.PacketRequestStructureSearch;
 import com.simplestructurescanner.structure.StructureInfo;
@@ -109,7 +109,7 @@ public class StructureSearchManager {
 
     private static void loadFromConfig() {
         searchedStructures.clear();
-        for (String id : ModConfig.getClientTrackedIds()) {
+        for (String id : SimpleStructureScannerConfig.getClientTrackedIds()) {
             ResourceLocation loc = new ResourceLocation(id);
             searchedStructures.add(loc);
             assignColor(loc);
@@ -121,7 +121,7 @@ public class StructureSearchManager {
     private static void saveToConfig() {
         List<String> ids = new ArrayList<>();
         for (ResourceLocation loc : searchedStructures) ids.add(loc.toString());
-        ModConfig.setClientTrackedIds(ids);
+        SimpleStructureScannerConfig.setClientTrackedIds(ids);
     }
 
     private static SearchCacheKey getCacheKey(World world) {
@@ -348,6 +348,11 @@ public class StructureSearchManager {
         }
     }
 
+    public static boolean isBlacklisted(ResourceLocation id, long worldId, BlockPos pos) {
+        return SimpleStructureScannerConfig.isLocationBlacklisted(worldId, id.toString(),
+            pos.getX(), pos.getY(), pos.getZ());
+    }
+
     /**
      * Blacklists the current location for the given structure, then searches for next.
      * Returns true if a location was blacklisted.
@@ -357,7 +362,7 @@ public class StructureSearchManager {
         if (location == null) return false;
 
         BlockPos pos = location.getPosition();
-        ModConfig.addBlacklistedLocation(worldId, id.toString(),
+        SimpleStructureScannerConfig.addBlacklistedLocation(worldId, id.toString(),
             pos.getX(), pos.getY(), pos.getZ(), location.isYAgnostic());
 
         // Remove from sorted cache
@@ -397,7 +402,7 @@ public class StructureSearchManager {
         ResourceLocation id = pendingSearches.iterator().next();
         pendingSearches.remove(id);
 
-        if (!ModConfig.isStructureAllowed(id.toString())) {
+        if (!SimpleStructureScannerConfig.isStructureAllowed(id.toString())) {
             lastKnownLocations.remove(id);
             return;
         }
@@ -463,9 +468,7 @@ public class StructureSearchManager {
 
         if (positions != null) {
             // Batch supported, cache and sort
-            positions.removeIf(pos ->
-                ModConfig.isLocationBlacklisted(cacheKey.worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())
-            );
+            positions.removeIf(pos -> isBlacklisted(id, cacheKey.worldId, pos));
 
             getOrCreateLocationCache(cacheKey).put(id, positions);
             updateSortedCache(id, playerPos, cacheKey);
@@ -476,7 +479,7 @@ public class StructureSearchManager {
 
             StructureLocation location = StructureProviderRegistry.findNearest(
                 serverWorld, id, playerPos, skipOffset,
-                pos -> !ModConfig.isLocationBlacklisted(cacheKey.worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())
+                pos -> !isBlacklisted(id, cacheKey.worldId, pos)
             );
 
             // Cache the individual result
@@ -564,9 +567,7 @@ public class StructureSearchManager {
         if (cacheKey == null) return;
 
         // Filter out blacklisted positions
-        positions.removeIf(pos ->
-            ModConfig.isLocationBlacklisted(cacheKey.worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())
-        );
+        positions.removeIf(pos -> isBlacklisted(id, cacheKey.worldId, pos));
 
         // Store in location cache
         getOrCreateLocationCache(cacheKey).put(id, positions);
@@ -588,7 +589,7 @@ public class StructureSearchManager {
             BlockPos pos = location.getPosition();
 
             // Filter out blacklisted positions (blacklist is client-side config)
-            if (ModConfig.isLocationBlacklisted(cacheKey.worldId, id.toString(), pos.getX(), pos.getY(), pos.getZ())) {
+            if (isBlacklisted(id, cacheKey.worldId, pos)) {
                 // Request next result with incremented skip count
                 skipOffsets.put(id, skipCount + 1);
                 queueSearchIfAllowed(id);

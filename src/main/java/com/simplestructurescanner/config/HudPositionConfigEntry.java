@@ -13,13 +13,17 @@ import net.minecraftforge.fml.client.config.IConfigElement;
  */
 public class HudPositionConfigEntry extends ButtonEntry {
 
+    private static final SimpleStructureScannerConfig.HudPosition DEFAULT_POSITION =
+        SimpleStructureScannerConfig.HudPosition.TOP_LEFT;
+
     public HudPositionConfigEntry(GuiConfig owningScreen, GuiConfigEntries owningEntryList, IConfigElement configElement) {
         super(owningScreen, owningEntryList, configElement);
         updateButtonText();
     }
 
     private void updateButtonText() {
-        String currentPos = I18n.format("gui.structurescanner.hudPosition." + ModConfig.getClientHudPosition().name().toLowerCase());
+        String currentPos = I18n.format("gui.structurescanner.hudPosition."
+            + getCurrentValue().toString().toLowerCase());
         this.btnValue.displayString = I18n.format("gui.structurescanner.hudPosition.button", currentPos);
     }
 
@@ -35,12 +39,12 @@ public class HudPositionConfigEntry extends ButtonEntry {
 
     @Override
     public boolean isDefault() {
-        return ModConfig.getClientHudPosition() == ModConfig.HudPosition.TOP_LEFT;
+        return SimpleStructureScannerConfig.getClientHudPosition() == DEFAULT_POSITION;
     }
 
     @Override
     public void setToDefault() {
-        ModConfig.setClientHudPosition(ModConfig.HudPosition.TOP_LEFT);
+        SimpleStructureScannerConfig.setClientHudPosition(DEFAULT_POSITION);
         updateButtonText();
     }
 
@@ -63,7 +67,7 @@ public class HudPositionConfigEntry extends ButtonEntry {
 
     @Override
     public Object getCurrentValue() {
-        return ModConfig.getClientHudPosition().name();
+        return SimpleStructureScannerConfig.getClientHudPosition().name();
     }
 
     @Override

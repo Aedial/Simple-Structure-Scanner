@@ -27,13 +27,14 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.biome.Biome;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.structure.AbstractStructureProvider;
 import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.util.StructureTranslationKeys;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 
@@ -82,6 +83,8 @@ public final class ExternalStructureProviderLoader {
 
             JsonObject root = parsed.getAsJsonObject();
             String providerId = readRequiredString(root, "providerId", file);
+            if (!StructureProviderRegistry.shouldDiscoverProvider(providerId)) return null;
+
             String modNameKey = readOptionalString(root, "modNameKey");
             if (modNameKey == null || modNameKey.trim().isEmpty()) modNameKey = StructureTranslationKeys.providerNameKey(providerId);
 
@@ -329,7 +332,7 @@ public final class ExternalStructureProviderLoader {
 
     @Nullable
     private static File getDirectory() {
-        File configRoot = ModConfig.getConfigRootDirectory();
+        File configRoot = SimpleStructureScannerConfig.getConfigRootDirectory();
         if (configRoot == null) return null;
 
         return new File(configRoot, DIRECTORY_NAME);

@@ -30,7 +30,7 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import com.simplestructurescanner.client.ClientSettings;
 import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.client.capture.StructureCaptureClientController;
-import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
@@ -48,7 +48,7 @@ public class ClientRenderEvents {
 
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.world == null || mc.player == null) return;
-        if (!ModConfig.isSearchEnabled()) return;
+        if (!SimpleStructureScannerConfig.isSearchEnabled()) return;
 
         // Process any pending search requests
         StructureSearchManager.processPendingSearches(mc.world, mc.player.getPosition());
@@ -69,8 +69,8 @@ public class ClientRenderEvents {
     @SubscribeEvent
     public void onRenderOverlay(RenderGameOverlayEvent.Post event) {
         if (event.getType() != RenderGameOverlayEvent.ElementType.ALL) return;
-        if (!ModConfig.isClientHudEnabled()) return;
-        if (!ModConfig.isSearchEnabled()) return;
+        if (!SimpleStructureScannerConfig.isClientHudEnabled()) return;
+        if (!SimpleStructureScannerConfig.isSearchEnabled()) return;
 
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.player == null || mc.world == null) return;
@@ -88,7 +88,7 @@ public class ClientRenderEvents {
         List<Integer> colors = new ArrayList<>();
 
         for (ResourceLocation id : trackedIds) {
-            if (!ModConfig.isStructureAllowed(id.toString())) continue;
+            if (!SimpleStructureScannerConfig.isStructureAllowed(id.toString())) continue;
             if (StructureProviderRegistry.getProviderForStructure(id) == null) continue;
 
             // Filter by current dimension
@@ -109,7 +109,7 @@ public class ClientRenderEvents {
                 double distance = getDistanceFrom(loc, playerPos);
 
                 // Check local whitelist/blacklist
-                if (!ModConfig.isLocallyAllowed(id.toString(), distance)) continue;
+                if (!SimpleStructureScannerConfig.isLocallyAllowed(id.toString(), distance)) continue;
 
                 String distanceStr = StructureSearchManager.formatDistance(distance);
                 lines.add(name + ": " + distanceStr);
@@ -123,9 +123,9 @@ public class ClientRenderEvents {
         if (lines.isEmpty()) return;
 
         // Get config values
-        int paddingExternal = ModConfig.clientHudPaddingExternal;
-        int paddingInternal = ModConfig.clientHudPaddingInternal;
-        int lineSpacing = ModConfig.clientHudLineSpacing;
+        int paddingExternal = SimpleStructureScannerConfig.client.hudPaddingExternal;
+        int paddingInternal = SimpleStructureScannerConfig.client.hudPaddingInternal;
+        int lineSpacing = SimpleStructureScannerConfig.client.hudLineSpacing;
 
         // Calculate dimensions
         int lineHeight = mc.fontRenderer.FONT_HEIGHT;
@@ -141,7 +141,7 @@ public class ClientRenderEvents {
         int screenH = res.getScaledHeight();
 
         int boxX, boxY;
-        ModConfig.HudPosition hudPos = ModConfig.getClientHudPosition();
+        SimpleStructureScannerConfig.HudPosition hudPos = SimpleStructureScannerConfig.getClientHudPosition();
 
         switch (hudPos) {
             case TOP_CENTER:
@@ -216,7 +216,7 @@ public class ClientRenderEvents {
 
         drawCaptureSelection(player, event.getPartialTicks());
 
-        if (!ModConfig.isSearchEnabled()) return;
+        if (!SimpleStructureScannerConfig.isSearchEnabled()) return;
 
         Map<ResourceLocation, StructureLocation> locations = StructureSearchManager.getAllLocations();
         if (locations.isEmpty()) return;
@@ -228,7 +228,7 @@ public class ClientRenderEvents {
             ResourceLocation id = entry.getKey();
             StructureLocation loc = entry.getValue();
 
-            if (!ModConfig.isStructureAllowed(id.toString())) continue;
+            if (!SimpleStructureScannerConfig.isStructureAllowed(id.toString())) continue;
             if (loc == null) continue;
             if (StructureProviderRegistry.getProviderForStructure(id) == null) continue;
 
@@ -239,7 +239,7 @@ public class ClientRenderEvents {
             double distance = getDistanceFrom(loc, player.getPosition());
 
             // Check local whitelist/blacklist
-            if (!ModConfig.isLocallyAllowed(id.toString(), distance)) continue;
+            if (!SimpleStructureScannerConfig.isLocallyAllowed(id.toString(), distance)) continue;
 
             int color = StructureSearchManager.getColor(id);
             drawDirectionArrow(player, loc, color, distance, partialTicks);

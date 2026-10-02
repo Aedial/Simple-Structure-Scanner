@@ -38,7 +38,7 @@ import com.simplestructurescanner.client.integration.JourneyMapIntegration;
 import com.simplestructurescanner.client.integration.VoxelMapIntegration;
 import com.simplestructurescanner.client.integration.XaeroMinimapIntegration;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
-import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.network.NetworkHandler;
 import com.simplestructurescanner.network.PacketRequestSafeTeleport;
 import com.simplestructurescanner.structure.DimensionInfo;
@@ -173,7 +173,7 @@ public class GuiStructureScanner extends GuiScreen {
         int searchableButtonY = height - 30;
         int topToggleButtonY = searchableButtonY - 22;
         filterField = new GuiTextField(0, fontRenderer, 10, 10, leftWidth - 20, 14);
-        filterField.setText(ModConfig.getClientFilterText());
+        filterField.setText(SimpleStructureScannerConfig.getClientFilterText());
         listWidget = new StructureListWidget(10, 30, listWidth, height - 92, fontRenderer, this);
         this.buttonList.clear();
 
@@ -192,7 +192,7 @@ public class GuiStructureScanner extends GuiScreen {
             selectStructure(initialSelectedStructure, rememberInitialSelection);
         } else {
             // Restore last selected structure
-            String lastStructure = ModConfig.getClientLastSelectedStructure();
+            String lastStructure = SimpleStructureScannerConfig.getClientLastSelectedStructure();
             if (lastStructure != null && !lastStructure.isEmpty()) {
                 ResourceLocation id = new ResourceLocation(lastStructure);
                 if (StructureProviderRegistry.getStructureInfo(id) != null) selectStructure(id);
@@ -225,7 +225,9 @@ public class GuiStructureScanner extends GuiScreen {
         this.selected = id;
         this.selectedInfo = id != null ? StructureProviderRegistry.getStructureInfo(id) : null;
 
-        if (rememberSelection) ModConfig.setClientLastSelectedStructure(id != null ? id.toString() : "");
+        if (rememberSelection) {
+            SimpleStructureScannerConfig.setClientLastSelectedStructure(id != null ? id.toString() : "");
+        }
     }
 
     public ResourceLocation getSelectedStructure() {
@@ -263,7 +265,7 @@ public class GuiStructureScanner extends GuiScreen {
         String newFilter = filterField.getText();
         listWidget.setFilter(newFilter);
         listWidget.refreshVisibilityFilters();
-        ModConfig.setClientFilterText(newFilter);
+        SimpleStructureScannerConfig.setClientFilterText(newFilter);
     }
 
     private boolean shouldShowInList(ResourceLocation id, @Nullable Integer currentDimensionId) {
@@ -1556,7 +1558,7 @@ public class GuiStructureScanner extends GuiScreen {
                     (currentTime - parent.lastClickTime) < DOUBLE_CLICK_TIME) {
                     // Double-click: toggle searching
                     if (StructureProviderRegistry.canBeSearched(clickedId, parent.getCurrentDimensionId())
-                            && ModConfig.isStructureAllowed(clickedId.toString())) {
+                            && SimpleStructureScannerConfig.isStructureAllowed(clickedId.toString())) {
                         StructureSearchManager.toggleTracking(clickedId);
                         applyFilter(); // Re-sort to move tracked items to top
                     }

@@ -25,7 +25,7 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.fluids.FluidStack;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.integration.JEIHelper;
 import com.simplestructurescanner.structure.LootTableResolver;
 import com.simplestructurescanner.structure.LootTableResolver.LootItem;
@@ -291,8 +291,8 @@ final class StructureJeiRecipes {
     }
 
     private static String captureBlacklistFingerprint() {
-        List<String> blacklistEntries = ModConfig.clientStructureBlacklist;
-        if (blacklistEntries == null || blacklistEntries.isEmpty()) return "";
+        String[] blacklistEntries = SimpleStructureScannerConfig.client.structureBlacklist;
+        if (blacklistEntries.length == 0) return "";
 
         StringBuilder fingerprint = new StringBuilder();
         for (String entry : blacklistEntries) {

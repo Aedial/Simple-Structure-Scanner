@@ -35,11 +35,11 @@ gui.structurescanner.currentDimension.off=Dimensions: All
 
 # Providers
 gui.structurescanner.provider.minecraft=Minecraft
-gui.structurescanner.provider.aether=The Aether
+gui.structurescanner.provider.aether_legacy=The Aether
 gui.structurescanner.provider.abyssalcraft=AbyssalCraft
 gui.structurescanner.provider.iceandfire=Ice and Fire
-gui.structurescanner.providers.pillar=Pillar
-gui.structurescanner.provider.recurrentcomplex=Recurrent Complex
+gui.structurescanner.provider.pillar=Pillar
+gui.structurescanner.provider.reccomplex=Recurrent Complex
 gui.structurescanner.provider.chocolate_quest=Chocolate Quest Repoured
 gui.structurescanner.provider.dungeon_additions=Unseen's Dungeon Additions
 gui.structurescanner.provider.astralsorcery=Astral Sorcery
@@ -65,11 +65,11 @@ gui.structurescanner.structures.minecraft.desert_temple=Desert Temple
 gui.structurescanner.structures.minecraft.jungle_temple=Jungle Temple
 gui.structurescanner.structures.minecraft.witch_hut=Witch Hut
 gui.structurescanner.structures.minecraft.igloo=Igloo
-gui.structurescanner.structures.minecraft.ocean_monument=Ocean Monument
-gui.structurescanner.structures.minecraft.woodland_mansion=Woodland Mansion
+gui.structurescanner.structures.minecraft.monument=Ocean Monument
+gui.structurescanner.structures.minecraft.mansion=Woodland Mansion
 gui.structurescanner.structures.minecraft.dungeon=Dungeon
-gui.structurescanner.structures.minecraft.nether_fortress=Nether Fortress
-gui.structurescanner.structures.minecraft.end_city=End City
+gui.structurescanner.structures.minecraft.fortress=Nether Fortress
+gui.structurescanner.structures.minecraft.endcity=End City
 gui.structurescanner.structures.minecraft.end_ship=End Ship
 
 # Minecraft: Dimensions + misc
@@ -100,9 +100,9 @@ gui.structurescanner.loot.abyssalcraft.crate=Crate
 # The Aether
 
 ## Aether: Structures
-gui.structurescanner.structures.aether.bronze_dungeon=Bronze Dungeon
-gui.structurescanner.structures.aether.silver_dungeon=Silver Dungeon
-gui.structurescanner.structures.aether.gold_dungeon=Gold Dungeon
+gui.structurescanner.structures.aether_legacy.bronze_dungeon=Bronze Dungeon
+gui.structurescanner.structures.aether_legacy.silver_dungeon=Silver Dungeon
+gui.structurescanner.structures.aether_legacy.gold_dungeon=Gold Dungeon
 
 ## Aether: Loot containers
 gui.structurescanner.loot.aether.reward=Treasure Chest
@@ -482,29 +482,48 @@ commands.structurescanner.blacklist.condition.stage=when stage %1$s is present
 commands.structurescanner.blacklist.condition.nostage=when stage %1$s is missing
 
 # Config descriptions
-config.structurescanner.client.enableSearch.desc=Enable or disable structure searching globally
-config.structurescanner.client.i18nNames.desc=Use localized names instead of raw IDs in the UI
-config.structurescanner.client.lastSelectedStructure.desc=Last selected structure ID (persisted between sessions)
-config.structurescanner.client.filterText.desc=Last filter text (persisted between sessions)
-config.structurescanner.client.showNonSearchable.desc=Remember whether non-searchable structures are shown in the structure list
-config.structurescanner.client.showCurrentDimensionOnly.desc=Remember whether the structure list is limited to the current dimension only
-config.structurescanner.client.searchedStructureIds.desc=List of structure IDs currently being searched
-config.structurescanner.client.structureWhitelist.desc=Whitelist of structure IDs or partial matches allowed for searching. Takes priority over blacklist. Add ";radius" to make it local (e.g., "village;1000" only allows structures within 1000 blocks).
-config.structurescanner.client.structureBlacklist.desc=Blacklist of structure IDs or partial matches to block from searching. Add ";radius" to make it local (e.g., "minecraft:;500" blocks vanilla structures beyond 500 blocks).
-config.structurescanner.client.showBlocks.desc=Show blocks that are part of the structure in the details panel
-config.structurescanner.client.showEntities.desc=Show entities that are part of the structure in the details panel
-config.structurescanner.client.showLootTables.desc=Show loot tables that are part of the structure in the details panel
-config.structurescanner.client.enableJeiCategories.desc=Enable the Structure Scanner JEI categories. Disabling this is equivalent to disabling each category below individually.
-config.structurescanner.client.enableJeiPreview.desc=Enable the Structure Scanner JEI preview category.
-config.structurescanner.client.enableJeiBlocks.desc=Enable the Structure Scanner JEI blocks category.
-config.structurescanner.client.enableJeiLoot.desc=Enable the Structure Scanner JEI loot category.
-config.structurescanner.client.hudEnabled.desc=Enable or disable the HUD overlay showing searched structures
-config.structurescanner.client.hudPaddingExternal.desc=Padding from screen edge for HUD overlay
-config.structurescanner.client.hudPaddingInternal.desc=Padding inside the HUD box
-config.structurescanner.client.hudLineSpacing.desc=Spacing between lines in HUD overlay
-config.structurescanner.client.blacklistedLocations.desc=List of blacklisted structure locations in the format "world_id|structure_id|x|y|z". These locations will not be matched when searching.
-config.structurescanner.server.enableSearch.desc=Enable or disable structure searching on the server (requires server-side installation)
 config.structurescanner.title=Simple Structure Scanner Settings
+
+config.structurescanner.enabledProviders=Enabled providers
+config.structurescanner.enabledProviders.tooltip=Enabled providers
+config.structurescanner.enabledProviders.provider.tooltip=Enable or disable this provider. Requires a restart to take effect.
+
+config.structurescanner.client=Client settings
+config.structurescanner.client.tooltip=Client settings
+config.structurescanner.client.enableSearch=Enable structure search
+config.structurescanner.client.enableSearch.tooltip=Enable or disable structure searching globally (if server-side search is enabled)
+config.structurescanner.client.structureWhitelist=Structure whitelist
+config.structurescanner.client.structureWhitelist.tooltip=Whitelist of structure IDs or partial matches allowed for searching. Takes priority over blacklist. Add ";radius" to make it local (e.g., "village;1000" only allows structures within 1000 blocks).
+config.structurescanner.client.structureBlacklist=Structure blacklist
+config.structurescanner.client.structureBlacklist.tooltip=Blacklist of structure IDs or partial matches to block from searching. Add ";radius" to make it local (e.g., "minecraft:;500" blocks vanilla structures beyond 500 blocks).
+config.structurescanner.client.showBlocks=Show blocks
+config.structurescanner.client.showBlocks.tooltip=Show blocks that are part of the structure in the details panel
+config.structurescanner.client.showEntities=Show entities
+config.structurescanner.client.showEntities.tooltip=Show entities that are part of the structure in the details panel
+config.structurescanner.client.showLootTables=Show loot tables
+config.structurescanner.client.showLootTables.tooltip=Show loot tables that are part of the structure in the details panel
+config.structurescanner.client.enableJeiCategories=Enable JEI categories
+config.structurescanner.client.enableJeiCategories.tooltip=Enable the Structure Scanner JEI categories. Disabling this is equivalent to disabling each category below individually.
+config.structurescanner.client.enableJeiPreview=Enable JEI preview
+config.structurescanner.client.enableJeiPreview.tooltip=Enable the Structure Scanner JEI preview category.
+config.structurescanner.client.enableJeiBlocks=Enable JEI blocks
+config.structurescanner.client.enableJeiBlocks.tooltip=Enable the Structure Scanner JEI blocks category.
+config.structurescanner.client.enableJeiLoot=Enable JEI loot
+config.structurescanner.client.enableJeiLoot.tooltip=Enable the Structure Scanner JEI loot category.
+config.structurescanner.client.hudEnabled=Enable HUD overlay
+config.structurescanner.client.hudEnabled.tooltip=Enable or disable the HUD overlay showing searched structures
+config.structurescanner.client.hudPosition=HUD position
+config.structurescanner.client.hudPaddingExternal=External HUD padding
+config.structurescanner.client.hudPaddingExternal.tooltip=Padding from screen edge for HUD overlay
+config.structurescanner.client.hudPaddingInternal=Internal HUD padding
+config.structurescanner.client.hudPaddingInternal.tooltip=Padding inside the HUD box
+config.structurescanner.client.hudLineSpacing=HUD line spacing
+config.structurescanner.client.hudLineSpacing.tooltip=Spacing between lines in HUD overlay
+
+config.structurescanner.server=Server settings
+config.structurescanner.server.tooltip=Server settings
+config.structurescanner.server.enableSearch=Enable structure search
+config.structurescanner.server.enableSearch.tooltip=Enable or disable structure searching on the server (requires server-side installation)
 
 # HUD Position
 gui.structurescanner.hudPosition.label=HUD Position

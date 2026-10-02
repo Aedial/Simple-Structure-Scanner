@@ -6,7 +6,7 @@ import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.resources.I18n;
 
-import com.simplestructurescanner.config.ModConfig.HudPosition;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig.HudPosition;
 
 
 public class GuiHudPositionSelector extends GuiScreen {
@@ -78,7 +78,7 @@ public class GuiHudPositionSelector extends GuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) {
         if (button.id >= 0 && button.id < POSITIONS.length) {
-            ModConfig.setClientHudPosition(POSITIONS[button.id]);
+            SimpleStructureScannerConfig.setClientHudPosition(POSITIONS[button.id]);
         }
     }
 

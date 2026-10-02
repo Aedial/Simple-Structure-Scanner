@@ -7,7 +7,7 @@ import java.util.Set;
 import javax.annotation.Nullable;
 
 import com.simplestructurescanner.client.integration.GameStagesIntegration;
-import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureSearchOverrides;
 
@@ -49,22 +49,22 @@ public final class StructureJeiVisibility {
         if (StructureProviderRegistry.getStructureInfo(structureId) == null) return false;
         if (StructureProviderRegistry.isStructureHidden(structureId, stageSnapshot)) return false;
 
-        return !ModConfig.isBlacklisted(structureId.toString());
+        return !SimpleStructureScannerConfig.isBlacklisted(structureId.toString());
     }
 
     /**
      * Applies the master JEI toggle together with the per-tab toggle for one view.
      */
     public static boolean isCategoryEnabled(StructureJeiView view) {
-        if (!ModConfig.isClientJeiCategoriesEnabled()) return false;
+        if (!SimpleStructureScannerConfig.isClientJeiCategoriesEnabled()) return false;
 
         switch (view) {
             case PREVIEW:
-                return ModConfig.isClientJeiPreviewEnabled();
+                return SimpleStructureScannerConfig.isClientJeiPreviewEnabled();
             case BLOCKS:
-                return ModConfig.isClientJeiBlocksEnabled();
+                return SimpleStructureScannerConfig.isClientJeiBlocksEnabled();
             case LOOT:
-                return ModConfig.isClientJeiLootEnabled();
+                return SimpleStructureScannerConfig.isClientJeiLootEnabled();
             default:
                 return false;
         }
@@ -74,7 +74,7 @@ public final class StructureJeiVisibility {
      * Fast gate for callers that want to skip all JEI work when every structure tab is disabled.
      */
     public static boolean isAnyCategoryEnabled() {
-        if (!ModConfig.isClientJeiCategoriesEnabled()) return false;
+        if (!SimpleStructureScannerConfig.isClientJeiCategoriesEnabled()) return false;
 
         for (StructureJeiView view : StructureJeiView.values()) {
             if (isCategoryEnabled(view)) return true;

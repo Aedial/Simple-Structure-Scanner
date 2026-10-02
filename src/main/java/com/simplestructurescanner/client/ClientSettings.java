@@ -1,6 +1,6 @@
 package com.simplestructurescanner.client;
 
-import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 
 
 /**
@@ -12,23 +12,23 @@ public class ClientSettings {
     public static boolean showCurrentDimensionOnly = false;
 
     public static void syncFromConfig() {
-        i18nNames = ModConfig.clientI18nNames;
-        showNonSearchable = ModConfig.clientShowNonSearchable;
-        showCurrentDimensionOnly = ModConfig.clientShowCurrentDimensionOnly;
+        i18nNames = SimpleStructureScannerConfig.hidden.i18nNames;
+        showNonSearchable = SimpleStructureScannerConfig.hidden.showNonSearchable;
+        showCurrentDimensionOnly = SimpleStructureScannerConfig.hidden.showCurrentDimensionOnly;
     }
 
     public static void setI18nNames(boolean value) {
         i18nNames = value;
-        ModConfig.setClientI18nNames(value);
+        SimpleStructureScannerConfig.setClientI18nNames(value);
     }
 
     public static void setShowNonSearchable(boolean value) {
         showNonSearchable = value;
-        ModConfig.setClientShowNonSearchable(value);
+        SimpleStructureScannerConfig.setClientShowNonSearchable(value);
     }
 
     public static void setShowCurrentDimensionOnly(boolean value) {
         showCurrentDimensionOnly = value;
-        ModConfig.setClientShowCurrentDimensionOnly(value);
+        SimpleStructureScannerConfig.setClientShowCurrentDimensionOnly(value);
     }
 }

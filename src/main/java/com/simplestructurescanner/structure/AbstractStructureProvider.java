@@ -20,7 +20,7 @@ import net.minecraft.world.biome.Biome;
 import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.Tags;
-import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
@@ -375,7 +375,7 @@ public abstract class AbstractStructureProvider implements StructureProvider {
 
     @Nullable
     private File getStructureOverrideFile(String normalizedNbtPath) {
-        File configRoot = ModConfig.getConfigRootDirectory();
+        File configRoot = SimpleStructureScannerConfig.getConfigRootDirectory();
         if (configRoot == null) return null;
 
         File providerDirectory = new File(new File(configRoot, STRUCTURE_OVERRIDE_DIRECTORY), providerId);

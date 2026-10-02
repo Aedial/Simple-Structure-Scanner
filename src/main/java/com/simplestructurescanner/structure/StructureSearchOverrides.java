@@ -22,7 +22,7 @@ import javax.annotation.Nullable;
 import net.minecraft.util.ResourceLocation;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.config.ModConfig;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 
 
 /**
@@ -269,7 +269,7 @@ public final class StructureSearchOverrides {
 
     @Nullable
     public static File getBlacklistDirectory(BlacklistType blacklistType) {
-        File configRoot = ModConfig.getConfigRootDirectory();
+        File configRoot = SimpleStructureScannerConfig.getConfigRootDirectory();
         if (configRoot == null) return null;
 
         return new File(configRoot, blacklistType.getDirectoryName());

@@ -50,7 +50,7 @@ public class PillarStructureProvider extends AbstractStructureProvider {
 
     private static final String PROVIDER_ID = "pillar";
     private static final String MOD_ID = "pillar";
-    private static final String MOD_NAME = "gui.structurescanner.providers.pillar";
+    private static final String MOD_NAME = "gui.structurescanner.provider.pillar";
     private static final int CHUNK_COORDINATE_SHIFT = 4;
     private static final int CHUNK_CACHE_MAINTENANCE_INTERVAL = 500;
     private static final int MAX_CACHED_VALIDATION_CHUNKS = 500;
