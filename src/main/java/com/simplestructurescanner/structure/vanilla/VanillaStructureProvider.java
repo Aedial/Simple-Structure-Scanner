@@ -32,6 +32,13 @@ import net.minecraft.world.chunk.ChunkPrimer;
 import net.minecraft.world.gen.ChunkGeneratorEnd;
 import net.minecraft.world.gen.ChunkGeneratorOverworld;
 import net.minecraft.world.gen.IChunkGenerator;
+import net.minecraft.world.gen.structure.MapGenVillage;
+import net.minecraft.world.gen.structure.StructureBoundingBox;
+import net.minecraft.world.gen.structure.StructureComponent;
+import net.minecraft.world.gen.structure.StructureEndCityPieces;
+import net.minecraft.world.gen.structure.StructureOceanMonument;
+import net.minecraft.world.gen.structure.WoodlandMansionPieces;
+import net.minecraft.world.gen.structure.template.TemplateManager;
 import net.minecraftforge.common.BiomeManager;
 
 import com.simplestructurescanner.SimpleStructureScanner;
@@ -41,6 +48,7 @@ import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.TerrainHeightCalculator;
+import com.simplestructurescanner.structure.generation.MapGenerationWorld;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.SeedHelper;
@@ -54,10 +62,18 @@ import com.simplestructurescanner.structure.validation.ValidationContextManager;
 public class VanillaStructureProvider extends AbstractStructureProvider {
     private static final String PROVIDER_ID = "minecraft";
     private static final String MOD_NAME = "gui.structurescanner.provider.minecraft";
+
     private static final double MINESHAFT_CHUNKS = 250.0D;
     private static final double STRONGHOLD_OUTER_RING_RADIUS_CHUNKS = 1472.0D;
     private static final int STRONGHOLD_COUNT = 128;
     private static final double END_SHIP_END_CITY_PROBABILITY = 0.57122D;
+
+    private static final IBlockState GRASS = Blocks.GRASS.getDefaultState();
+    private static final IBlockState DIRT = Blocks.DIRT.getDefaultState();
+    private static final IBlockState WATER = Blocks.WATER.getDefaultState();
+    private static final IBlockState GRAVEL = Blocks.GRAVEL.getDefaultState();
+    private static final IBlockState END_STONE = Blocks.END_STONE.getDefaultState();
+
     private static final List<Biome> MONUMENT_WATER_BIOMES = Arrays.asList(
         Biomes.OCEAN, Biomes.DEEP_OCEAN, Biomes.RIVER, Biomes.FROZEN_OCEAN, Biomes.FROZEN_RIVER
     );
@@ -165,28 +181,103 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
     }
 
     /**
-     * Populates blocks and loot tables for vanilla structures. Uses NBT parsing when possible.
+     * Populates blocks and loot tables for vanilla structures.
      */
     private void populateStructureContents() {
-        // Give config overrides precedence, then fall back to bundled scanner snapshots.
-        applyStructureContentsFromNbt("village");
+        // Structures from bundled NBT
         applyStructureContentsFromNbt("mineshaft");
         applyStructureContentsFromNbt("stronghold");
         applyStructureContentsFromNbt("desert_temple");
         applyStructureContentsFromNbt("jungle_temple");
         applyStructureContentsFromNbt("witch_hut");
         applyStructureContentsFromNbt("igloo");
-        applyStructureContentsFromNbt("monument");
-        applyStructureContentsFromNbt("mansion");
         applyStructureContentsFromNbt("dungeon");
         applyStructureContentsFromNbt("fortress");
-        applyStructureContentsFromNbt("endcity");
         applyStructureContentsFromNbt("end_ship");
+
+        applyStructureContentsFromNbt("village");
+        applyStructureContentsFromNbt("monument");
+        applyStructureContentsFromNbt("mansion");
+        applyStructureContentsFromNbt("endcity");
+
+        // Structures from Map - FIXME: Improve performance. It takes multiple seconds *per* structure
+        // FIXME: Some blocks seem to be missing in modded houses and the foot of light poles
+        /* if (!applyStructureContentsFromNbtOverride("village")) {
+            MapGenerationBuilder map = new MapGenerationBuilder(128, 128, 63, GRASS)
+                .withName("minecraft:village")
+                .withBelowLayers(3, DIRT)   // houses and farms extend down if not stopped
+                .build(VanillaStructureProvider::generateVillage, Biomes.PLAINS);
+            applyGeneratedStructure("village", map);
+        }
+
+        // FIXME: Creashes because RandomThings expects a WorldServer for Monument loot
+        if (!applyStructureContentsFromNbtOverride("monument")) {
+            MapGenerationBuilder map = new MapGenerationBuilder(64, 64, 38, GRAVEL)
+                .withName("minecraft:monument")
+                .withOrigin(8, 8)  // Monument is not centered by default, its origin needs to be adjusted
+                .withAboveLayers(64 - 38, WATER)    // need water for it to generate correctly
+                .build(VanillaStructureProvider::generateMonument, Biomes.DEEP_OCEAN);
+            applyGeneratedStructure("monument", map);
+            addEntities("monument", createEntityEntry("minecraft:guardian", 30));
+        }
+
+        // FIXME: Seems to get cut, likely needs origin shift
+        if (!applyStructureContentsFromNbtOverride("mansion")) {
+            MapGenerationBuilder map = new MapGenerationBuilder(128, 128, 63, GRASS)
+                .withName("minecraft:mansion")
+                .build(VanillaStructureProvider::generateMansion, Biomes.ROOFED_FOREST);
+            applyGeneratedStructure("mansion", map);
+        }
+
+        if (!applyStructureContentsFromNbtOverride("endcity")) {
+            MapGenerationBuilder map = new MapGenerationBuilder(192, 192, 63, END_STONE)
+                .withName("minecraft:endcity")
+                .build(VanillaStructureProvider::generateEndCity, Biomes.SKY);
+            applyGeneratedStructure("endcity", map);
+        }*/
 
         // Fill in remaining data (loot tables, entities) and fallback for structures without NBT data
         populateStronghold();
         populateMineshaft();
         populateNetherFortress();
+    }
+
+    private static void generateVillage(MapGenerationWorld world, Random random) {
+        (new MapGenVillage.Start(world, random, 0, 0, 0))
+            .generateStructure(world, random, getMapBounds(world));
+    }
+
+    private static void generateMonument(MapGenerationWorld world, Random random) {
+        (new StructureOceanMonument.StartMonument(world, random, 0, 0))
+            .generateStructure(world, random, getMapBounds(world));
+    }
+
+    private static void generateMansion(MapGenerationWorld world, Random random) {
+        List<WoodlandMansionPieces.MansionTemplate> components = new ArrayList<>();
+        WoodlandMansionPieces.generateMansion(getStructureManager(world), new BlockPos(0, 64, 0),
+            Rotation.NONE, components, random);
+        generateComponents(world, random, components);
+    }
+
+    private static void generateEndCity(MapGenerationWorld world, Random random) {
+        List<StructureComponent> components = new ArrayList<>();
+        StructureEndCityPieces.startHouseTower(getStructureManager(world), new BlockPos(0, 64, 0),
+            Rotation.NONE, components, random);
+        generateComponents(world, random, components);
+    }
+
+    private static TemplateManager getStructureManager(MapGenerationWorld world) {
+        return world.getSaveHandler().getStructureTemplateManager();
+    }
+
+    private static void generateComponents(MapGenerationWorld world, Random random,
+            List<? extends StructureComponent> components) {
+        StructureBoundingBox bounds = getMapBounds(world);
+        for (StructureComponent component : components) component.addComponentParts(world, random, bounds);
+    }
+
+    private static StructureBoundingBox getMapBounds(MapGenerationWorld world) {
+        return new StructureBoundingBox(world.getMinX(), 0, world.getMinZ(), world.getMaxX(), 255, world.getMaxZ());
     }
 
     // Procedural structures use hardcoded estimates since they're generated algorithmically

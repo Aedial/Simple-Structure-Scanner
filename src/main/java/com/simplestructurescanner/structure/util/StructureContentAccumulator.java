@@ -8,6 +8,7 @@ import java.util.Map;
 import javax.annotation.Nullable;
 
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.init.Blocks;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ResourceLocation;
 
@@ -33,6 +34,45 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
         for (BlockEntry blockEntry : parsed.blocks) addBlock(blockEntry);
         for (EntityEntry entityEntry : parsed.entities) addEntity(entityEntry);
         for (LootEntry lootEntry : parsed.lootTables) addLootEntry(lootEntry);
+    }
+
+    /**
+     * Adds blocks and block entity contents from generated structure layers.
+     */
+    public void addLayers(@Nullable List<StructureInfo.StructureLayer> layers) {
+        if (layers == null) return;
+
+        for (StructureInfo.StructureLayer layer : layers) {
+            if (layer == null) continue;
+
+            for (int x = 0; x < layer.width; x++) {
+                for (int z = 0; z < layer.depth; z++) {
+                    IBlockState state = layer.getBlockState(x, z);
+                    if (state == null || state.getBlock() == Blocks.AIR ||
+                            state.getBlock() == Blocks.STRUCTURE_VOID) {
+                        continue;
+                    }
+
+                    NBTTagCompound blockEntityData = layer.getBlockEntityData(x, z);
+                    addBlock(StructureNBTParser.createBlockEntry(state, blockEntityData, 1));
+
+                    if (blockEntityData != null) {
+                        StructureNBTParser.handleDefaultBlockEntity(this, state, state.getBlock(), blockEntityData);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Adds generated entity data from a map world.
+     */
+    public void addEntityData(@Nullable List<NBTTagCompound> entityData) {
+        if (entityData == null) return;
+
+        for (NBTTagCompound entityNbt : entityData) {
+            if (entityNbt != null) StructureNBTParser.handleDefaultEntity(this, entityNbt);
+        }
     }
 
     @Override

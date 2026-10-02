@@ -25,6 +25,8 @@ import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
+import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
+import com.simplestructurescanner.structure.util.StructureContentAccumulator;
 
 
 /**
@@ -157,6 +159,19 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         info.setRarityKey(rarityKey);
     }
 
+    protected void applyGeneratedStructure(String path, MapGenerationBuilder map) {
+        StructureInfo info = getMutableStructureInfo(path);
+        if (info == null) return;
+
+        List<StructureLayer> layers = map.capture();
+        info.setLayers(layers);
+
+        StructureContentAccumulator contents = new StructureContentAccumulator();
+        contents.addLayers(layers);
+        contents.addEntityData(map.getGeneratedEntityData());
+        contents.applyTo(info);
+    }
+
     protected void setBlocks(String path, @Nullable List<BlockEntry> blocks) {
         StructureInfo info = getMutableStructureInfo(path);
         if (info == null) return;
@@ -283,12 +298,15 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         if (!parsed.lootTables.isEmpty()) info.setLootTables(parsed.lootTables);
     }
 
+    /**
+     * Load the structure contents from NBT files. Config override will take precedence over bundled data.
+     * No override or bundled data => the structure contents will not be loaded.
+     *
+     * @param path The name identifying the structure.
+     * @return True if the structure contents were successfully loaded from NBT, false otherwise.
+     */
     protected boolean applyStructureContentsFromNbt(String path) {
         return applyStructureContentsFromNbt(path, path, path, null);
-    }
-
-    protected boolean applyStructureContentsFromNbt(String path, String nbtPath) {
-        return applyStructureContentsFromNbt(path, nbtPath, nbtPath, null);
     }
 
     protected boolean applyStructureContentsFromNbt(String path, String overrideNbtPath,
@@ -304,6 +322,20 @@ public abstract class AbstractStructureProvider implements StructureProvider {
 
         StructureNBTParser.ParsedStructure parsed = loadStructureContentsFromNbt(
             overrideNbtPath, bundledNbtPath, extension);
+        if (parsed == null) return false;
+
+        apply(info, parsed);
+        return true;
+    }
+
+    protected boolean applyStructureContentsFromNbtOverride(String path) {
+        StructureInfo info = getMutableStructureInfo(path);
+        if (info == null) return false;
+
+        File overrideFile = getStructureOverrideFile(normalizeStructureNbtPath(path));
+        if (overrideFile == null || !overrideFile.isFile()) return false;
+
+        StructureNBTParser.ParsedStructure parsed = StructureNBTParser.parseStructureFile(overrideFile, null);
         if (parsed == null) return false;
 
         apply(info, parsed);
