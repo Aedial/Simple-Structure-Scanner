@@ -1,0 +1,1192 @@
+package com.simplestructurescanner.structure.providers.recurrentcomplex;
+
+import java.lang.invoke.MethodHandle;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Optional;
+import java.util.Random;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import javax.annotation.Nullable;
+
+import org.apache.commons.lang3.tuple.Pair;
+
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
+import net.minecraft.world.World;
+import net.minecraft.world.WorldProvider;
+import net.minecraft.world.WorldServer;
+import net.minecraft.world.biome.Biome;
+import net.minecraft.world.gen.structure.StructureBoundingBox;
+import net.minecraft.world.gen.structure.StructureComponent;
+
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.terraingen.PopulateChunkEvent;
+import net.minecraftforge.fml.common.eventhandler.Event;
+import net.minecraftforge.fml.common.eventhandler.EventBus;
+import net.minecraftforge.fml.common.eventhandler.IEventListener;
+
+import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.structure.util.ReflectionHelper;
+import com.simplestructurescanner.structure.validation.StructureValidationWorld;
+
+
+/**
+ * Reflectively accesses the Recurrent Complex members used by the searcher.
+ * The mod is not used directly to not fail directly if the internal API changes.
+ * This allows some flexibility in handling changes.
+ */
+@SuppressWarnings({"unchecked", "rawtypes"})
+final class RecurrentComplexAccessors {
+
+    // ========== Recurrent Complex class names ==========
+
+    private static final String STRUCTURE_LOCATOR_CLASS =
+            "ivorius.reccomplex.world.gen.feature.StructureLocator";
+    private static final String STRUCTURE_REGISTRY_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.StructureRegistry";
+    private static final String RC_STRUCTURE_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.Structure";
+    private static final String GENERIC_VILLAGE_PIECE_CLASS =
+            "ivorius.reccomplex.world.gen.feature.villages.GenericVillagePiece";
+    private static final String STRUCTURE_GENERATOR_CLASS =
+            "ivorius.reccomplex.world.gen.feature.StructureGenerator";
+    private static final String GENERATION_TYPE_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.generic.generation.GenerationType";
+    private static final String PLACER_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.Placer";
+    private static final String BLOCK_SURFACE_POS_CLASS =
+            "ivorius.ivtoolkit.blocks.BlockSurfacePos";
+    private static final String GENERATE_MATURITY_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.context.StructureSpawnContext$GenerateMaturity";
+    private static final String GENERATION_RESULT_CLASS =
+            "ivorius.reccomplex.world.gen.feature.StructureGenerator$GenerationResult";
+    private static final String GENERATION_FAILURE_CLASS =
+            "ivorius.reccomplex.world.gen.feature.StructureGenerator$GenerationResult$Failure";
+    private static final String ENVIRONMENT_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.Environment";
+    private static final String STRUCTURE_SPAWN_CONTEXT_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.context.StructureSpawnContext";
+    private static final String RC_EVENT_BUS_CLASS = "ivorius.reccomplex.events.RCEventBus";
+    private static final String STRUCTURE_GENERATION_EVENT_SUGGEST_CLASS =
+            "ivorius.reccomplex.events.StructureGenerationEvent$Suggest";
+    private static final String STRUCTURE_GENERATION_EVENT_LITE_SUGGEST_CLASS =
+            "ivorius.reccomplex.events.StructureGenerationEventLite$Suggest";
+    private static final String NATURAL_GENERATION_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.generic.generation.NaturalGeneration";
+    private static final String SPAWN_LIMITATION_CLASS = NATURAL_GENERATION_CLASS + "$SpawnLimitation";
+    private static final String STATIC_GENERATION_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.generic.generation.StaticGeneration";
+    private static final String VANILLA_GENERATION_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.generic.generation.VanillaGeneration";
+    private static final String VANILLA_DECORATION_GENERATION_CLASS =
+            "ivorius.reccomplex.world.gen.feature.structure.generic.generation.VanillaDecorationGeneration";
+    private static final String RC_CONFIG_CLASS = "ivorius.reccomplex.RCConfig";
+    private static final String WORLD_STRUCTURE_GENERATION_DATA_CLASS =
+            "ivorius.reccomplex.world.gen.feature.WorldStructureGenerationData";
+    private static final String STRUCTURE_ENTRY_CLASS = WORLD_STRUCTURE_GENERATION_DATA_CLASS + "$StructureEntry";
+    private static final String ENTRY_CLASS = WORLD_STRUCTURE_GENERATION_DATA_CLASS + "$Entry";
+
+    // ========== Search reflection access ==========
+
+    @Nullable
+    private static Class<?> locatorClass;
+    @Nullable
+    private static Method chunksByDistanceMethod;
+    @Nullable
+    private static Object structureRegistryInstance;
+    @Nullable
+    private static Method registryGetMethod;
+    @Nullable
+    private static Method registryActiveIDsMethod;
+    @Nullable
+    private static Method registryIdMethod;
+    @Nullable
+    private static Method structureGenerationTypesMethod;
+    @Nullable
+    private static Method structureBlockingMethod;
+
+    // ========== Candidate-selection reflection access ==========
+
+    @Nullable
+    private static Method diagPopulationRandomMethod;
+    @Nullable
+    private static Method diagStaticCandidatesMethod;
+    @Nullable
+    private static Method diagNaturalCandidatesMethod;
+    @Nullable
+    private static Method diagMayGenerateMethod;
+
+    // Method handles for per-chunk reflection calls
+    @Nullable
+    private static MethodHandle mhPopulationRandom;
+    @Nullable
+    private static MethodHandle mhStaticCandidates;
+    @Nullable
+    private static MethodHandle mhNaturalCandidates;
+
+    // ========== Placement-validation reflection access ==========
+
+    @Nullable
+    private static Constructor<?> sgConstructor;
+    @Nullable
+    private static Method sgGenerationInfoMethod;
+    @Nullable
+    private static Method sgSeedMethod;
+    @Nullable
+    private static Method sgStructureIDMethod;
+    @Nullable
+    private static Method sgMaturityMethod;
+    @Nullable
+    private static Method sgRandomPositionMethod;
+    @Nullable
+    private static Method sgFromCenterMethod;
+    @Nullable
+    private static Method sgPartiallyMethod;
+    @Nullable
+    private static Method sgBoundingBoxMethod;
+    @Nullable
+    private static Method sgStructureSizeMethod;
+    @Nullable
+    private static Field sgWorldField;
+    private static long sgWorldFieldOffset;
+    @Nullable
+    private static Object unsafeInstance;
+    @Nullable
+    private static Method unsafePutObjectMethod;
+    @Nullable
+    private static Method placerMethod;
+    @Nullable
+    private static Method blockSurfacePosFromMethod;
+    @Nullable
+    private static Method blockSurfacePosGetXMethod;
+    @Nullable
+    private static Method blockSurfacePosGetZMethod;
+    @Nullable
+    private static Method sgTestMethod;
+    @Nullable
+    private static Method sgAllowOverlapsMethod;
+    @Nullable
+    private static Method sgEnvironmentMethod;
+    @Nullable
+    private static Method sgSpawnMethod;
+    @Nullable
+    private static Method sgInstanceDataMethod;
+    @Nullable
+    private static Method grSucceededMethod;
+    @Nullable
+    private static Field failureDescriptionField;
+    @Nullable
+    private static Field envBiomeField;
+    @Nullable
+    private static Object generateMaturitySuggest;
+    @Nullable
+    private static Object generateMaturityFirst;
+    @Nullable
+    private static EventBus rcEventBus;
+    @Nullable
+    private static Constructor<?> structureGenerationSuggestConstructor;
+    @Nullable
+    private static Constructor<?> structureGenerationLiteSuggestConstructor;
+
+    // ========== Natural-generation reflection access ==========
+
+    // Natural-generation weight access
+    @Nullable
+    private static Class<?> naturalGenerationClass;
+    @Nullable
+    private static Class<?> staticGenerationClass;
+    @Nullable
+    private static Class<?> vanillaGenerationClass;
+    @Nullable
+    private static Method ngGetGenerationWeightMethod;
+    @Nullable
+    private static Method ngHasLimitationsMethod;
+    @Nullable
+    private static Method ngGetLimitationsMethod;
+    @Nullable
+    private static Method spawnLimitationAreResolvedMethod;
+    @Nullable
+    private static Method rcTweakedSpawnRateMethod;
+
+    // Cached Recurrent Complex generation settings
+    @Nullable
+    private static Method rcGenEnabledBiomeMethod;
+    @Nullable
+    private static Method rcGenEnabledProviderMethod;
+    @Nullable
+    private static Field rcMinDistToSpawnField;
+    @Nullable
+    private static Field rcAvoidOverlappingGenerationField;
+    @Nullable
+    private static Field rcHonorStructureGenerationOptionField;
+
+    // ========== Persisted-generation reflection access ==========
+
+    // WorldStructureGenerationData records processed chunks and generated structures
+    @Nullable
+    private static Method wsgdGetMethod;
+    @Nullable
+    private static Method wsgdIsChunkCheckedMethod;
+    @Nullable
+    private static Method wsgdStructureEntriesInMethod;
+    @Nullable
+    private static Method wsgdEntriesAtBoundingBoxMethod;
+    @Nullable
+    private static Method wsgdGetStructureIDMethod;
+    @Nullable
+    private static Method entryGetBoundingBoxMethod;
+    @Nullable
+    private static Method entryBlockingMethod;
+
+    // ========== Event-dispatch reflection access ==========
+
+    @Nullable
+    private static Field eventBusBusIdField;
+    private static int forgeBusId = -1;
+
+    // ========== Village-search reflection access ==========
+
+    @Nullable
+    private static Class<?> genericVillagePieceClass;
+    @Nullable
+    private static Field gvpStructureIDField;
+
+    // ========== Initialization state ==========
+
+    private static boolean initializationAttempted = false;
+    private static boolean initialized = false;
+    private static boolean villageInitializationAttempted = false;
+
+    // ========== Event-listener exclusions ==========
+
+    /**
+     * Listener prefixes skipped while posting {@code PopulateChunkEvent.Pre} for prediction.
+     * A listed listener must neither consume the event {@link Random} nor change
+     * terrain in a scanned chunk. Each prefix is tied to an exact mod version:
+     * <ul>
+     *   <li>{@code AbyssalCraftEventHooks} (AbyssalCraft 1.12.2-1.11.3):
+     *       {@code populateChunk} does not read the event Random and only changes
+     *       the Darklands Mountains biome, which the scanned dimensions cannot use.</li>
+     * </ul>
+     * FIXME: This shit is not proper coding. Need at least to be configurable and
+     *        maybe a versions -> prefixes mapping
+     */
+    private static final String[] RAND_INDEPENDENT_LISTENER_PREFIXES = {
+        "ASM: com.shinoow.abyssalcraft.common.handlers.AbyssalCraftEventHooks",
+    };
+
+    private RecurrentComplexAccessors() {
+    }
+
+    // ========== Typed reflection values ==========
+
+    // Abstractions for typed access to Recurrent Complex structures and generations
+    static final class RcStructure {
+
+        private final Object value;
+
+        private RcStructure(Object value) {
+            this.value = value;
+        }
+
+        Object value() {
+            return value;
+        }
+    }
+
+    static final class RcGeneration {
+
+        private final Object value;
+
+        private RcGeneration(Object value) {
+            this.value = value;
+        }
+
+        Object value() {
+            return value;
+        }
+    }
+
+    static final class RcCandidate {
+
+        private final RcStructure structure;
+        private final RcGeneration generation;
+
+        private RcCandidate(RcStructure structure, RcGeneration generation) {
+            this.structure = structure;
+            this.generation = generation;
+        }
+
+        RcGeneration generation() {
+            return generation;
+        }
+
+        Object structureValue() {
+            return structure.value();
+        }
+
+        Object generationValue() {
+            return generation.value();
+        }
+
+        RcStructure structure() {
+            return structure;
+        }
+    }
+
+    static final class RcPlacement {
+
+        private final BlockPos position;
+        private final StructureBoundingBox boundingBox;
+
+        private RcPlacement(BlockPos position, StructureBoundingBox boundingBox) {
+            this.position = position;
+            this.boundingBox = boundingBox;
+        }
+
+        BlockPos position() {
+            return position;
+        }
+
+        boolean intersects(RcPlacement other) {
+            return this.boundingBox.intersectsWith(other.boundingBox);
+        }
+    }
+
+    static final class RcStaticCandidate {
+
+        private final RcStructure structure;
+        private final RcGeneration generation;
+        private final BlockPos position;
+        private final long seed;
+
+        private RcStaticCandidate(RcStructure structure, RcGeneration generation,
+                BlockPos position, long seed) {
+            this.structure = structure;
+            this.generation = generation;
+            this.position = position;
+            this.seed = seed;
+        }
+
+        RcGeneration generation() {
+            return generation;
+        }
+
+        BlockPos position() {
+            return position;
+        }
+
+        long seed() {
+            return seed;
+        }
+
+        RcStructure structure() {
+            return structure;
+        }
+
+        Object structureValue() {
+            return structure.value();
+        }
+    }
+
+    static final class LedgerChunk {
+
+        private final boolean checked;
+        private final List<BlockPos> structurePositions;
+
+        private LedgerChunk(boolean checked, List<BlockPos> structurePositions) {
+            this.checked = checked;
+            this.structurePositions = structurePositions;
+        }
+    }
+
+    // ========== Reflection initialization ==========
+
+    static synchronized boolean isAvailable() {
+        if (initialized) return true;
+        if (initializationAttempted) return false;
+
+        initializationAttempted = true;
+        try {
+            locatorClass = Class.forName(STRUCTURE_LOCATOR_CLASS);
+            Class<?> registryClass = Class.forName(STRUCTURE_REGISTRY_CLASS);
+            Class<?> structureClass = Class.forName(RC_STRUCTURE_CLASS);
+
+            chunksByDistanceMethod = locatorClass.getMethod("chunksByDistance", BlockPos.class, int.class);
+
+            structureRegistryInstance = registryClass.getField("INSTANCE").get(null);
+            registryGetMethod = registryClass.getMethod("get", String.class);
+            registryActiveIDsMethod = registryClass.getMethod("activeIDs");
+            registryIdMethod = findRegistryIdMethod(registryClass);
+            structureGenerationTypesMethod = structureClass.getMethod("generationTypes", Class.class);
+            structureBlockingMethod = structureClass.getMethod("isBlocking");
+
+            diagPopulationRandomMethod = locatorClass.getMethod("populationRandom", long.class, ChunkPos.class);
+            diagStaticCandidatesMethod = ReflectionHelper.getAccessibleDeclaredMethod(
+                locatorClass, "staticCandidatesInChunk", WorldServer.class, ChunkPos.class);
+            diagNaturalCandidatesMethod = ReflectionHelper.getAccessibleDeclaredMethod(
+                locatorClass, "naturalCandidatesInChunk", WorldServer.class, ChunkPos.class, Random.class);
+            diagMayGenerateMethod = ReflectionHelper.getAccessibleDeclaredMethod(
+                locatorClass, "mayGenerateNaturally", WorldServer.class, ChunkPos.class);
+
+            mhPopulationRandom = ReflectionHelper.unreflectOrNull(diagPopulationRandomMethod);
+            mhStaticCandidates = ReflectionHelper.unreflectOrNull(diagStaticCandidatesMethod);
+            mhNaturalCandidates = ReflectionHelper.unreflectOrNull(diagNaturalCandidatesMethod);
+
+            initializeGeneratorAccess(structureClass);
+            initializeNaturalGenerationAccess();
+            initializeEventBusAccess();
+            initializeLedgerAccess();
+            warnVanillaDecorationGeneration(registryClass);
+
+            initialized = true;
+            SimpleStructureScanner.LOGGER.info("Initialized Recurrent Complex search");
+            return true;
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn("Could not initialize Recurrent Complex search", e);
+            return false;
+        }
+    }
+
+    // ========== Structure lookup ==========
+
+    @Nullable
+    static RcStructure findStructure(String structureId) {
+        if (structureRegistryInstance == null || registryGetMethod == null) return null;
+
+        try {
+            Object result = registryGetMethod.invoke(structureRegistryInstance, structureId);
+            if (result != null) return new RcStructure(result);
+
+            if (registryActiveIDsMethod != null) {
+                Set<String> activeIds = (Set<String>) registryActiveIDsMethod.invoke(structureRegistryInstance);
+                for (String id : activeIds) {
+                    if (id.equalsIgnoreCase(structureId)) {
+                        return new RcStructure(registryGetMethod.invoke(structureRegistryInstance, id));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug("Could not resolve Recurrent Complex structure '{}'", structureId, e);
+        }
+
+        return null;
+    }
+
+    @Nullable
+    static String structureId(RcStructure structure) throws Exception {
+        if (structureRegistryInstance == null || registryIdMethod == null) return null;
+
+        return (String) registryIdMethod.invoke(structureRegistryInstance, structure.value);
+    }
+
+    // ========== Search planning ==========
+
+    @Nullable
+    static List<ChunkPos> chunksByDistance(BlockPos origin, int radius) {
+        if (chunksByDistanceMethod == null) return null;
+
+        try {
+            return (List<ChunkPos>) chunksByDistanceMethod.invoke(null, origin, radius);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug("Could not list chunks by distance", e);
+            return null;
+        }
+    }
+
+    // ========== Natural-generation lookup and filtering ==========
+
+    @Nullable
+    static List<RcGeneration> naturalGenerationTypes(RcStructure structure) {
+        if (naturalGenerationClass == null || structureGenerationTypesMethod == null) return null;
+
+        try {
+            List<?> types = (List<?>) structureGenerationTypesMethod.invoke(structure.value, naturalGenerationClass);
+            List<RcGeneration> generations = new ArrayList<>();
+            if (types != null) {
+                for (Object type : types) generations.add(new RcGeneration(type));
+            }
+
+            return generations;
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not read NaturalGeneration entries; skipping the biome-weight filter", e);
+            return null;
+        }
+    }
+
+    static boolean hasStaticGeneration(RcStructure structure) {
+        if (staticGenerationClass == null || structureGenerationTypesMethod == null) return false;
+
+        try {
+            List<?> types = (List<?>) structureGenerationTypesMethod.invoke(structure.value,
+                staticGenerationClass);
+            return types != null && !types.isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static double tweakedSpawnRate(String structureId) {
+        if (rcTweakedSpawnRateMethod == null) return 1.0;
+
+        try {
+            return ((Number) rcTweakedSpawnRateMethod.invoke(null, structureId)).doubleValue();
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug("Could not read the Recurrent Complex spawn-rate setting", e);
+            return 1.0;
+        }
+    }
+
+    static double generationWeight(RcGeneration generation, WorldProvider provider, Biome biome) {
+        if (ngGetGenerationWeightMethod == null) return Double.POSITIVE_INFINITY;
+
+        try {
+            return ((Number) ngGetGenerationWeightMethod.invoke(generation.value, provider, biome)).doubleValue();
+        } catch (Exception e) {
+            return Double.POSITIVE_INFINITY;
+        }
+    }
+
+    static boolean isSpawnLimitResolved(RcGeneration generation, WorldServer worldServer,
+            String structureId) {
+        if (ngHasLimitationsMethod == null || ngGetLimitationsMethod == null ||
+                spawnLimitationAreResolvedMethod == null) return false;
+
+        try {
+            if (!(boolean) ngHasLimitationsMethod.invoke(generation.value)) return true;
+
+            Object limitation = ngGetLimitationsMethod.invoke(generation.value);
+            return limitation != null && (boolean) spawnLimitationAreResolvedMethod.invoke(
+                limitation, worldServer, structureId);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not check the Recurrent Complex spawn limitation for '{}'", structureId, e);
+            return false;
+        }
+    }
+
+    static boolean mayGenerateNaturally(WorldServer worldServer, ChunkPos chunkPos) {
+        if (rcGenEnabledBiomeMethod == null || rcGenEnabledProviderMethod == null) {
+            try {
+                return diagMayGenerateMethod != null &&
+                    (boolean) diagMayGenerateMethod.invoke(null, worldServer, chunkPos);
+            } catch (Exception e) {
+                return true;
+            }
+        }
+
+        try {
+            Biome biome = worldServer.getBiome(chunkPos.getBlock(8, 0, 8));
+            if (!(boolean) rcGenEnabledBiomeMethod.invoke(null, biome)) return false;
+            if (!(boolean) rcGenEnabledProviderMethod.invoke(null, worldServer.provider)) return false;
+
+            if (worldServer.provider.getDimension() != 0 || rcMinDistToSpawnField == null) return true;
+
+            float minDist = rcMinDistToSpawnField.getFloat(null);
+            BlockPos spawn = worldServer.getSpawnPoint();
+            double dx = chunkPos.x * 16 + 8 - spawn.getX();
+            double dz = chunkPos.z * 16 + 8 - spawn.getZ();
+
+            return dx * dx + dz * dz >= (double) minDist * minDist;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    static boolean supportsMemoizedGenerationFilter() {
+        return rcGenEnabledBiomeMethod != null && rcGenEnabledProviderMethod != null;
+    }
+
+    static boolean isStructureGenerationEnabled(WorldServer worldServer) {
+        if (rcHonorStructureGenerationOptionField == null) return true;
+
+        try {
+            return !rcHonorStructureGenerationOptionField.getBoolean(null) ||
+                worldServer.getWorldInfo().isMapFeaturesEnabled();
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not read the Recurrent Complex map-feature setting", e);
+            return true;
+        }
+    }
+
+    static boolean isGenerationEnabled(Biome biome) throws Exception {
+        return (boolean) rcGenEnabledBiomeMethod.invoke(null, biome);
+    }
+
+    static boolean isGenerationEnabled(WorldProvider provider) throws Exception {
+        return (boolean) rcGenEnabledProviderMethod.invoke(null, provider);
+    }
+
+    @Nullable
+    static Float minDistanceToSpawn() throws Exception {
+        return rcMinDistToSpawnField != null ? rcMinDistToSpawnField.getFloat(null) : null;
+    }
+
+    // ========== Candidate selection ==========
+
+    static Random populationRandom(long worldSeed, ChunkPos chunkPos) throws Exception {
+        return (Random) ReflectionHelper.invoke(mhPopulationRandom, diagPopulationRandomMethod,
+            null, worldSeed, chunkPos);
+    }
+
+    static List<RcStaticCandidate> staticCandidates(WorldServer worldServer, ChunkPos chunkPos,
+            Random random) throws Exception {
+
+        List<?> rawCandidates = (List<?>) ReflectionHelper.invoke(mhStaticCandidates,
+            diagStaticCandidatesMethod, null, worldServer, chunkPos);
+        List<RcStaticCandidate> candidates = new ArrayList<>(rawCandidates.size());
+
+        for (Object rawCandidate : rawCandidates) {
+            long seed = random.nextLong();
+            Class<?> candidateClass = rawCandidate.getClass();
+            Object structure = ReflectionHelper.getField(rawCandidate, candidateClass, "structure");
+            Object generation = ReflectionHelper.getField(rawCandidate, candidateClass, "generation");
+            Object position = ReflectionHelper.getField(rawCandidate, candidateClass, "position");
+
+            candidates.add(new RcStaticCandidate(new RcStructure(structure),
+                new RcGeneration(generation), surfacePosition(position), seed));
+        }
+
+        return candidates;
+    }
+
+    static List<RcCandidate> naturalCandidates(WorldServer worldServer, ChunkPos chunkPos, Random random)
+            throws Exception {
+        List<?> rawCandidates = (List<?>) ReflectionHelper.invoke(mhNaturalCandidates,
+            diagNaturalCandidatesMethod, null, worldServer, chunkPos, random);
+
+        List<RcCandidate> candidates = new ArrayList<>(rawCandidates.size());
+        for (Object rawCandidate : rawCandidates) {
+            Pair<?, ?> candidate = (Pair<?, ?>) rawCandidate;
+            candidates.add(new RcCandidate(new RcStructure(candidate.getLeft()),
+                                           new RcGeneration(candidate.getRight())));
+        }
+
+        return candidates;
+    }
+
+    // ========== Persisted generation results ==========
+
+    static boolean hasLedgerAccess() {
+        return wsgdGetMethod != null && wsgdIsChunkCheckedMethod != null &&
+            wsgdStructureEntriesInMethod != null && wsgdGetStructureIDMethod != null &&
+            entryGetBoundingBoxMethod != null;
+    }
+
+    static boolean hasBlockingOverlap(WorldServer worldServer, RcPlacement placement) {
+        if (rcAvoidOverlappingGenerationField == null) return true;
+
+        try {
+            if (!rcAvoidOverlappingGenerationField.getBoolean(null)) return false;
+
+            if (wsgdGetMethod == null || wsgdEntriesAtBoundingBoxMethod == null ||
+                    entryBlockingMethod == null) return true;
+
+            Object data = wsgdGetMethod.invoke(null, worldServer);
+            Object result = wsgdEntriesAtBoundingBoxMethod.invoke(data, placement.boundingBox);
+            if (result == null) return false;
+
+            Iterator<?> iterator = ((Stream<?>) result).iterator();
+            while (iterator.hasNext()) {
+                if ((boolean) entryBlockingMethod.invoke(iterator.next())) return true;
+            }
+
+            return false;
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug("Could not check Recurrent Complex structure overlap", e);
+            return true;
+        }
+    }
+
+    static boolean avoidsOverlappingGeneration() {
+        if (rcAvoidOverlappingGenerationField == null) return true;
+
+        try {
+            return rcAvoidOverlappingGenerationField.getBoolean(null);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not read the Recurrent Complex overlap setting", e);
+            return true;
+        }
+    }
+
+    static boolean isStructureBlocking(RcStructure structure) throws Exception {
+        if (structureBlockingMethod == null) {
+            throw new IllegalStateException("Cannot read Recurrent Complex structure blocking state");
+        }
+
+        return (boolean) structureBlockingMethod.invoke(structure.value);
+    }
+
+    /**
+     * Reads Recurrent Complex's saved result for a processed chunk.
+     * If the chunk has been processed, returns saved bounding box centers for the specified structure.
+     */
+    static LedgerChunk ledgerChunk(WorldServer worldServer, ChunkPos chunkPos, String structureId)
+            throws Exception {
+
+        Object ledger = wsgdGetMethod.invoke(null, worldServer);
+        boolean checked = (boolean) wsgdIsChunkCheckedMethod.invoke(ledger, chunkPos);
+        if (!checked) return new LedgerChunk(false, new ArrayList<>());
+
+        List<BlockPos> positions = new ArrayList<>();
+        for (Object entry : entriesIn(ledger, chunkPos)) {
+            String id = (String) wsgdGetStructureIDMethod.invoke(entry);
+            if (id.equalsIgnoreCase(structureId)) {
+                StructureBoundingBox boundingBox = (StructureBoundingBox) entryGetBoundingBoxMethod.invoke(entry);
+                positions.add(boundingBoxCenter(boundingBox));
+            }
+        }
+
+        return new LedgerChunk(true, positions);
+    }
+
+    static boolean isChecked(LedgerChunk ledgerChunk) {
+        return ledgerChunk.checked;
+    }
+
+    static List<BlockPos> structurePositions(LedgerChunk ledgerChunk) {
+        return ledgerChunk.structurePositions;
+    }
+
+    /**
+     * Copies the saved structure entries for a chunk from Recurrent Complex's stream.
+     */
+    private static List<Object> entriesIn(Object data, ChunkPos chunkPos) throws Exception {
+        List<Object> entries = new ArrayList<>();
+        Object result = wsgdStructureEntriesInMethod.invoke(data, chunkPos);
+        if (result == null) return entries;
+
+        Iterator<?> iterator = ((Stream<?>) result).iterator();
+        while (iterator.hasNext()) entries.add(iterator.next());
+
+        return entries;
+    }
+
+    // ========== Village-piece lookup ==========
+
+    static boolean hasVanillaGeneration(RcStructure structure) {
+        if (vanillaGenerationClass == null || structureGenerationTypesMethod == null) return false;
+
+        try {
+            List<?> types = (List<?>) structureGenerationTypesMethod.invoke(structure.value, vanillaGenerationClass);
+            return types != null && !types.isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    static boolean isVillageSearchAvailable() {
+        if (!isAvailable()) return false;
+        if (genericVillagePieceClass != null && gvpStructureIDField != null) return true;
+        if (villageInitializationAttempted) return false;
+
+        villageInitializationAttempted = true;
+        try {
+            genericVillagePieceClass = Class.forName(GENERIC_VILLAGE_PIECE_CLASS);
+            gvpStructureIDField = genericVillagePieceClass.getField("structureID");
+            return true;
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn("Could not initialize Recurrent Complex village search", e);
+            return false;
+        }
+    }
+
+    static boolean isVillagePiece(StructureComponent component) {
+        return genericVillagePieceClass != null && genericVillagePieceClass.isInstance(component);
+    }
+
+    @Nullable
+    static String villagePieceStructureId(StructureComponent component) {
+        if (gvpStructureIDField == null) return null;
+
+        try {
+            return (String) gvpStructureIDField.get(component);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug("Could not read the Recurrent Complex village piece structure ID", e);
+            return null;
+        }
+    }
+
+    // ========== Population-event dispatch ==========
+
+    /**
+     * Invokes listeners until the Recurrent Complex mixin captures the event random.
+     * Falls back to a normal event post when EventBus internals are unavailable.
+     */
+    static void dispatchUntilRcCaptured(PopulateChunkEvent.Pre event) {
+        if (forgeBusId < 0) {
+            MinecraftForge.EVENT_BUS.post(event);
+            return;
+        }
+
+        IEventListener[] listeners = event.getListenerList().getListeners(forgeBusId);
+        RCVPredictionContext.resetCaptureSignal();
+        for (IEventListener listener : listeners) {
+            if (isRandIndependentSkippable(listener.toString())) continue;
+
+            listener.invoke(event);
+            if (RCVPredictionContext.wasCapturedThisPost()) return;
+        }
+    }
+
+    private static boolean isRandIndependentSkippable(String listenerName) {
+        for (String prefix : RAND_INDEPENDENT_LISTENER_PREFIXES) {
+            if (listenerName.startsWith(prefix)) return true;
+        }
+
+        return false;
+    }
+
+    // ========== Placement validation ==========
+
+    /**
+     * Tests a candidate on generated terrain before vanilla chunk decoration.
+     */
+    @Nullable
+    static RcPlacement validatePlacement(World validationWorld, RcStructure structure,
+            RcGeneration generation, String structureId, long seed, ChunkPos chunkPos) throws Exception {
+
+        return validatePlacement(validationWorld, structure, generation, structureId, seed, chunkPos,
+            computeSurfacePos(chunkPos, seed), true, generateMaturitySuggest);
+    }
+
+    @Nullable
+    static RcPlacement validateStaticPlacement(World validationWorld, RcStructure structure,
+            RcStaticCandidate candidate, ChunkPos chunkPos) throws Exception {
+
+        if (sgConstructor == null || unsafeInstance == null || unsafePutObjectMethod == null ||
+                sgInstanceDataMethod == null || sgSpawnMethod == null) {
+            throw new IllegalStateException(
+                "Cannot validate Recurrent Complex static placement: generator access is unavailable");
+        }
+
+        Object generator = sgConstructor.newInstance(structure.value);
+        setupGenerator(generator, candidate.generation(), null, candidate.seed(), candidate.position(),
+            chunkPos, generateMaturityFirst);
+        provideTerrain(validationWorld, generator, null, candidate.position(), chunkPos);
+        setValidationWorld(generator, validationWorld);
+
+        Optional<?> instanceData = (Optional<?>) sgInstanceDataMethod.invoke(generator);
+        if (!instanceData.isPresent()) return null;
+
+        Optional<?> spawn = (Optional<?>) sgSpawnMethod.invoke(generator);
+        if (!spawn.isPresent()) return null;
+
+        Optional<?> boundingBoxResult = (Optional<?>) sgBoundingBoxMethod.invoke(generator);
+        if (!boundingBoxResult.isPresent()) return null;
+
+        StructureBoundingBox boundingBox = (StructureBoundingBox) boundingBoxResult.get();
+        return new RcPlacement(boundingBoxCenter(boundingBox), boundingBox);
+    }
+
+    @Nullable
+    private static RcPlacement validatePlacement(World validationWorld, RcStructure structure,
+            RcGeneration generation, String structureId, long seed, ChunkPos chunkPos,
+            BlockPos surfaceBlockPos, boolean checkNaturalWeight, Object maturity) throws Exception {
+
+        if (sgConstructor == null || unsafeInstance == null || unsafePutObjectMethod == null) {
+            throw new IllegalStateException(
+                "Cannot validate Recurrent Complex placement: generator access is unavailable");
+        }
+
+        Object generator = sgConstructor.newInstance(structure.value);
+        setupGenerator(generator, generation, structureId, seed, surfaceBlockPos, chunkPos, maturity);
+
+        provideTerrain(validationWorld, generator, structureId, surfaceBlockPos, chunkPos);
+
+        setValidationWorld(generator, validationWorld);
+        sgAllowOverlapsMethod.invoke(generator, true);
+
+        Object testResult = sgTestMethod.invoke(generator);
+        if (testResult == null || !(boolean) grSucceededMethod.invoke(testResult)) {
+            if (testResult != null) {
+                SimpleStructureScanner.LOGGER.debug(
+                    "Placement check rejected '{}' in chunk ({},{}): {}",
+                    structureId, chunkPos.x, chunkPos.z, extractFailureDescription(testResult));
+            }
+            return null;
+        }
+
+        Optional<?> boundingBoxResult = (Optional<?>) sgBoundingBoxMethod.invoke(generator);
+        if (!boundingBoxResult.isPresent()) return null;
+
+        StructureBoundingBox boundingBox = (StructureBoundingBox) boundingBoxResult.get();
+        Object environment = sgEnvironmentMethod.invoke(generator);
+        Biome biome = (Biome) envBiomeField.get(environment);
+        if (checkNaturalWeight && biome != null) {
+            double weight = generationWeight(generation, validationWorld.provider, biome);
+            if (weight <= 0) {
+                SimpleStructureScanner.LOGGER.debug(
+                    "Rejected '{}' in chunk ({},{}): biome {} has invalid generation weight ({})",
+                    structureId, chunkPos.x, chunkPos.z, biome.getRegistryName(), weight);
+                return null;
+            }
+        }
+
+        return new RcPlacement(boundingBoxCenter(boundingBox), boundingBox);
+    }
+
+    private static void provideTerrain(World validationWorld, Object generator, String structureId,
+            BlockPos surfaceBlockPos, ChunkPos chunkPos) {
+
+        // Recurrent Complex plans structures before vanilla chunk decoration
+        // Provide the rotated structure footprint before the placer reads terrain
+        if (sgStructureSizeMethod != null && validationWorld instanceof StructureValidationWorld) {
+            try {
+                int[] size = (int[]) sgStructureSizeMethod.invoke(generator);
+                int bbMinX = surfaceBlockPos.getX() - size[0] / 2;
+                int bbMinZ = surfaceBlockPos.getZ() - size[2] / 2;
+                int bbMaxX = bbMinX + size[0];
+                int bbMaxZ = bbMinZ + size[2];
+
+                StructureValidationWorld svw = (StructureValidationWorld) validationWorld;
+                svw.provideChunkRange(bbMinX, bbMinZ, bbMaxX, bbMaxZ);
+            } catch (Exception e) {
+                SimpleStructureScanner.LOGGER.debug(
+                    "Could not provide terrain for '{}' in chunk ({},{}): {}: {}",
+                    structureId, chunkPos.x, chunkPos.z, e.getClass().getSimpleName(), e.getMessage());
+            }
+        }
+    }
+
+    static boolean isNaturalGenerationAllowed(World validationWorld, RcStructure structure,
+            RcGeneration generation, String structureId, long seed, ChunkPos chunkPos,
+            RcPlacement placement) throws Exception {
+
+        if (sgSpawnMethod == null || rcEventBus == null || structureGenerationSuggestConstructor == null ||
+                structureGenerationLiteSuggestConstructor == null) {
+            throw new IllegalStateException("Cannot check Recurrent Complex natural-generation events");
+        }
+
+        Object generator = sgConstructor.newInstance(structure.value);
+        setupGenerator(generator, generation, structureId, seed, computeSurfacePos(chunkPos, seed),
+            chunkPos, generateMaturitySuggest);
+        setValidationWorld(generator, validationWorld);
+
+        Optional<?> spawn = (Optional<?>) sgSpawnMethod.invoke(generator);
+        if (!spawn.isPresent()) return false;
+
+        Event suggest = (Event) structureGenerationSuggestConstructor.newInstance(
+            structure.value, spawn.get());
+        if (rcEventBus.post(suggest)) return false;
+
+        Event liteSuggest = (Event) structureGenerationLiteSuggestConstructor.newInstance(
+            validationWorld, structureId, placement.boundingBox, 0, true);
+        return !MinecraftForge.EVENT_BUS.post(liteSuggest);
+    }
+
+    private static BlockPos surfacePosition(Object position) throws Exception {
+        int x = ((Number) blockSurfacePosGetXMethod.invoke(position)).intValue();
+        int z = ((Number) blockSurfacePosGetZMethod.invoke(position)).intValue();
+
+        return new BlockPos(x, 0, z);
+    }
+
+    /**
+     * Calculates Recurrent Complex's seeded X/Z position inside a candidate chunk.
+     */
+    static BlockPos computeSurfacePos(ChunkPos chunkPos, long seed) {
+        Random posRandom = new Random(seed ^ 0x12048F0015F8B476L);
+        int x = chunkPos.x * 16 + posRandom.nextInt(16) + 8;
+        int z = chunkPos.z * 16 + posRandom.nextInt(16) + 8;
+
+        return new BlockPos(x, 0, z);
+    }
+
+    private static void setupGenerator(Object generator, RcGeneration generation,
+            String structureId, long seed, BlockPos surfaceBlockPos, ChunkPos chunkPos, Object maturity)
+            throws Exception {
+        sgGenerationInfoMethod.invoke(generator, generation.value);
+        sgSeedMethod.invoke(generator, seed);
+        if (structureId != null) sgStructureIDMethod.invoke(generator, structureId);
+        sgMaturityMethod.invoke(generator, maturity);
+
+        sgRandomPositionMethod.invoke(generator,
+            blockSurfacePosFromMethod.invoke(null, surfaceBlockPos),
+            placerMethod.invoke(generation.value));
+
+        sgFromCenterMethod.invoke(generator, true);
+        sgPartiallyMethod.invoke(generator, true, chunkPos);
+    }
+
+    private static void setValidationWorld(Object generator, World validationWorld) throws Exception {
+        unsafePutObjectMethod.invoke(unsafeInstance, generator, sgWorldFieldOffset, validationWorld);
+    }
+
+    private static String extractFailureDescription(Object testResult) {
+        if (failureDescriptionField != null) {
+            try {
+                Object description = failureDescriptionField.get(testResult);
+                return description != null ? description.toString() : "null";
+            } catch (Exception ignored) {
+            }
+        }
+
+        return testResult.toString();
+    }
+
+    private static BlockPos boundingBoxCenter(StructureBoundingBox boundingBox) {
+        return new BlockPos(
+            (boundingBox.minX + boundingBox.maxX) / 2,
+            (boundingBox.minY + boundingBox.maxY) / 2,
+            (boundingBox.minZ + boundingBox.maxZ) / 2);
+    }
+
+    // ========== Reflection initialization helpers ==========
+
+    private static void initializeGeneratorAccess(Class<?> structureClass) throws Exception {
+        Class<?> structureGeneratorClass = Class.forName(STRUCTURE_GENERATOR_CLASS);
+        Class<?> generationTypeClass = Class.forName(GENERATION_TYPE_CLASS);
+        Class<?> placerClass = Class.forName(PLACER_CLASS);
+        Class<?> blockSurfacePosClass = Class.forName(BLOCK_SURFACE_POS_CLASS);
+        Class<?> generateMaturityClass = Class.forName(GENERATE_MATURITY_CLASS);
+
+        sgConstructor = structureGeneratorClass.getConstructor(structureClass);
+        sgGenerationInfoMethod = structureGeneratorClass.getMethod("generationInfo", generationTypeClass);
+        sgSeedMethod = structureGeneratorClass.getMethod("seed", Long.class);
+        sgStructureIDMethod = structureGeneratorClass.getMethod("structureID", String.class);
+        sgMaturityMethod = structureGeneratorClass.getMethod("maturity", generateMaturityClass);
+        sgRandomPositionMethod = structureGeneratorClass.getMethod("randomPosition", blockSurfacePosClass, placerClass);
+        sgFromCenterMethod = structureGeneratorClass.getMethod("fromCenter", boolean.class);
+        sgPartiallyMethod = structureGeneratorClass.getMethod("partially", boolean.class, ChunkPos.class);
+        sgBoundingBoxMethod = structureGeneratorClass.getMethod("boundingBox");
+        sgStructureSizeMethod = structureGeneratorClass.getMethod("structureSize");
+        sgWorldField = ReflectionHelper.getAccessibleDeclaredField(structureGeneratorClass, "world");
+
+        // Unsafe assigns the validation world without StructureGenerator's WorldServer type check
+        // Internal Java API, may be removed in future Java versions, so we reflect for safety
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        unsafeInstance = ReflectionHelper.getAccessibleDeclaredField(unsafeClass, "theUnsafe").get(null);
+        Method unsafeObjectFieldOffsetMethod = unsafeClass.getMethod("objectFieldOffset", Field.class);
+        unsafePutObjectMethod = unsafeClass.getMethod("putObject", Object.class, long.class, Object.class);
+        sgWorldFieldOffset = (Long) unsafeObjectFieldOffsetMethod.invoke(unsafeInstance, sgWorldField);
+
+        placerMethod = generationTypeClass.getMethod("placer");
+        blockSurfacePosFromMethod = blockSurfacePosClass.getMethod("from", BlockPos.class);
+        blockSurfacePosGetXMethod = blockSurfacePosClass.getMethod("getX");
+        blockSurfacePosGetZMethod = blockSurfacePosClass.getMethod("getZ");
+        generateMaturitySuggest = Enum.valueOf((Class<Enum>) generateMaturityClass, "SUGGEST");
+        generateMaturityFirst = Enum.valueOf((Class<Enum>) generateMaturityClass, "FIRST");
+
+        sgTestMethod = structureGeneratorClass.getDeclaredMethod("test");
+        sgAllowOverlapsMethod = structureGeneratorClass.getDeclaredMethod("allowOverlaps", boolean.class);
+        sgEnvironmentMethod = structureGeneratorClass.getDeclaredMethod("environment");
+        sgSpawnMethod = structureGeneratorClass.getMethod("spawn");
+        sgInstanceDataMethod = structureGeneratorClass.getMethod("instanceData");
+
+        grSucceededMethod = Class.forName(GENERATION_RESULT_CLASS).getDeclaredMethod("succeeded");
+
+        try {
+            failureDescriptionField = Class.forName(GENERATION_FAILURE_CLASS).getField("description");
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn("Could not access the Recurrent Complex failure description", e);
+        }
+
+        envBiomeField = Class.forName(ENVIRONMENT_CLASS).getField("biome");
+
+        Class<?> spawnContextClass = Class.forName(STRUCTURE_SPAWN_CONTEXT_CLASS);
+        rcEventBus = (EventBus) Class.forName(RC_EVENT_BUS_CLASS).getField("INSTANCE").get(null);
+        structureGenerationSuggestConstructor = Class.forName(STRUCTURE_GENERATION_EVENT_SUGGEST_CLASS)
+                                                     .getConstructor(structureClass, spawnContextClass);
+        structureGenerationLiteSuggestConstructor =
+            Class.forName(STRUCTURE_GENERATION_EVENT_LITE_SUGGEST_CLASS)
+                 .getConstructor(World.class, String.class, StructureBoundingBox.class, int.class, boolean.class);
+    }
+
+    @Nullable
+    private static Method findRegistryIdMethod(Class<?> registryClass) {
+        for (Method method : registryClass.getMethods()) {
+            if (method.getName().equals("id") && method.getParameterCount() == 1) return method;
+        }
+
+        return null;
+    }
+
+    private static void initializeNaturalGenerationAccess() throws Exception {
+        naturalGenerationClass = Class.forName(NATURAL_GENERATION_CLASS);
+        staticGenerationClass = Class.forName(STATIC_GENERATION_CLASS);
+        vanillaGenerationClass = Class.forName(VANILLA_GENERATION_CLASS);
+        ngGetGenerationWeightMethod = naturalGenerationClass.getDeclaredMethod("getGenerationWeight",
+            WorldProvider.class, Biome.class);
+
+        try {
+            ngHasLimitationsMethod = naturalGenerationClass.getMethod("hasLimitations");
+            ngGetLimitationsMethod = naturalGenerationClass.getMethod("getLimitations");
+            spawnLimitationAreResolvedMethod = Class.forName(SPAWN_LIMITATION_CLASS)
+                                                    .getMethod("areResolved", World.class, String.class);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not access Recurrent Complex spawn limitations; natural predictions are unavailable", e);
+        }
+
+        try {
+            Class<?> rcConfigClass = Class.forName(RC_CONFIG_CLASS);
+            rcTweakedSpawnRateMethod = rcConfigClass.getMethod("tweakedSpawnRate", String.class);
+            rcGenEnabledBiomeMethod = rcConfigClass.getMethod("isGenerationEnabled", Biome.class);
+            rcGenEnabledProviderMethod = rcConfigClass.getMethod("isGenerationEnabled", WorldProvider.class);
+            rcMinDistToSpawnField = rcConfigClass.getField("minDistToSpawnForGeneration");
+            rcAvoidOverlappingGenerationField = rcConfigClass.getField("avoidOverlappingGeneration");
+            rcHonorStructureGenerationOptionField = rcConfigClass.getField("honorStructureGenerationOption");
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not access all Recurrent Complex generation settings; cached checks are unavailable", e);
+        }
+    }
+
+    private static void initializeEventBusAccess() {
+        try {
+            eventBusBusIdField = ReflectionHelper.getAccessibleDeclaredField(EventBus.class, "busID");
+            forgeBusId = eventBusBusIdField.getInt(MinecraftForge.EVENT_BUS);
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.debug(
+                "Could not access EventBus.busID; posting complete population events", e);
+        }
+    }
+
+    private static void initializeLedgerAccess() {
+        try {
+            Class<?> dataClass = Class.forName(WORLD_STRUCTURE_GENERATION_DATA_CLASS);
+            wsgdGetMethod = dataClass.getMethod("get", World.class);
+            wsgdIsChunkCheckedMethod = dataClass.getMethod("isChunkChecked", ChunkPos.class);
+            wsgdStructureEntriesInMethod = dataClass.getMethod("structureEntriesIn", ChunkPos.class);
+            wsgdEntriesAtBoundingBoxMethod = dataClass.getMethod("entriesAt", StructureBoundingBox.class);
+
+            wsgdGetStructureIDMethod = Class.forName(STRUCTURE_ENTRY_CLASS).getMethod("getStructureID");
+            Class<?> entryClass = Class.forName(ENTRY_CLASS);
+            entryGetBoundingBoxMethod = entryClass.getMethod("getBoundingBox");
+            entryBlockingMethod = entryClass.getMethod("blocking");
+
+            SimpleStructureScanner.LOGGER.info("Initialized Recurrent Complex saved-generation access");
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.warn(
+                "Could not initialize Recurrent Complex saved-generation access", e);
+        }
+    }
+
+    private static void warnVanillaDecorationGeneration(Class<?> registryClass) {
+        try {
+            Class<?> vanillaDecorationClass = Class.forName(VANILLA_DECORATION_GENERATION_CLASS);
+            Method getGenerationTypesMethod = registryClass.getMethod("getGenerationTypes", Class.class);
+            Collection<?> entries = (Collection<?>) getGenerationTypesMethod.invoke(
+                    structureRegistryInstance, vanillaDecorationClass);
+
+            if (entries != null && !entries.isEmpty()) {
+                SimpleStructureScanner.LOGGER.warn("Recurrent Complex has {} VanillaDecorationGeneration entries. " +
+                    "They can replace village pieces during population and invalidate village predictions.",
+                    entries.size());
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+}

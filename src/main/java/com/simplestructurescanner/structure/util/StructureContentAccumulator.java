@@ -1,6 +1,7 @@
 package com.simplestructurescanner.structure.util;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,7 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
     private final Map<Object, BlockAggregate> blocks = new LinkedHashMap<>();
     private final Map<EntityKey, EntityAggregate> entities = new LinkedHashMap<>();
     private final Map<LootEntryKey, LootEntry> lootEntries = new LinkedHashMap<>();
+    private List<StructureInfo.StructureLayer> previewLayers = Collections.emptyList();
 
     public void add(StructureNBTParser.ParsedStructure parsed) {
         if (parsed == null) return;
@@ -39,7 +41,7 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
     /**
      * Adds blocks and block entity contents from generated structure layers.
      */
-    public void addLayers(@Nullable List<StructureInfo.StructureLayer> layers) {
+    public void addContentsFromLayers(@Nullable List<StructureInfo.StructureLayer> layers) {
         if (layers == null) return;
 
         for (StructureInfo.StructureLayer layer : layers) {
@@ -49,7 +51,8 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
                 for (int z = 0; z < layer.depth; z++) {
                     IBlockState state = layer.getBlockState(x, z);
                     if (state == null || state.getBlock() == Blocks.AIR ||
-                            state.getBlock() == Blocks.STRUCTURE_VOID) {
+                            state.getBlock() == Blocks.STRUCTURE_VOID ||
+                            StructureNBTParser.isFlowingFluid(state, state.getBlock())) {
                         continue;
                     }
 
@@ -174,10 +177,22 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
         return new ArrayList<>(lootEntries.values());
     }
 
+    public void replaceEntities(@Nullable List<EntityEntry> entityEntries) {
+        entities.clear();
+        if (entityEntries == null) return;
+
+        for (EntityEntry entityEntry : entityEntries) addEntity(entityEntry);
+    }
+
+    public void setPreviewLayers(@Nullable List<StructureInfo.StructureLayer> layers) {
+        previewLayers = layers != null ? new ArrayList<>(layers) : Collections.emptyList();
+    }
+
     public void applyTo(StructureInfo info) {
-        info.setBlocks(buildBlocks());
-        info.setEntities(buildEntities());
-        info.setLootTables(buildLootEntries());
+        info.withBlocks(buildBlocks());
+        info.withEntities(buildEntities());
+        info.withLootTables(buildLootEntries());
+        if (!previewLayers.isEmpty()) info.withLayers(previewLayers);
     }
 
     public void fromPreviewData(GeneratedPreviewData previewData) {

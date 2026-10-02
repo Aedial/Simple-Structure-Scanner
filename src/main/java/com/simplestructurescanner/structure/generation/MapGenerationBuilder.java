@@ -42,6 +42,7 @@ public final class MapGenerationBuilder {
     private long startNanos;
     private boolean built;
     private boolean captured;
+    private boolean generationFailed;
     private List<StructureLayer> capturedLayers = Collections.emptyList();
 
     public MapGenerationBuilder(int sizeX, int sizeZ, int y, IBlockState material) {
@@ -135,6 +136,7 @@ public final class MapGenerationBuilder {
 
             map.accept(world, new Random(seed));
         } catch (Exception e) {
+            generationFailed = true;
             SimpleStructureScanner.LOGGER.error("Map generation failed for {}: {}",
                 mapName, e.getMessage(), e);
         } finally {
@@ -168,11 +170,19 @@ public final class MapGenerationBuilder {
         if (captured) return capturedLayers;
 
         captured = true;
+        if (generationFailed) return capturedLayers;
+
         SparkWrapper spark = null;
         if (MAP_PROFILE) spark = SparkWrapper.start(mapName + "-capture", 1);
 
         try {
             capturedLayers = world.capture(removedBlocks);
+            return capturedLayers;
+        } catch (Exception e) {
+            generationFailed = true;
+            SimpleStructureScanner.LOGGER.error("Map capture failed for {}: {}",
+                mapName, e.getMessage(), e);
+
             return capturedLayers;
         } finally {
             if (spark != null) spark.stop();
@@ -187,8 +197,16 @@ public final class MapGenerationBuilder {
      */
     public List<NBTTagCompound> getGeneratedEntityData() {
         if (!built) throw new IllegalStateException("Build the map before reading generated entities");
+        if (generationFailed) return Collections.emptyList();
 
         return world.getGeneratedEntityData();
+    }
+
+    /**
+     * Reports whether building or capturing this map failed.
+     */
+    public boolean hasGenerationFailed() {
+        return generationFailed;
     }
 
     private static void addLayer(List<Layer> layers, int sizeY, IBlockState material) {

@@ -1,9 +1,16 @@
 package com.simplestructurescanner.structure;
 
+import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 import javax.annotation.Nullable;
 
@@ -17,11 +24,18 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.simplestructurescanner.Tags;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
+import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
+import com.simplestructurescanner.structure.util.StructureContentAccumulator;
+
 
 /**
  * Contains information about a structure.
  */
 public class StructureInfo {
+    private static final String STRUCTURE_OVERRIDE_DIRECTORY = "structures";
+
     private final ResourceLocation id;
     private final LocalizedText displayName;
     private final String providerId;
@@ -40,6 +54,9 @@ public class StructureInfo {
     private LocalizedText rarity;
 
     private PreviewSnapshot previewSnapshot;
+    private boolean contentSourceSelected;
+    private boolean configOverrideLoaded;
+    private boolean mapContentsLoaded;
 
     public StructureInfo(ResourceLocation id, LocalizedText displayName, String providerId, int sizeX, int sizeY, int sizeZ) {
         this.id = id;
@@ -55,6 +72,13 @@ public class StructureInfo {
         this.validDimensions = null;
         this.rarity = null;
         this.previewSnapshot = PreviewSnapshot.empty();
+        this.contentSourceSelected = false;
+        this.configOverrideLoaded = false;
+        this.mapContentsLoaded = false;
+    }
+
+    public StructureInfo(ResourceLocation id, LocalizedText displayName, String providerId) {
+        this(id, displayName, providerId, 0, 0, 0);
     }
 
     public ResourceLocation getId() {
@@ -81,12 +105,49 @@ public class StructureInfo {
         return sizeZ;
     }
 
+    public StructureInfo withSize(int sizeX, int sizeY, int sizeZ) {
+        this.sizeX = Math.max(sizeX, 0);
+        this.sizeY = Math.max(sizeY, 0);
+        this.sizeZ = Math.max(sizeZ, 0);
+
+        return this;
+    }
+
     public List<BlockEntry> getBlocks() {
         return blocks;
     }
 
     public void setBlocks(List<BlockEntry> blocks) {
         this.blocks = blocks != null ? blocks : Collections.emptyList();
+    }
+
+    public StructureInfo withBlocks(BlockEntry... blocks) {
+        return withBlocks(blocks != null ? Arrays.asList(blocks) : null);
+    }
+
+    public StructureInfo withBlocks(@Nullable List<BlockEntry> blocks) {
+        if (configOverrideLoaded || blocks == null || blocks.isEmpty()) return this;
+
+        StructureContentAccumulator contents = new StructureContentAccumulator();
+        for (BlockEntry block : this.blocks) contents.addBlock(block);
+        for (BlockEntry block : blocks) contents.addBlock(block);
+        setBlocks(contents.buildBlocks());
+
+        return this;
+    }
+
+    public StructureInfo withBlocksForMap(BlockEntry... blocks) {
+        if (!mapContentsLoaded) return this;
+
+        return withBlocks(blocks);
+    }
+
+    public StructureInfo withFallbackBlocks(@Nullable List<BlockEntry> blocks) {
+        if (configOverrideLoaded || !this.blocks.isEmpty()) return this;
+
+        setBlocks(blocks);
+
+        return this;
     }
 
     public List<LootEntry> getLootTables() {
@@ -97,12 +158,81 @@ public class StructureInfo {
         this.lootTables = lootTables != null ? lootTables : Collections.emptyList();
     }
 
+    public StructureInfo withLootTables(LootEntry... lootTables) {
+        return withLootTables(lootTables != null ? Arrays.asList(lootTables) : null);
+    }
+
+    public StructureInfo withLootTables(@Nullable List<LootEntry> lootTables) {
+        if (configOverrideLoaded || lootTables == null || lootTables.isEmpty()) return this;
+
+        StructureContentAccumulator contents = new StructureContentAccumulator();
+        for (LootEntry lootTable : this.lootTables) contents.addLootEntry(lootTable);
+        for (LootEntry lootTable : lootTables) contents.addLootEntry(lootTable);
+        setLootTables(contents.buildLootEntries());
+
+        return this;
+    }
+
+    public StructureInfo withLootTablesForMap(LootEntry... lootTables) {
+        if (!mapContentsLoaded) return this;
+
+        return withLootTables(lootTables);
+    }
+
+    public StructureInfo withFallbackLootTables(LootEntry... lootTables) {
+        return withFallbackLootTables(lootTables != null ? Arrays.asList(lootTables) : null);
+    }
+
+    public StructureInfo withFallbackLootTables(@Nullable List<LootEntry> lootTables) {
+        if (configOverrideLoaded || !this.lootTables.isEmpty()) return this;
+
+        setLootTables(lootTables);
+
+        return this;
+    }
+
     public List<EntityEntry> getEntities() {
         return entities;
     }
 
     public void setEntities(List<EntityEntry> entities) {
         this.entities = entities != null ? entities : Collections.emptyList();
+    }
+
+    public StructureInfo withEntities(EntityEntry... entities) {
+        return withEntities(entities != null ? Arrays.asList(entities) : null);
+    }
+
+    public StructureInfo withEntities(@Nullable List<EntityEntry> entities) {
+        if (configOverrideLoaded || entities == null || entities.isEmpty()) return this;
+
+        StructureContentAccumulator contents = new StructureContentAccumulator();
+        for (EntityEntry entity : this.entities) contents.addEntity(entity);
+        for (EntityEntry entity : entities) contents.addEntity(entity);
+        setEntities(contents.buildEntities());
+
+        return this;
+    }
+
+    /**
+     * Adds entities only when a generated map supplied this structure's contents.
+     */
+    public StructureInfo withEntitiesForMap(EntityEntry... entities) {
+        if (!mapContentsLoaded) return this;
+
+        return withEntities(entities);
+    }
+
+    public StructureInfo withFallbackEntities(EntityEntry... entities) {
+        return withFallbackEntities(entities != null ? Arrays.asList(entities) : null);
+    }
+
+    public StructureInfo withFallbackEntities(@Nullable List<EntityEntry> entities) {
+        if (configOverrideLoaded || !this.entities.isEmpty()) return this;
+
+        setEntities(entities);
+
+        return this;
     }
 
     @Nullable
@@ -121,6 +251,27 @@ public class StructureInfo {
 
     public void setValidDimensions(Set<DimensionInfo> validDimensions) {
         this.validDimensions = validDimensions;
+    }
+
+    public StructureInfo withMetadata(@Nullable Set<Biome> biomes,
+            @Nullable Set<DimensionInfo> dimensions, @Nullable LocalizedText rarity) {
+        return withMetadata(biomes, dimensions).withRarity(rarity);
+    }
+
+    public StructureInfo withMetadata(@Nullable Set<Biome> biomes,
+            @Nullable Set<DimensionInfo> dimensions) {
+        setValidBiomes(biomes);
+        setValidDimensions(dimensions);
+
+        return this;
+    }
+
+    // TODO: Add a Rarity enum for common, rare, etc
+    // TODO: Maybe add some convenience methods that mirror RarityTextHelper. The lengthy kind.
+    public StructureInfo withRarity(@Nullable LocalizedText rarity) {
+        setRarity(rarity);
+
+        return this;
     }
 
     /**
@@ -164,6 +315,164 @@ public class StructureInfo {
 
     public PreviewSnapshot getPreviewSnapshot() {
         return previewSnapshot;
+    }
+
+    public StructureInfo withLayers(@Nullable List<StructureLayer> layers) {
+        if (!configOverrideLoaded) setLayers(layers);
+
+        return this;
+    }
+
+    /**
+     * Loads the bundled NBT file after checking the provider's config override.
+     */
+    public StructureInfo fromBundled() {
+        if (loadConfigOverride()) return this;
+
+        StructureNBTParser.ParsedStructure parsed = StructureNBTParser.parseBundledStructure(
+            Tags.MODID, providerId + "/" + id.getPath());
+        if (parsed != null) applyContents(parsed);
+
+        return this;
+    }
+
+    /**
+     * Applies a parsed NBT structure after checking the provider's config override.
+     */
+    public StructureInfo fromParsedStructure(@Nullable StructureNBTParser.ParsedStructure parsed) {
+        if (loadConfigOverride()) return this;
+
+        if (parsed != null) applyContents(parsed);
+
+        return this;
+    }
+
+    public StructureInfo withParsedStructure(@Nullable StructureNBTParser.ParsedStructure parsed) {
+        if (configOverrideLoaded || parsed == null) return this;
+
+        applyContents(parsed);
+
+        return this;
+    }
+
+    /**
+     * Captures the completed map after checking the provider's config override.
+     */
+    public StructureInfo fromMap(MapGenerationBuilder map) {
+        if (loadConfigOverride()) return this;
+
+        applyMap(map);
+
+        return this;
+    }
+
+    /**
+     * Captures a map and uses bundled NBT when generation fails.
+     */
+    public StructureInfo fromMapWithBundledFallback(MapGenerationBuilder map) {
+        if (loadConfigOverride()) return this;
+
+        if (applyMap(map)) return this;
+
+        StructureNBTParser.ParsedStructure parsed = StructureNBTParser.parseBundledStructure(
+            Tags.MODID, providerId + "/" + id.getPath());
+        if (parsed != null) applyContents(parsed);
+
+        return this;
+    }
+
+    /**
+     * Builds preview layers after checking the provider's config override.
+     */
+    public StructureInfo fromLayersSupplier(Function<StructureInfo, List<StructureLayer>> supplier) {
+        if (loadConfigOverride()) return this;
+
+        if (supplier == null) return this;
+
+        List<StructureLayer> layers = supplier.apply(this);
+        setLayers(layers);
+
+        StructureContentAccumulator contents = new StructureContentAccumulator();
+        contents.addContentsFromLayers(layers);
+        contents.applyTo(this);
+
+        return this;
+    }
+
+    /**
+     * Builds content through a provider callback after checking the config override.
+     */
+    public StructureInfo fromContentsSupplier(Consumer<StructureInfo> supplier) {
+        if (loadConfigOverride()) return this;
+
+        if (supplier != null) supplier.accept(this);
+
+        return this;
+    }
+
+    /**
+     * Applies accumulated content after checking the provider's config override.
+     */
+    public StructureInfo fromContentsSupplier(Supplier<StructureContentAccumulator> supplier) {
+        if (loadConfigOverride()) return this;
+
+        if (supplier == null) return this;
+
+        StructureContentAccumulator contents = supplier.get();
+        if (contents != null) contents.applyTo(this);
+
+        return this;
+    }
+
+    private boolean loadConfigOverride() {
+        if (contentSourceSelected) {
+            throw new IllegalStateException("Structure content source has already been selected: " + id);
+        }
+
+        contentSourceSelected = true;
+        StructureNBTParser.ParsedStructure override = getConfigOverride();
+        if (override == null) return false;
+
+        configOverrideLoaded = true;
+        applyContents(override);
+
+        return true;
+    }
+
+    @Nullable
+    private StructureNBTParser.ParsedStructure getConfigOverride() {
+        File configRoot = SimpleStructureScannerConfig.getConfigRootDirectory();
+        if (configRoot == null) return null;
+
+        File providerDirectory = new File(new File(configRoot, STRUCTURE_OVERRIDE_DIRECTORY), providerId);
+        File overrideFile = new File(providerDirectory, id.getPath() + ".nbt");
+        if (!overrideFile.isFile()) return null;
+
+        return StructureNBTParser.parseStructureFile(overrideFile);
+    }
+
+    private boolean applyMap(@Nullable MapGenerationBuilder map) {
+        if (map == null || map.hasGenerationFailed()) return false;
+
+        List<StructureLayer> layers = map.capture();
+        if (map.hasGenerationFailed()) return false;
+
+        setLayers(layers);
+        StructureContentAccumulator contents = new StructureContentAccumulator();
+        contents.addContentsFromLayers(layers);
+        contents.addEntityData(map.getGeneratedEntityData());
+        contents.applyTo(this);
+        mapContentsLoaded = true;
+
+        return true;
+    }
+
+    private void applyContents(StructureNBTParser.ParsedStructure parsed) {
+        setBlocks(parsed.blocks);
+        setLayers(parsed.layers);
+        setEntities(parsed.entities);
+        setLootTables(parsed.lootTables);
+        withSize(parsed.sizeX, parsed.sizeY, parsed.sizeZ);
     }
 
     /**
@@ -240,6 +549,54 @@ public class StructureInfo {
         if (blocks.isEmpty()) return PreviewSnapshot.empty();
 
         return new PreviewSnapshot(blocks, minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    /**
+     * Builds preview layers from blocks placed at their local positions.
+     */
+    public static List<StructureLayer> createLayers(Map<BlockPos, IBlockState> blocks,
+            @Nullable Map<BlockPos, NBTTagCompound> blockEntityDataByPos) {
+        if (blocks == null || blocks.isEmpty()) return Collections.emptyList();
+
+        int minX = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+
+        for (Map.Entry<BlockPos, IBlockState> entry : blocks.entrySet()) {
+            BlockPos pos = entry.getKey();
+            if (pos == null || entry.getValue() == null) continue;
+
+            minX = Math.min(minX, pos.getX());
+            maxX = Math.max(maxX, pos.getX());
+            minZ = Math.min(minZ, pos.getZ());
+            maxZ = Math.max(maxZ, pos.getZ());
+        }
+
+        if (minX == Integer.MAX_VALUE) return Collections.emptyList();
+
+        int width = maxX - minX + 1;
+        int depth = maxZ - minZ + 1;
+        Map<Integer, StructureLayer> layers = new TreeMap<>();
+
+        for (Map.Entry<BlockPos, IBlockState> entry : blocks.entrySet()) {
+            BlockPos pos = entry.getKey();
+            IBlockState state = entry.getValue();
+            if (pos == null || state == null) continue;
+
+            StructureLayer layer = layers.get(pos.getY());
+            if (layer == null) {
+                layer = new StructureLayer(pos.getY(), width, depth, minX, minZ);
+                layers.put(pos.getY(), layer);
+            }
+
+            NBTTagCompound blockEntityData = blockEntityDataByPos != null
+                ? blockEntityDataByPos.get(pos)
+                : null;
+            layer.setBlockState(pos.getX() - minX, pos.getZ() - minZ, state, blockEntityData);
+        }
+
+        return new ArrayList<>(layers.values());
     }
 
     public static class PreviewSnapshot {
@@ -432,6 +789,14 @@ public class StructureInfo {
         @Nullable
         public final ItemStack sourceStack;
 
+        public LootEntry(String lootTableId, String containerTypeKey) {
+            this(new ResourceLocation(lootTableId), containerTypeKey);
+        }
+
+        public LootEntry(ResourceLocation lootTableId, String containerTypeKey) {
+            this(lootTableId, Collections.emptyList(), LocalizedText.translatable(containerTypeKey));
+        }
+
         public LootEntry(@Nullable ResourceLocation lootTableId, List<ItemStack> possibleDrops,
                 LocalizedText containerType) {
             this(lootTableId, possibleDrops, containerType,
@@ -463,6 +828,14 @@ public class StructureInfo {
         public final ResourceLocation entityId;
         public final int count;
         public final boolean spawner;
+
+        public EntityEntry(String entityId, int count) {
+            this(new ResourceLocation(entityId), count);
+        }
+
+        public EntityEntry(String entityId, int count, boolean spawner) {
+            this(new ResourceLocation(entityId), count, spawner);
+        }
 
         public EntityEntry(ResourceLocation entityId, int count) {
             this(entityId, count, false);

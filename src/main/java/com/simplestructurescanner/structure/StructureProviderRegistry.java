@@ -12,23 +12,24 @@ import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
+import com.simplestructurescanner.structure.providers.StructureProvider;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.config.SimpleStructureScannerConfig;
-import com.simplestructurescanner.structure.abyssalcraft.AbyssalCraftStructureProvider;
-import com.simplestructurescanner.structure.aether.AetherStructureProvider;
-import com.simplestructurescanner.structure.astralsorcery.AstralSorceryStructureProvider;
-import com.simplestructurescanner.structure.bomd.BomdStructureProvider;
-import com.simplestructurescanner.structure.cqrepoured.ChocolateQuestRepouredStructureProvider;
-import com.simplestructurescanner.structure.external.ExternalStructureProviderLoader;
-import com.simplestructurescanner.structure.iceandfire.IceAndFireStructureProvider;
-import com.simplestructurescanner.structure.pillar.PillarStructureProvider;
-import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexStructureProvider;
-import com.simplestructurescanner.structure.vanilla.VanillaStructureProvider;
-import com.simplestructurescanner.structure.wizardry.WizardryStructureProvider;
+import com.simplestructurescanner.structure.providers.abyssalcraft.AbyssalCraftStructureProvider;
+import com.simplestructurescanner.structure.providers.aether.AetherStructureProvider;
+import com.simplestructurescanner.structure.providers.astralsorcery.AstralSorceryStructureProvider;
+import com.simplestructurescanner.structure.providers.bomd.BomdStructureProvider;
+import com.simplestructurescanner.structure.providers.cqrepoured.ChocolateQuestRepouredStructureProvider;
+import com.simplestructurescanner.structure.providers.external.ExternalStructureProviderLoader;
+import com.simplestructurescanner.structure.providers.iceandfire.IceAndFireStructureProvider;
+import com.simplestructurescanner.structure.providers.pillar.PillarStructureProvider;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RecurrentComplexStructureProvider;
+import com.simplestructurescanner.structure.providers.vanilla.VanillaStructureProvider;
+import com.simplestructurescanner.structure.providers.wizardry.WizardryStructureProvider;
 
 
 /**

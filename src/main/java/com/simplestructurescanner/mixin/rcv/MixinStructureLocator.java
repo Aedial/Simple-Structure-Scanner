@@ -10,9 +10,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import net.minecraft.util.math.ChunkPos;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.structure.recurrentcomplex.RCVRandomCache;
-import com.simplestructurescanner.structure.recurrentcomplex.RCVPredictionContext;
-import com.simplestructurescanner.structure.recurrentcomplex.RCVRandomSeedAccess;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RCVRandomCache;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RCVPredictionContext;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RCVRandomSeedAccess;
 
 
 /**

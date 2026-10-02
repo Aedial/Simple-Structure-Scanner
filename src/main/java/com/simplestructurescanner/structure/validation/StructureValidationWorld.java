@@ -17,7 +17,7 @@ import net.minecraft.world.storage.ISaveHandler;
 import net.minecraft.world.storage.WorldInfo;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexStructureSearcher;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RecurrentComplexStructureSearcher;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 
 

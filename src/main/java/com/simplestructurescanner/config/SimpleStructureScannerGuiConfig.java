@@ -53,12 +53,12 @@ public class SimpleStructureScannerGuiConfig extends GuiConfig {
             if (SimpleStructureScannerConfig.isHiddenCategory(category.getName())) continue;
             if (category.getChildElements().isEmpty()) continue;
 
-            if ("client".equals(category.getName())) {
+            if (matchesName(category, "client")) {
                 list.add(createClientCategory(category));
                 continue;
             }
 
-            if ("enabledProviders".equals(category.getName())) {
+            if (matchesName(category, "enabledProviders")) {
                 list.add(createProviderCategory(category));
                 continue;
             }
@@ -89,7 +89,7 @@ public class SimpleStructureScannerGuiConfig extends GuiConfig {
     private static IConfigElement createProviderCategory(IConfigElement category) {
         List<IConfigElement> providerElements = new ArrayList<>();
         for (IConfigElement childCategory : category.getChildElements()) {
-            if (!"providers".equals(childCategory.getName())) continue;
+            if (!matchesName(childCategory, "providers")) continue;
 
             for (IConfigElement element : childCategory.getChildElements()) {
                 providerElements.add(new ProviderConfigElement(element));
@@ -101,5 +101,9 @@ public class SimpleStructureScannerGuiConfig extends GuiConfig {
             "config.structurescanner.enabledProviders",
             providerElements
         );
+    }
+
+    private static boolean matchesName(IConfigElement element, String expectedName) {
+        return expectedName.equalsIgnoreCase(element.getName());
     }
 }

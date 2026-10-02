@@ -26,7 +26,7 @@ import com.simplestructurescanner.structure.LootTableResolver.LootItem;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntryKind;
-import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexLootResolver;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RecurrentComplexLootResolver;
 
 
 /**

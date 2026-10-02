@@ -47,7 +47,7 @@ import com.simplestructurescanner.util.WorldUtils;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureSearchOverrides;
-import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexStructureProvider;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RecurrentComplexStructureProvider;
 import com.simplestructurescanner.searching.StructureSearchManager;
 
 

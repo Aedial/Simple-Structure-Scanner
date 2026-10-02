@@ -60,7 +60,7 @@ public class DimensionInfo {
     private static LocalizedText getDefaultDisplayName(int dimensionId) {
         if (DimensionManager.isDimensionRegistered(dimensionId)) {
             DimensionType dimensionType = DimensionManager.getProviderType(dimensionId);
-            if (dimensionType != null) return LocalizedText.translatable("gui.structurescanner.dimension.unknown",
+            if (dimensionType != null) return LocalizedText.translatable("gui.structurescanner.dimension.known",
                 dimensionType.getName(), dimensionId);
         }
 

@@ -11,9 +11,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import net.minecraftforge.event.terraingen.PopulateChunkEvent;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.structure.recurrentcomplex.RCVRandomCache;
-import com.simplestructurescanner.structure.recurrentcomplex.RCVPredictionContext;
-import com.simplestructurescanner.structure.recurrentcomplex.RCVRandomSeedAccess;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RCVRandomCache;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RCVPredictionContext;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RCVRandomSeedAccess;
 
 
 /**

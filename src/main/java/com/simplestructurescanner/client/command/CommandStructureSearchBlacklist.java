@@ -22,7 +22,7 @@ import net.minecraft.util.text.TextComponentTranslation;
 import net.minecraftforge.client.IClientCommand;
 
 import com.simplestructurescanner.searching.StructureSearchManager;
-import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.providers.StructureProvider;
 import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureSearchOverrides;
 

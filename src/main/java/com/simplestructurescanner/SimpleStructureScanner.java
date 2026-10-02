@@ -11,7 +11,7 @@ import net.minecraftforge.fml.common.event.FMLPostInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLServerStoppedEvent;
 
-import com.simplestructurescanner.structure.recurrentcomplex.RCVRandomCache;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RCVRandomCache;
 
 
 @Mod(

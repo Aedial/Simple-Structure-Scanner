@@ -34,7 +34,7 @@ import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntryKind;
-import com.simplestructurescanner.structure.recurrentcomplex.RecurrentComplexLootResolver;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RecurrentComplexLootResolver;
 
 
 /**

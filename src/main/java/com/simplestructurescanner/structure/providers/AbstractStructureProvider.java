@@ -1,0 +1,147 @@
+package com.simplestructurescanner.structure.providers;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import javax.annotation.Nullable;
+import javax.annotation.ParametersAreNonnullByDefault;
+
+import net.minecraft.world.biome.Biome;
+import net.minecraft.util.ResourceLocation;
+import net.minecraftforge.fml.common.Loader;
+
+import com.simplestructurescanner.structure.LocalizedText;
+import com.simplestructurescanner.structure.StructureInfo;
+import com.simplestructurescanner.structure.StructureInfo.LootEntry;
+import com.simplestructurescanner.structure.StructureNBTParser.StructureContentSink;
+import com.simplestructurescanner.structure.util.StructureTranslationKeys;
+
+
+/**
+ * Shared provider scaffold for structure catalogs.
+ */
+public abstract class AbstractStructureProvider implements StructureProvider {
+    protected static final String CHEST_KEY = "gui.structurescanner.loot.chest";
+    protected static final String MINECART_CHEST_KEY = "gui.structurescanner.loot.minecart_chest";
+
+    /** The unique ID of this structure provider. Used for filtering and identification. Does not need to match the mod ID. */
+    private final String providerId;
+    /** The namespace used for all structures registered by this provider. Usually matches the provider ID. */
+    private final String structureNamespace;
+    /** I18n key of the mod providing these structures. */
+    private final String modName;
+    /** The ID of the mod the structures depends on. Should always be provided for modded structures. */
+    @Nullable
+    private final String requiredModId;
+
+    protected final List<ResourceLocation> knownStructures = new ArrayList<>();
+    protected final Map<ResourceLocation, StructureInfo> structureInfos = new LinkedHashMap<>();
+
+    /**
+     * Creates a structure provider that is always available, regardless of mod presence.
+     * Should **NEVER** be used for modded structures, as the provider will try to load resources
+     * that will not exist if the mod is not present, causing errors and crashes.
+     * <p>
+     * @param providerId Unique ID of this structure provider. Used for filtering and identification.
+     *                   Does not need to match the mod ID.
+     * @param structureNamespace Namespace used for all structures registered by this provider.
+     *                           Usually matches the provider ID.
+     * @param modName I18n key of the mod providing these structures.
+     */
+    @ParametersAreNonnullByDefault
+    protected AbstractStructureProvider(String providerId, String structureNamespace, String modName) {
+        this.providerId = providerId;
+        this.structureNamespace = structureNamespace;
+        this.modName = modName;
+        this.requiredModId = null;
+    }
+
+    /**
+     * Creates a structure provider that is only available if the required mod is present.
+     * <p>
+     * @param providerId Unique ID of this structure provider. Used for filtering and identification. Does not need to match the mod ID.
+     * @param structureNamespace Namespace used for all structures registered by this provider. Usually matches the provider ID.
+     * @param modName I18n key of the mod providing these structures.
+     * @param requiredModId The ID of the mod the structures depends on. Should always be provided for modded structures.
+     */
+    @ParametersAreNonnullByDefault
+    protected AbstractStructureProvider(String providerId, String structureNamespace, String modName, String requiredModId) {
+        this.providerId = providerId;
+        this.structureNamespace = structureNamespace;
+        this.modName = modName;
+        this.requiredModId = requiredModId;
+    }
+
+    @Override
+    public String getProviderId() {
+        return providerId;
+    }
+
+    @Override
+    public String getModName() {
+        return modName;
+    }
+
+    @Override
+    public boolean isAvailable() {
+        return requiredModId == null || Loader.isModLoaded(requiredModId);
+    }
+
+    @Override
+    public List<ResourceLocation> getStructureIds() {
+        return new ArrayList<>(knownStructures);
+    }
+
+    @Override
+    @Nullable
+    public StructureInfo getStructureInfo(ResourceLocation structureId) {
+        return structureInfos.get(structureId);
+    }
+
+    /**
+     * Providers rebuild their structure catalog during postInit and reloads, so the shared
+     * collections need an explicit reset before repopulating them.
+     */
+    protected void resetStructures() {
+        knownStructures.clear();
+        structureInfos.clear();
+    }
+
+    protected ResourceLocation createStructureId(String path) {
+        return new ResourceLocation(structureNamespace, path);
+    }
+
+    protected StructureInfo register(String path) {
+        return register(createStructureId(path));
+    }
+
+    protected StructureInfo register(ResourceLocation id) {
+        return register(id, LocalizedText.translatable(StructureTranslationKeys.structureNameKey(id)));
+    }
+
+    protected StructureInfo register(ResourceLocation id, LocalizedText displayName) {
+        StructureInfo info = new StructureInfo(id, displayName, providerId);
+
+        knownStructures.add(id);
+        structureInfos.put(id, info);
+
+        return info;
+    }
+
+    protected Set<Biome> biomes(Biome... biomes) {
+        return Stream.of(biomes).collect(Collectors.toSet());
+    }
+
+    protected void addChestLoot(StructureContentSink builder, String namespace, String path) {
+        addChestLoot(builder, new ResourceLocation(namespace, path));
+    }
+
+    protected void addChestLoot(StructureContentSink builder, ResourceLocation lootTableId) {
+        builder.addLootEntry(new LootEntry(lootTableId, CHEST_KEY));
+    }
+}

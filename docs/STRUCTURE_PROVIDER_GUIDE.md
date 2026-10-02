@@ -44,7 +44,7 @@ Create a class that implements `StructureProvider`:
 ```java
 package com.yourmod.structure;
 
-import com.simplestructurescanner.structure.StructureProvider;
+import com.simplestructurescanner.structure.providers.StructureProvider;
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
 import net.minecraft.util.ResourceLocation;

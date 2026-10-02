@@ -18,7 +18,7 @@ import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.gen.IChunkGenerator;
 
 import com.simplestructurescanner.SimpleStructureScanner;
-import com.simplestructurescanner.structure.recurrentcomplex.RCVPredictionContext;
+import com.simplestructurescanner.structure.providers.recurrentcomplex.RCVPredictionContext;
 
 /**
  * Generates and caches chunks for {@link StructureValidationWorld}.
