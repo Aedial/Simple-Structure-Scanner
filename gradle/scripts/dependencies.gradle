@@ -64,4 +64,12 @@ dependencies {
     // ---- Optional: Recurrent Complex Volts (for mixin targets) ----
     devOnlyNonPublishable rfg.deobf("curse.maven:recurrent-complex-volts-1505551:8543203")
 
+    // ---- Structure Providers ----
+
+    // TODO: Should add the providers here, as runtimeOnly. How do we handle regression testing for them?
+    //       An update for a provider may break it, and the only tell is an error in the logs.
+
+    // ---- Dev-only: Spark ----
+    runtimeOnly rfg.deobf("curse.maven:spark-unforged-900927:6751437")
+
 }

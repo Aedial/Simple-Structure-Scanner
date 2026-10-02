@@ -242,7 +242,7 @@ public final class MapGenerationWorld extends World {
         for (int y = 255; y >= 0; y--) {
             BlockPos pos = new BlockPos(x, y, z);
             IBlockState state = getBlockState(pos);
-            if (!state.getBlock().isAir(state, this, pos)) return pos;
+            if (state.getMaterial().blocksMovement() && state.getBlock() != Blocks.LEAVES) return pos.up();
         }
 
         return new BlockPos(x, 0, z);

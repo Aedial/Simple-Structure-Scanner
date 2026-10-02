@@ -16,12 +16,14 @@ import net.minecraftforge.fml.common.FMLCommonHandler;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
+import com.simplestructurescanner.util.SparkWrapper;
 
 
 /**
  * Configures a finite terrain, generates a map, and captures its raw block layers.
  */
 public final class MapGenerationBuilder {
+    private static final boolean MAP_PROFILE = Boolean.getBoolean("simplestructurescanner.mapProfile");
 
     private final int sizeX;
     private final int sizeZ;
@@ -119,18 +121,24 @@ public final class MapGenerationBuilder {
         startNanos = System.nanoTime();
 
         if (mapName == null) mapName = map.getClass().getName();
-        world = new MapGenerationWorld(
-            sizeX, sizeZ, y,
-            material, aboveLayers, belowLayers,
-            originX, originZ, seed, biome
-        );
+
+        SparkWrapper spark = null;
+        if (MAP_PROFILE) spark = SparkWrapper.start(mapName + "-build", 1);
 
         // We isolate individual map generation failures, so the rest of the provider can go through
         try {
+            world = new MapGenerationWorld(
+                sizeX, sizeZ, y,
+                material, aboveLayers, belowLayers,
+                originX, originZ, seed, biome
+            );
+
             map.accept(world, new Random(seed));
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.error("Map generation failed for {}: {}",
                 mapName, e.getMessage(), e);
+        } finally {
+            if (spark != null) spark.stop();
         }
 
         built = true;
@@ -160,10 +168,15 @@ public final class MapGenerationBuilder {
         if (captured) return capturedLayers;
 
         captured = true;
+        SparkWrapper spark = null;
+        if (MAP_PROFILE) spark = SparkWrapper.start(mapName + "-capture", 1);
+
         try {
             capturedLayers = world.capture(removedBlocks);
             return capturedLayers;
         } finally {
+            if (spark != null) spark.stop();
+
             long elapsedMillis = (System.nanoTime() - startNanos) / 1000000L;
             SimpleStructureScanner.LOGGER.debug("Generated map {} in {} ms", mapName, elapsedMillis);
         }

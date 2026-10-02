@@ -49,6 +49,7 @@ import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.TerrainHeightCalculator;
 import com.simplestructurescanner.structure.generation.MapGenerationWorld;
+import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.SeedHelper;
@@ -201,7 +202,8 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         applyStructureContentsFromNbt("endcity");
 
         // Structures from Map - FIXME: Improve performance. It takes multiple seconds *per* structure
-        // FIXME: Some blocks seem to be missing in modded houses and the foot of light poles
+        // FIXME: Some houses require a "real" world, which is annoying...
+        //        They should be handled by mixin in a case-by-case basis.
         /* if (!applyStructureContentsFromNbtOverride("village")) {
             MapGenerationBuilder map = new MapGenerationBuilder(128, 128, 63, GRASS)
                 .withName("minecraft:village")
@@ -210,21 +212,22 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
             applyGeneratedStructure("village", map);
         }
 
-        // FIXME: Creashes because RandomThings expects a WorldServer for Monument loot
+        // FIXME: Crashes because RandomThings expects a WorldServer for Monument loot (╯°□°）╯︵ ┻━┻
+        //        Just why...
         if (!applyStructureContentsFromNbtOverride("monument")) {
             MapGenerationBuilder map = new MapGenerationBuilder(64, 64, 38, GRAVEL)
                 .withName("minecraft:monument")
-                .withOrigin(8, 8)  // Monument is not centered by default, its origin needs to be adjusted
+                .withOrigin(8, 8)                   // Monument's MapGen is centered to 7.5, 7.5
                 .withAboveLayers(64 - 38, WATER)    // need water for it to generate correctly
                 .build(VanillaStructureProvider::generateMonument, Biomes.DEEP_OCEAN);
             applyGeneratedStructure("monument", map);
             addEntities("monument", createEntityEntry("minecraft:guardian", 30));
         }
 
-        // FIXME: Seems to get cut, likely needs origin shift
         if (!applyStructureContentsFromNbtOverride("mansion")) {
             MapGenerationBuilder map = new MapGenerationBuilder(128, 128, 63, GRASS)
                 .withName("minecraft:mansion")
+                .withOrigin(-32, 16)                // Mansion's start is near the entrance
                 .build(VanillaStructureProvider::generateMansion, Biomes.ROOFED_FOREST);
             applyGeneratedStructure("mansion", map);
         }
@@ -234,7 +237,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
                 .withName("minecraft:endcity")
                 .build(VanillaStructureProvider::generateEndCity, Biomes.SKY);
             applyGeneratedStructure("endcity", map);
-        }*/
+        } */
 
         // Fill in remaining data (loot tables, entities) and fallback for structures without NBT data
         populateStronghold();
