@@ -73,6 +73,8 @@ public final class MapGenerationWorld extends World {
     private final Map<Long, TileEntity> tileEntities = new HashMap<>();
     private final List<NBTTagCompound> generatedEntityData = new ArrayList<>();
     private final Set<Block> captureRemovedBlocks = new HashSet<>();
+    @Nullable
+    private BlockPos captureOrigin;
 
     MapGenerationWorld(int sizeX, int sizeZ, int platformY, IBlockState platformMaterial,
             List<MapGenerationBuilder.Layer> aboveLayers, List<MapGenerationBuilder.Layer> belowLayers,
@@ -132,10 +134,13 @@ public final class MapGenerationWorld extends World {
 
         Block oldBlock = oldState.getBlock();
         Block newBlock = newState.getBlock();
-        if (!isRemote) oldBlock.breakBlock(this, pos, oldState);
+        TileEntity oldTileEntity = tileEntities.get(pos.toLong());
+
         updateDelta(pos, newState);
-        if (oldBlock.hasTileEntity(oldState)) removeTileEntity(pos);
-        if (!isRemote) newBlock.onBlockAdded(this, pos, newState);
+        if (!isRemote && oldBlock != newBlock) oldBlock.breakBlock(this, pos, oldState);
+        if (oldTileEntity != null && oldTileEntity.shouldRefresh(this, pos, oldState, newState)) removeTileEntity(pos);
+        if (!isRemote && oldBlock != newBlock) newBlock.onBlockAdded(this, pos, newState);
+
         if (newBlock.hasTileEntity(newState)) {
             TileEntity tileEntity = getTileEntity(pos);
             if (tileEntity != null) tileEntity.updateContainingBlockInfo();
@@ -282,15 +287,22 @@ public final class MapGenerationWorld extends World {
     List<StructureLayer> capture(Set<Block> removedBlocks) {
         captureRemovedBlocks.clear();
         captureRemovedBlocks.addAll(removedBlocks);
+        captureOrigin = null;
 
         try {
             CaptureBounds bounds = findCaptureBounds();
             if (bounds == null) return Collections.emptyList();
 
+            captureOrigin = bounds.minPos;
             return buildLayers(bounds);
         } finally {
             captureRemovedBlocks.clear();
         }
+    }
+
+    @Nullable
+    BlockPos getCaptureOrigin() {
+        return captureOrigin;
     }
 
     private int getPlatformTopFilledSegment(int chunkX, int chunkZ) {

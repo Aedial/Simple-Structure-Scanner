@@ -11,10 +11,12 @@ import java.util.function.BiConsumer;
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.biome.Biome;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.capture.StructureCaptureService;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 import com.simplestructurescanner.util.SparkWrapper;
 
@@ -24,6 +26,7 @@ import com.simplestructurescanner.util.SparkWrapper;
  */
 public final class MapGenerationBuilder {
     private static final boolean MAP_PROFILE = Boolean.getBoolean("simplestructurescanner.mapProfile");
+    private static final boolean MAP_EXPORT = Boolean.getBoolean("simplestructurescanner.mapExport");
 
     private final int sizeX;
     private final int sizeZ;
@@ -177,6 +180,7 @@ public final class MapGenerationBuilder {
 
         try {
             capturedLayers = world.capture(removedBlocks);
+            if (MAP_EXPORT) exportMap(world, capturedLayers);
             return capturedLayers;
         } catch (Exception e) {
             generationFailed = true;
@@ -189,6 +193,23 @@ public final class MapGenerationBuilder {
 
             long elapsedMillis = (System.nanoTime() - startNanos) / 1000000L;
             SimpleStructureScanner.LOGGER.debug("Generated map {} in {} ms", mapName, elapsedMillis);
+        }
+    }
+
+    private void exportMap(MapGenerationWorld world, List<StructureLayer> capturedLayers) {
+        BlockPos captureOrigin = world.getCaptureOrigin();
+        if (captureOrigin == null) return;
+
+        try {
+            StructureCaptureService.SaveResult result = StructureCaptureService.saveMapCapture(
+                mapName, captureOrigin, capturedLayers, world.getGeneratedEntityData());
+            if (result != null) {
+                SimpleStructureScanner.LOGGER.info(
+                    "Exported generated map {} to {}", mapName, result.getFile());
+            }
+        } catch (Exception e) {
+            SimpleStructureScanner.LOGGER.error("Could not export generated map {}: {}", mapName,
+                e.getMessage(), e);
         }
     }
 

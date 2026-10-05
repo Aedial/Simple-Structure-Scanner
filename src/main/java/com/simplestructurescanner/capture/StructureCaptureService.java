@@ -46,6 +46,7 @@ import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.common.util.Constants;
 
 import com.simplestructurescanner.structure.BlockDisplayKey;
+import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 
 
 /**
@@ -110,6 +111,25 @@ public final class StructureCaptureService {
         if (capturedStructure == null) return null;
 
         File captureFile = createCaptureFile(getCaptureDirectory(world));
+        try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
+            CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
+        }
+
+        return new SaveResult(
+            captureFile,
+            capturedStructure.getSizeX(),
+            capturedStructure.getSizeY(),
+            capturedStructure.getSizeZ()
+        );
+    }
+
+    @Nullable
+    public static SaveResult saveMapCapture(String mapName, BlockPos captureOrigin, List<StructureLayer> layers,
+            List<NBTTagCompound> entityData) throws IOException {
+        CapturedStructure capturedStructure = buildMapCapturedStructure(captureOrigin, layers, entityData);
+        if (capturedStructure == null) return null;
+
+        File captureFile = createMapCaptureFile(getCaptureDirectory(null), mapName);
         try (OutputStream stream = Files.newOutputStream(captureFile.toPath())) {
             CompressedStreamTools.writeCompressed(capturedStructure.getStructureNbt(), stream);
         }
@@ -229,6 +249,48 @@ public final class StructureCaptureService {
             finalBounds.getSizeY(),
             finalBounds.getSizeZ()
         );
+    }
+
+    @Nullable
+    private static CapturedStructure buildMapCapturedStructure(BlockPos captureOrigin, List<StructureLayer> layers,
+            List<NBTTagCompound> entityData) {
+        if (captureOrigin == null || layers == null) return null;
+
+        Map<Long, FrozenBlock> blocks = new LinkedHashMap<>();
+        for (StructureLayer layer : layers) {
+            if (layer == null) continue;
+
+            for (int x = 0; x < layer.width; x++) {
+                for (int z = 0; z < layer.depth; z++) {
+                    IBlockState state = layer.getBlockState(x, z);
+                    if (state == null) continue;
+
+                    NBTTagCompound tileData = layer.getBlockEntityData(x, z);
+                    ResourceLocation tileEntityId = getResourceLocation(tileData, "id");
+                    ResourceLocation lootTableId = tileData != null ? getLootTableId(tileData) : null;
+                    BlockPos blockPos = captureOrigin.add(layer.xOffset + x, layer.y, layer.zOffset + z);
+                    blocks.put(blockPos.toLong(), new FrozenBlock(
+                        blockPos, state, tileData, tileEntityId, lootTableId, 0));
+                }
+            }
+        }
+
+        List<FrozenEntity> entities = new ArrayList<>();
+        if (entityData != null) {
+            for (NBTTagCompound data : entityData) {
+                if (data == null) continue;
+
+                ResourceLocation entityId = getResourceLocation(data, "id");
+                NBTTagList position = data.getTagList("Pos", Constants.NBT.TAG_DOUBLE);
+                if (entityId == null || position.tagCount() < 3) continue;
+
+                Vec3d worldPos = new Vec3d(position.getDoubleAt(0), position.getDoubleAt(1), position.getDoubleAt(2));
+                entities.add(new FrozenEntity("", entityId, new BlockPos(worldPos), worldPos, data.copy()));
+            }
+        }
+
+        return buildCapturedStructure(new FrozenCapture(0, captureOrigin, captureOrigin, blocks, entities),
+            new StructureCaptureExclusions());
     }
 
     @Nullable
@@ -587,6 +649,14 @@ public final class StructureCaptureService {
         return new ResourceLocation(lootTable);
     }
 
+    @Nullable
+    private static ResourceLocation getResourceLocation(@Nullable NBTTagCompound data, String key) {
+        if (data == null || !data.hasKey(key, Constants.NBT.TAG_STRING)) return null;
+
+        String value = data.getString(key);
+        return value.isEmpty() ? null : new ResourceLocation(value);
+    }
+
     private static void trimTileEntityData(NBTTagCompound tileData) {
         tileData.removeTag("x");
         tileData.removeTag("y");
@@ -678,8 +748,8 @@ public final class StructureCaptureService {
         return exclusions.isBlockExcluded(CaptureBlockHelper.createKey(state));
     }
 
-    private static File getCaptureDirectory(World world) {
-        MinecraftServer server = world.getMinecraftServer();
+    private static File getCaptureDirectory(@Nullable World world) {
+        MinecraftServer server = world != null ? world.getMinecraftServer() : null;
         File captureDirectory = server != null ? server.getFile(CAPTURE_DIRECTORY) : new File(CAPTURE_DIRECTORY);
         if (!captureDirectory.exists()) captureDirectory.mkdirs();
 
@@ -725,6 +795,34 @@ public final class StructureCaptureService {
         }
 
         return candidate;
+    }
+
+    private static File createMapCaptureFile(File directory, String mapName) {
+        String baseName = "mapgen_" + sanitizeFileName(mapName);
+        File candidate = new File(directory, baseName + ".nbt");
+        if (!candidate.exists()) return candidate;
+
+        int suffix = 2;
+        while (candidate.exists()) {
+            candidate = new File(directory, baseName + "_" + suffix + ".nbt");
+            suffix++;
+        }
+
+        return candidate;
+    }
+
+    private static String sanitizeFileName(String name) {
+        StringBuilder sanitized = new StringBuilder();
+        for (int index = 0; index < name.length(); index++) {
+            char character = name.charAt(index);
+            if (Character.isLetterOrDigit(character) || character == '-' || character == '_' || character == '.') {
+                sanitized.append(character);
+            } else {
+                sanitized.append('_');
+            }
+        }
+
+        return sanitized.toString();
     }
 
     public static final class SaveResult {

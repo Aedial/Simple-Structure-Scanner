@@ -109,6 +109,11 @@ To remove a stage-qualified entry, use the same prefix as the file syntax, for e
 ### Development
 - Full provider implementation guide (for creating providers under structure/): [docs/STRUCTURE_PROVIDER_GUIDE.md](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/STRUCTURE_PROVIDER_GUIDE.md)
 
+#### MapGen structure export
+Use `-Dsimplestructurescanner.mapExport=true` to export every MapGen capture to `structurescanner-structures/mapgen_<map-name>.nbt`. The map name replaces filename characters that Windows does not allow. Repeated captures add a numeric suffix instead of overwriting an earlier export.
+
+This allows converting a MapGen capture into a standalone NBT structure file that can be reused or analyzed independently. Do note that some entities may not appear, as they *spawn dynamically* and are not part of the structure generation itself.
+
 
 ## NBT Tools
 
