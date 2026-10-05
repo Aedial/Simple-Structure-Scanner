@@ -104,6 +104,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         // Mineshaft - any biome underground
         register("mineshaft")
             .fromBundled()
+            // TODO: add a Mineshaft bundled NBT file
             .withFallbackBlocks(filterNulls(
                 createBlockEntry(Blocks.PLANKS, 0, 500),
                 createBlockEntry(Blocks.OAK_FENCE, 0, 200),
@@ -118,6 +119,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         // Stronghold - fixed ring placement with 128 total structures
         register("stronghold")
             .fromBundled()
+            // TODO: add a Stronghold bundled NBT file
             .withFallbackBlocks(filterNulls(
                 createBlockEntry(Blocks.STONEBRICK, 0, 3000),
                 createBlockEntry(Blocks.STONEBRICK, 1, 500),

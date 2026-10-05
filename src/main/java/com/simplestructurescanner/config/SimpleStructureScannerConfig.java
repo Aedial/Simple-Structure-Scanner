@@ -523,6 +523,8 @@ public final class SimpleStructureScannerConfig {
         public String[] blacklistedLocations = new String[0];
     }
 
+    // FIXME: sort the sides out. There is currently no distinction between
+    //        client and server configuration categories.
     public static class ServerCategory {
         @Config.LangKey("config.structurescanner.server.enableSearch")
         public boolean enableSearch = true;

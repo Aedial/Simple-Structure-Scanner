@@ -89,7 +89,7 @@ public class StructureInfo {
         return displayName;
     }
 
-    public String getModId() {
+    public String getProviderId() {
         return providerId;
     }
 
@@ -105,6 +105,10 @@ public class StructureInfo {
         return sizeZ;
     }
 
+    /**
+     * Sets the size of this structure. This should realistically never be called directly,
+     * as the size is typically determined by the structure's actual content.
+     */
     public StructureInfo withSize(int sizeX, int sizeY, int sizeZ) {
         this.sizeX = Math.max(sizeX, 0);
         this.sizeY = Math.max(sizeY, 0);
@@ -117,14 +121,26 @@ public class StructureInfo {
         return blocks;
     }
 
+    /**
+     * Sets the blocks for this structure.
+     * Do not use this method directly; prefer using {@link #withBlocks(List)} instead.
+     */
     public void setBlocks(List<BlockEntry> blocks) {
         this.blocks = blocks != null ? blocks : Collections.emptyList();
     }
-
+    
+    /**
+     * Adds the provided blocks for this structure if no config override was loaded.
+     * If you are using a {@link MapGenerationBuilder}, prefer using {@link #withBlocksForMap} instead.
+     */
     public StructureInfo withBlocks(BlockEntry... blocks) {
         return withBlocks(blocks != null ? Arrays.asList(blocks) : null);
     }
 
+    /**
+     * Adds the provided blocks for this structure if no config override was loaded.
+     * If you are using a {@link MapGenerationBuilder}, prefer using {@link #withBlocksForMap} instead.
+     */
     public StructureInfo withBlocks(@Nullable List<BlockEntry> blocks) {
         if (configOverrideLoaded || blocks == null || blocks.isEmpty()) return this;
 
@@ -136,12 +152,21 @@ public class StructureInfo {
         return this;
     }
 
+    /**
+     * Adds the provided blocks to this structure if no config override was loaded
+     * and the map was generated without crashing.
+     */
     public StructureInfo withBlocksForMap(BlockEntry... blocks) {
         if (!mapContentsLoaded) return this;
 
         return withBlocks(blocks);
     }
 
+    /**
+     * Sets the blocks for this structure if no config override was loaded
+     * and the current block list is empty.
+     * This may be the case if there was no bundled NBT file for this structure.
+     */
     public StructureInfo withFallbackBlocks(@Nullable List<BlockEntry> blocks) {
         if (configOverrideLoaded || !this.blocks.isEmpty()) return this;
 
@@ -154,14 +179,25 @@ public class StructureInfo {
         return lootTables;
     }
 
+    /**
+     * Sets the loot tables for this structure.
+     * Do not use this method directly; use the {@link #withLootTables(LootEntry...)}
+     * or {@link #withLootTables(List)} methods instead.
+     */
     public void setLootTables(List<LootEntry> lootTables) {
         this.lootTables = lootTables != null ? lootTables : Collections.emptyList();
     }
 
+    /**
+     * Add the provided loot tables to this structure if no config override was loaded.
+     */
     public StructureInfo withLootTables(LootEntry... lootTables) {
         return withLootTables(lootTables != null ? Arrays.asList(lootTables) : null);
     }
 
+    /**
+     * Add the provided loot tables to this structure if no config override was loaded.
+     */
     public StructureInfo withLootTables(@Nullable List<LootEntry> lootTables) {
         if (configOverrideLoaded || lootTables == null || lootTables.isEmpty()) return this;
 
@@ -173,16 +209,30 @@ public class StructureInfo {
         return this;
     }
 
+    /**
+     * Add the provided loot tables to this structure if no config override was loaded
+     * and the map contents was generated without crashing.
+     */
     public StructureInfo withLootTablesForMap(LootEntry... lootTables) {
         if (!mapContentsLoaded) return this;
 
         return withLootTables(lootTables);
     }
 
+    /**
+     * Sets the loot tables for this structure if no config override was loaded
+     * and the current loot tables for this structure are empty.
+     * This may be the case if there is no bundled NBT file for this structure.
+     */
     public StructureInfo withFallbackLootTables(LootEntry... lootTables) {
         return withFallbackLootTables(lootTables != null ? Arrays.asList(lootTables) : null);
     }
 
+    /**
+     * Sets the loot tables for this structure if no config override was loaded,
+     * and the current loot tables for this structure are empty.
+     * This may be the case if there is no bundled NBT file for this structure.
+     */
     public StructureInfo withFallbackLootTables(@Nullable List<LootEntry> lootTables) {
         if (configOverrideLoaded || !this.lootTables.isEmpty()) return this;
 
@@ -195,14 +245,25 @@ public class StructureInfo {
         return entities;
     }
 
+    /**
+     * Sets the entities for this structure.
+     * Do not use this method directly; use the {@link #withEntities(EntityEntry...)}
+     * or {@link #withEntities(List)} methods instead.
+     */
     public void setEntities(List<EntityEntry> entities) {
         this.entities = entities != null ? entities : Collections.emptyList();
     }
 
+    /**
+     * Adds the provided entities to this structure if no config override was loaded.
+     */
     public StructureInfo withEntities(EntityEntry... entities) {
         return withEntities(entities != null ? Arrays.asList(entities) : null);
     }
 
+    /**
+     * Adds the provided entities to this structure if no config override was loaded.
+     */
     public StructureInfo withEntities(@Nullable List<EntityEntry> entities) {
         if (configOverrideLoaded || entities == null || entities.isEmpty()) return this;
 
@@ -215,7 +276,8 @@ public class StructureInfo {
     }
 
     /**
-     * Adds entities only when a generated map supplied this structure's contents.
+     * Adds the provided entities to this structure if no config override was loaded
+     * and the map was generated without crashing.
      */
     public StructureInfo withEntitiesForMap(EntityEntry... entities) {
         if (!mapContentsLoaded) return this;
@@ -223,10 +285,20 @@ public class StructureInfo {
         return withEntities(entities);
     }
 
+    /**
+     * Sets the entities for this structure if no config override was loaded
+     * and the current entity list is empty.
+     * This may be the case if there was no bundled NBT file for this structure.
+     */
     public StructureInfo withFallbackEntities(EntityEntry... entities) {
         return withFallbackEntities(entities != null ? Arrays.asList(entities) : null);
     }
 
+    /**
+     * Sets the entities for this structure if no config override was loaded
+     * and the current entity list is empty.
+     * This may be the case if there was no bundled NBT file for this structure.
+     */
     public StructureInfo withFallbackEntities(@Nullable List<EntityEntry> entities) {
         if (configOverrideLoaded || !this.entities.isEmpty()) return this;
 
@@ -240,6 +312,10 @@ public class StructureInfo {
         return validBiomes;
     }
 
+    /**
+     * Sets the valid biomes for this structure.
+     * Do not use this method directly; prefer using {@link #withMetadata(Set, Set, LocalizedText)} instead.
+     */
     public void setValidBiomes(Set<Biome> validBiomes) {
         this.validBiomes = validBiomes;
     }
@@ -249,15 +325,32 @@ public class StructureInfo {
         return validDimensions;
     }
 
+    /**
+     * Sets the valid dimensions for this structure.
+     * Do not use this method directly; prefer using {@link #withMetadata(Set, Set, LocalizedText)} instead.
+     */
     public void setValidDimensions(Set<DimensionInfo> validDimensions) {
         this.validDimensions = validDimensions;
     }
 
+    /**
+     * Sets the metadata for this structure. The fields can be :
+     * <ul>
+     *   <li>{@code null}: Indicates that there are no restrictions for this field.</li>
+     *   <li>{@code empty}: Indicates that the field is explicitly unknown.</li>
+     * </ul>
+     * <p>
+     * NOTE: Empty rarity is invalid, as it requires a localization key.
+     */
     public StructureInfo withMetadata(@Nullable Set<Biome> biomes,
             @Nullable Set<DimensionInfo> dimensions, @Nullable LocalizedText rarity) {
         return withMetadata(biomes, dimensions).withRarity(rarity);
     }
 
+    /**
+     * Sets the metadata for this structure. The fields can be null if unrestricted.
+     * Chain with {@link #withRarity(LocalizedText)} if you also want to set the rarity.
+     */
     public StructureInfo withMetadata(@Nullable Set<Biome> biomes,
             @Nullable Set<DimensionInfo> dimensions) {
         setValidBiomes(biomes);
@@ -268,6 +361,11 @@ public class StructureInfo {
 
     // TODO: Add a Rarity enum for common, rare, etc
     // TODO: Maybe add some convenience methods that mirror RarityTextHelper. The lengthy kind.
+
+    /**
+     * Sets the rarity for this structure. {@link #withMetadata(Set, Set, LocalizedText)} is preferred
+     * if the rarity text is short enough, this method exists for readability only.
+     */
     public StructureInfo withRarity(@Nullable LocalizedText rarity) {
         setRarity(rarity);
 
@@ -276,8 +374,10 @@ public class StructureInfo {
 
     /**
      * Check if this structure can generate in the given dimension.
-     * If dimension metadata is absent, returns true (allowed in all dimensions).
-     * If dimension metadata is explicitly unknown, returns false.
+     * If dimension metadata is absent (null), returns true (allowed in all dimensions).
+     * If dimension metadata is explicitly unknown (empty), returns false.
+     * This method checks against the structure's dimension metadata and any overrides
+     * that may hide the structure in specific dimensions.
      *
      * @param dimensionId The dimension ID to check
      * @return true if the structure can generate in this dimension
@@ -299,10 +399,18 @@ public class StructureInfo {
         return rarity;
     }
 
+    /**
+     * Sets the rarity for this structure.
+     * Do not use this method directly; prefer using {@link #withRarity(LocalizedText)} instead.
+     */
     public void setRarity(LocalizedText rarity) {
         this.rarity = rarity;
     }
 
+    /**
+     * Sets the rarity for this structure from a raw localization key.
+     * Do not use this method directly; prefer using {@link #withRarity(LocalizedText)} instead.
+     */
     public void setRarityKey(String rarityKey) {
         if (rarityKey == null || rarityKey.isEmpty()) {
             rarity = null;
@@ -317,6 +425,11 @@ public class StructureInfo {
         return previewSnapshot;
     }
 
+    /**
+     * Sets the structure layers if no config override was loaded.
+     * You should realistically never use this method directly;
+     * prefer using {@link #fromLayersSupplier(Function)} instead.
+     */
     public StructureInfo withLayers(@Nullable List<StructureLayer> layers) {
         if (!configOverrideLoaded) setLayers(layers);
 
@@ -324,7 +437,8 @@ public class StructureInfo {
     }
 
     /**
-     * Loads the bundled NBT file after checking the provider's config override.
+     * Loads the bundled NBT file if no config override exists.
+     * The bundled NBT file does not need to exist (it will simply be skipped if absent).
      */
     public StructureInfo fromBundled() {
         if (loadConfigOverride()) return this;
@@ -337,7 +451,8 @@ public class StructureInfo {
     }
 
     /**
-     * Applies a parsed NBT structure after checking the provider's config override.
+     * Loads a parsed NBT structure if no config override exists.
+     * Use this method if you need to parse the structure beforehand.
      */
     public StructureInfo fromParsedStructure(@Nullable StructureNBTParser.ParsedStructure parsed) {
         if (loadConfigOverride()) return this;
@@ -347,6 +462,11 @@ public class StructureInfo {
         return this;
     }
 
+    /**
+     * Sets the structure from a parsed NBT structure if no config override was loaded.
+     * You should realistically never use this method directly;
+     * prefer using {@link #fromParsedStructure(StructureNBTParser.ParsedStructure)} instead.
+     */
     public StructureInfo withParsedStructure(@Nullable StructureNBTParser.ParsedStructure parsed) {
         if (configOverrideLoaded || parsed == null) return this;
 
@@ -356,7 +476,9 @@ public class StructureInfo {
     }
 
     /**
-     * Captures the completed map after checking the provider's config override.
+     * Captures the completed map if no config override exists.
+     * If the map generation crashed, the structure will not be applied
+     * (resulting in an empty structure). Use fallback methods to provide alternative structure data.
      */
     public StructureInfo fromMap(MapGenerationBuilder map) {
         if (loadConfigOverride()) return this;
@@ -367,7 +489,10 @@ public class StructureInfo {
     }
 
     /**
-     * Captures a map and uses bundled NBT when generation fails.
+     * Captures the completed map if no config override exists.
+     * If the map generation crashed, it will fall back to the bundled NBT structure (if any).
+     * The relevant bundled NBT file does not need to exist, but it would be better to use
+     * {@link #fromMap(MapGenerationBuilder)} instead, if it is the case.
      */
     public StructureInfo fromMapWithBundledFallback(MapGenerationBuilder map) {
         if (loadConfigOverride()) return this;
@@ -382,7 +507,7 @@ public class StructureInfo {
     }
 
     /**
-     * Builds preview layers after checking the provider's config override.
+     * Builds preview layers from the provided supplier if no config override exists.
      */
     public StructureInfo fromLayersSupplier(Function<StructureInfo, List<StructureLayer>> supplier) {
         if (loadConfigOverride()) return this;
@@ -400,7 +525,7 @@ public class StructureInfo {
     }
 
     /**
-     * Builds content through a provider callback after checking the config override.
+     * Builds content through a provider callback if no config override exists.
      */
     public StructureInfo fromContentsSupplier(Consumer<StructureInfo> supplier) {
         if (loadConfigOverride()) return this;
@@ -411,7 +536,7 @@ public class StructureInfo {
     }
 
     /**
-     * Applies accumulated content after checking the provider's config override.
+     * Builds content from the provided supplier if no config override exists.
      */
     public StructureInfo fromContentsSupplier(Supplier<StructureContentAccumulator> supplier) {
         if (loadConfigOverride()) return this;
@@ -476,10 +601,9 @@ public class StructureInfo {
     }
 
     /**
-     * Set the layer data for the structure viewer.
-     * Converts them into a flattened preview snapshot and derives the structure bounds.
-     *
-     * @param layers List of structure layers (Y-level indexed)
+     * Sets the structure layers.
+     * You should realistically never use this method directly;
+     * prefer using {@link #fromLayersSupplier(Function)} instead.
      */
     public void setLayers(List<StructureLayer> layers) {
         this.previewSnapshot = createPreviewSnapshot(layers);
@@ -498,6 +622,11 @@ public class StructureInfo {
         return !previewSnapshot.isEmpty();
     }
 
+    /**
+     * Creates a preview snapshot from the given structure layers.
+     * Returns an empty snapshot if the layers are null or empty.
+     * You should not need to call this method directly; it is used internally when setting structure layers.
+     */
     public static PreviewSnapshot createPreviewSnapshot(@Nullable List<StructureLayer> layers) {
         if (layers == null || layers.isEmpty()) return PreviewSnapshot.empty();
 

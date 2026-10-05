@@ -24,11 +24,14 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
   - Default and custom structures from Chocolate Quest Repoured.
   - Dungeons from the Aether mod.
   - A few specific structures from AbyssalCraft.
-  - Ice and Fire's structures (none can be searched for, due to being non-deterministic).
+  - Ice and Fire's structures.
+  - Astral Sorcery's structures.
+  - Wizardry's structures.
+  - Any external provider (see `Config-driven external providers`).
 
 
 ### List of structures that support search :
-- Vanilla Minecraft: All
+- Vanilla Minecraft: All but dungeon
 - Unseen's Dungeon Additions: All
 - Pillar: All
 - Recurrent Complex: All
@@ -38,8 +41,9 @@ A Minecraft 1.12.2 mod to help you look into and find specific structures.
 - Ice and Fire: None
 - Astral Sorcery: None
 - Wizardry: None
+- External providers: None (no support for custom code)
 
-Structures that cannot be searched are non-deterministic, and would require substantial processing power to determine their locations reliably, making them impractical to include in the search functionality.
+Structures that cannot be searched are non-deterministic, and would require substantial time to determine their locations reliably, making them impractical to include in the search functionality.
 
 ### JEI integration
 The mod adds 3 JEI categories for each structure: Preview, Blocks, and Loot. Due to the sheer number of structures that can be registered and visibility constraints, the JEI categories are built in a background thread, and may show missing or incomplete content until the warmup is finished (notified by a log message), as to not freeze the client on first JEI match. The warmup is re-run when the client connects to a server, so that the JEI categories are built with the correct visibility and search blacklists.
@@ -55,7 +59,7 @@ JEI will respect the visibility blacklist, so if a structure is hidden, its bloc
 ### Search/Visibility blacklist
 On top of the config blacklist/whitelist (see Config section), there exists a more controlable and fine-grained blacklist system for search and visibility. Visibility is whether the structure will show in the list at all (allowing preview, blocks, entities, loot), while Search is whether the structure will be searchable (arrow pointing to the nearest in-world). It is perfectly reasonable to just use Simple Structure Scanner for the metadata alone, leaving the search disabled. If you want to disable **ALL** search altogether, I would redirect you to the enableSearch config.
 
-These blacklist are per provider, the id of the provider being matched by file name (see the id of each provider under [structure/](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/java/com/simplestructurescanner/structure) or in your own external providers). The blacklists should be placed under minecraft/config/. For example for provider `examplepack` :
+These blacklist are per provider, the id of the provider being matched by file name (see the id of each provider under [structure/](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/src/main/java/com/simplestructurescanner/structure) or in your own external providers). The blacklists should be placed under minecraft/config/. For example for provider `examplepack` :
 - **Visibility blacklist file example:** [docs/examples/hidden-blacklists/examplepack.txt](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/examples/hidden-blacklists/examplepack.txt) -> minecraft/config/simplestructurescanner/hidden-blacklists/examplepack.txt
 - **Search blacklist file example:** [docs/examples/search-blacklists/examplepack.txt](https://github.com/Aedial/Simple-Structure-Scanner/blob/main/docs/examples/search-blacklists/examplepack.txt) -> minecraft/config/simplestructurescanner/search-blacklists/examplepack.txt
 
@@ -70,7 +74,7 @@ For example:
 - `stage progression:ancient_map structure examplepack:sky_keep`
 - `nostage progression:deep_access dimension examplepack:sunken_library -1`
 
-**Do note** these lists are client-side, because only the search process itself is server-side. Everything else is client-side, meaning *any* user can modify their own blacklists, if determined enough. However, such user would have have no qualm cheating, in the first place, so this is a best-effort protection.
+**Do note** these lists are client-side, because only the search process itself is server-side. Everything else is client-side, meaning *any* user can modify their own blacklists, if determined enough. However, such user would have no qualm cheating, in the first place, so this is a best-effort protection.
 
 `/sssblacklist` can be used to remove entries from these blacklists directly, for example using an item or finishing a quest that allows showing or searching for a specific structure or in a specific dimension.
 
@@ -82,7 +86,8 @@ To remove a stage-qualified entry, use the same prefix as the file syntax, for e
 
 
 ### Configs:
-- enableSearch: Globally disable search.
+- enableSearch: Client-side toggle to enable or disable structure search functionality.
+- enableSearch: Server-side toggle to enable or disable structure search functionality. Search requests will only be processed if this is enabled on the server.
 - whitelist/blacklist: Configure which structures are allowed/disallowed for searching. Whitelist takes priority over blacklist. Partial matches are supported (e.g., `village` matches all structures with "village" in their ID or `minecraft` matches all structures from the Minecraft namespace). To avoid matching too broadly, keep the `:` separator for namespace matching (e.g., `pillar:`). Add `;radius` to make the entry local, which stops being enforced if the player is within a certain radius of the structure (e.g., `minecraft:;100` only blocks vanilla structures until within 100 blocks).
 - showBlocks: Show blocks that are part of the structure in the details panel of the main GUI.
 - showEntities: Show entities that are part of the structure in the details panel of the main GUI.
@@ -91,6 +96,7 @@ To remove a stage-qualified entry, use the same prefix as the file syntax, for e
 - enableJeiLoot: Enable the registration of structure loot tables in JEI as coming from the structure. This allows you to see what loot can be found in a structure.
 - enableJeiPreview: Allow to see structure previews in JEI.
 - enableJeiCategories: Master switch to enable/disable all JEI categories. If disabled, the other 3 JEI configs are ignored.
+- Provider toggles: Enable or disable specific providers, meaning they will not load any structures. Only works on native providers. If you want to remove external providers, just remove the files from config.
 
 
 ### Config-driven external providers:
@@ -105,6 +111,8 @@ To remove a stage-qualified entry, use the same prefix as the file syntax, for e
 
 
 ## NBT Tools
+
+### Structure NBT manipulation utilities
 - `python3.12 tools/structure_nbt_air.py strip <path...>` removes every `minecraft:air` block entry and writes sibling `*.stripped.nbt` files.
 - `python3.12 tools/structure_nbt_air.py restore <path...>` adds back only the air blocks the Structure Capture Ruler would keep and writes sibling `*.restored.nbt` files.
 - Each path may be a file or a directory. Directory inputs recurse and process every `.nbt` file they contain.
@@ -112,15 +120,26 @@ To remove a stage-qualified entry, use the same prefix as the file syntax, for e
 - Add `-f` or `--force` to replace an existing `*.stripped.nbt` or `*.restored.nbt` file.
 - Add `-i` or `--inplace` to overwrite each input file instead of writing a sibling output file.
 
+### Spark profile cleaner
+If you use -Dsimplestructurescanner.mapProfile=true to make a MapGen profile, you will receive a .sparkprofile file containing the profiling data. This file should first be formatted to JSON with [spark2json](https://github.com/lucko/spark2json.git), e.g. `spark2json/src/cli.js <input.sparkprofile> > <output.json>`, then tools/clean_spark_profile_json.py to transform into the classic Spark nested structure.
+- `python3.12 tools/clean_spark_profile_json.py <path...>` cleans the JSON-formatted Spark profile and writes sibling `*.cleaned.json` files.
+- Use `-p` to show the time in % rather than absolute values.
+- Use `-s` to strip the top nodes that have only 1 child (e.g., the launching wrappers). `-s N` will keep N levels above the last single-child node.
+- Use `-a N` to strip any node under N% of total time.
+- Example: `python3.12 tools/clean_spark_profile_json.py -ps -a 1 <input.json>` should produce a good starting point for analyzing the Spark profile.
+
 ## FAQ
 ### Do I need to install this on a server?
-If you wish the query structure locations, you will need to put the mod on the server as well. However, if you only want to view structure information, you can use it client-side, as long as the mods providing said structures are also installed client-side.
+If you wish to search structures in-world, you will need to put the mod on the server as well. However, if you only want to view structure information, you can use it client-side, as long as the mods providing said structures are also installed client-side (should always be the case).
 
 ### How is the structures list filtered?
 The filter box matches both localized and unlocalized structure names. This means you can type the mod name, the name in your selected language, or the default English name. The localization structure is up to the individual providers, but it should generally be `gui.structurescanner.structures.<provider_id>.<structure_id>`.
 
 ### The structure wasn't there.
 Due to how complex the process is, structures from a mod may prevent or overlap with other structures from another mod. In this case, you should try searching for another structure of the same type. Use the arrows in the right panel to cycle through multiple results.
+
+### How can I add my own structures?
+See the `Config-driven external providers` section for details on how to add your own structures. **NOTE**: you will not be able to search these structures, as there is no handling for their generation code. They are purely for visualization and metadata purposes.
 
 ### Some structure previews seem broken, looking like scattered rooms.
 Some structures are generated procedurally (e.g., Recurrent Complex, Unseen's Dungeon Additions, and Chocolate Quest Repoured), which means the structure is not a single static layout. In these cases, the preview should generate the structure dynamically. If it fails, it may be generated from possible static templates as a fallback, stitched together in a way that may not match an actual generated structure. In underground structures, corridors or other hallways may be extruded from the surrounding terrain, which can give the impression of a broken structure when there is no such terrain.

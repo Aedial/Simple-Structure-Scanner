@@ -44,7 +44,8 @@ Create a class that implements `StructureProvider`:
 ```java
 package com.yourmod.structure;
 
-import com.simplestructurescanner.structure.providers.StructureProvider;
+import java.util.function.Predicate;
+
 import com.simplestructurescanner.structure.StructureInfo;
 import com.simplestructurescanner.structure.StructureLocation;
 import net.minecraft.util.ResourceLocation;
@@ -52,39 +53,22 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraftforge.fml.common.Loader;
 
-import java.util.List;
-import java.util.function.Predicate;
+import com.simplestructurescanner.structure.providers.AbstractStructureProvider;
 
-public class YourModStructureProvider implements StructureProvider {
+
+public class YourModStructureProvider extends AbstractStructureProvider {
 
     private static final String PROVIDER_ID = "yourmod";
     private static final String MOD_ID = "yourmod";
 
-    @Override
-    public String getProviderId() {
-        return PROVIDER_ID;
-    }
-
-    @Override
-    public String getModName() {
-        // Return a localization key or direct string
-        return "gui.structurescanner.provider.yourmod";
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return Loader.isModLoaded(MOD_ID);
+    public YourModStructureProvider() {
+        // Constructor logic here (avoid heavy initialization)
     }
 
     @Override
     public void postInit() {
         // Initialize structure data here (NOT in constructor)
-        // This runs after provider registration when the mod is confirmed loaded
-    }
-
-    @Override
-    public List<ResourceLocation> getStructureIds() {
-        // Return list of all structure IDs this provider handles
+        // This runs after the provider has been registered and the mod is confirmed to be loaded, but before structure data is queried
     }
 
     @Override
@@ -93,14 +77,9 @@ public class YourModStructureProvider implements StructureProvider {
     }
 
     @Override
-    public StructureInfo getStructureInfo(ResourceLocation structureId) {
-        // Return structure metadata or null if not found
-    }
-
-    @Override
     public StructureLocation findNearest(World world, ResourceLocation structureId, 
             BlockPos pos, int skipCount, Predicate<BlockPos> locationFilter) {
-        // Implement search logic (this **should not** load chunks or perform worldgen)
+        // Implement search logic (this **should not** load chunks or perform worldgen, as these operations are expensive and can cause unintended side effects)
     }
 }
 ```
@@ -133,11 +112,6 @@ These providers split data in two parts:
 
 This NBT parsing path uses the shared `StructureNBTParser`.
 
-Built-in providers can also source their structure contents from NBT.
-`populateStructureContents()` checks `config/simplestructurescanner/structures/<provider>/<structure>.nbt` first, then falls back to the bundled scanner snapshot shipped in the mod JAR.
-That single NBT file is treated as the authoritative source for blocks, layers, entities, and loot tables.
-This is the expected drop-in override path for Structure Capture Ruler output after you rename the saved capture to the registered structure path.
-
 Per-provider hidden blacklist files live in `config/simplestructurescanner/hidden-blacklists/`.
 Per-provider search blacklist files live in `config/simplestructurescanner/search-blacklists/`.
 Each file is named after the provider ID, for example `minecraft.txt` or `pillar.txt`.
@@ -156,7 +130,7 @@ dimension minecraft:end_city 1
 
 Entries in `hidden-blacklists` remove matching structures from the list.
 Entries in `search-blacklists` keep matching structures visible but make them non-searchable.
-Of course, both can be used together to hide have a 3-steps process: hidden, visible but non-searchable, and fully searchable.
+Of course, both can be used together to achieve all three states: hidden, visible but non-searchable, and fully searchable.
 
 These blacklist files are consumed client-side. The `sssblacklist <hidden|search> remove` client command removes existing entries without requiring manual file edits.
 
@@ -166,74 +140,96 @@ These blacklist files are consumed client-side. The `sssblacklist <hidden|search
 
 ### Creating StructureInfo Objects
 
+Do note that any `from*` method is superseded by overrides in config/simplestructurescanner/structures/<provider>/<structure>.nbt, as they are a means for users to customize the structure data without modifying the code directly.
+Only **ONE** `from*` method should be used per structure registration. Any subsequent calls will make the whole provider registration invalid.
+
+The order is as follows: config override -> [Map gen if provided] -> [bundled NBT file if requested].
+
 ```java
+import net.minecraft.world.biome.Biome;
+
+import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
+import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
 
-private void addStructure(String path, String displayNameKey, int sizeX, int sizeY, int sizeZ) {
-    ResourceLocation id = new ResourceLocation(MOD_ID, path);
-    knownStructures.add(id);
+private void addStructure(Set<Biome> biomes, Set<DimensionInfo> dimensions, LocalizedText rarityKey) {
+    // tries to load the structure from the bundled NBT file (will still work if the file is missing)
+    register(<structureName>)
+        .fromBundled()
+        .withMetadata(biomes, dimensions, rarityKey);
 
-    StructureInfo info = new StructureInfo(
-        id,
-        LocalizedText.translatable(displayNameKey),
-        PROVIDER_ID,
-        sizeX,
-        sizeY,
-        sizeZ
-    );
-    structureInfos.put(id, info);
+    // if you have a long rarity key, you can use withRarity separately
+    register(<structureName2>)
+        .fromBundled()
+        .withBlocks(...)  // adds the specific blocks for this structure if not overridden
+        .withMetadata(biomes, dimensions)
+        .withRarity(rarityKey);
+
+    // if you have a structure that needs to be generated programmatically rather than loaded from a bundled NBT file
+    // the bundled NBT file is used as a fallback if available and the map building crashes
+    MapGenerationBuilder map = new MapGenerationBuilder(<sizeX>, <sizeZ>, <yLevel>, <groundBlock>)
+            .withName(<structureName3>)
+            .withOrigin(<originX>, <originZ>)  // if the structure doesn't start at the center
+            .build(<generateFunction>, <biome>);
+    register(<structureName3>)
+        .fromMapWithBundledFallback(map)  // or .fromMap(map)
+        .withEntitiesForMap(entity1, entity2)  // only adds if the map doesn't crash
+        .withMetadata(biomes, dimensions, rarityKey);
+
+    // if you have a structure that only exists in code
+    // the supplier function should provide the structure layers's list
+    register(<structureName4>)
+        .fromLayersSupplier(layersSupplierFunction)
+        .withMetadata(biomes, dimensions, rarityKey);
 }
 ```
 
-`StructureInfo` stores unresolved text descriptors.
-The GUI resolves those descriptors on the client, so providers should pass translation keys for user-facing text instead of calling localization APIs during registration.
-This rule is strictly enforced for user-authored structures loaded from configs or external data folders: they must have user-provided translation keys.
-If a translation is missing, it is their responsibility to provide the localization entry in their resource pack or mod. Any missing keys will remain visible in the GUI so the author can fix their localization and notice any missing translations.
-When generating default keys in Java, reuse `StructureTranslationKeys.structureNameKey(...)` or `StructureTranslationKeys.normalizedStructureNameKey(...)` instead of building the prefix manually.
+The dimensions/blocks/loot tables/entities are extracted from the bundled NBT file automatically, the translation key is derived from name, and additional data (blocks, loot tables, entities) can be added with the corresponding `with*` methods.
+`biomes`, `dimensions`, and `rarityKey` can be set to `null` if you want to leave them unspecified (no restrictions provided).
 
-**Parameters:**
-- `id`: Unique identifier (e.g., `yourmod:tower`)
-- `displayName`: A `LocalizedText` descriptor for the GUI name
-- `modId`: Provider ID for grouping in the UI
-- `sizeX/Y/Z`: Structure dimensions (use 0 if unknown/variable)
+You will need to provide the translation key for localization purposes :
+- `gui.structurescanner.provider.<providerId>`
+- `gui.structurescanner.structures.<providerId>.<structureName>`
 
 ---
 
-### Dimensions
+#### Map-Generated Structures
 
-Use `DimensionInfo` to specify which dimensions a structure can generate in:
-
+When a structure is generated programmatically rather than loaded from a bundled NBT file, you use the MapGenerationBuilder to define its layers. This usually goes like that :
 ```java
-import com.simplestructurescanner.structure.DimensionInfo;
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.init.Blocks;
 
-// Using built-in vanilla dimensions
-Set<DimensionInfo> overworld = Collections.singleton(DimensionInfo.OVERWORLD);
-Set<DimensionInfo> nether = Collections.singleton(DimensionInfo.NETHER);
-Set<DimensionInfo> end = Collections.singleton(DimensionInfo.END);
+import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
 
-// Custom dimensions with localization
-int customDimId = 42; // Get from your mod's config/API
-DimensionInfo customDim = new DimensionInfo(customDimId, "gui.structurescanner.dimension.yourdimensionid");
+IBlockState GRASS = Blocks.GRASS.getDefaultState();
+IBlockState WATER = Blocks.WATER.getDefaultState();
+IBlockState STONE = Blocks.STONE.getDefaultState();
+IBlockState LAVA = Blocks.LAVA.getDefaultState();
 
-// Multiple dimensions
-Set<DimensionInfo> multipleDims = new HashSet<>();
-multipleDims.add(DimensionInfo.OVERWORLD);
-multipleDims.add(customDim);
-
-// Apply to structure info
-info.setValidDimensions(multipleDims);
+// create a 128x128 platform at y-level 63 with GRASS as the ground block
+MapGenerationBuilder map = new MapGenerationBuilder(128, 128, 63, GRASS)
+    // name for logging purposes, only used for the Map itself
+    .withName("example_map")
+    // origin point for the structure (optional): re-center the map if it generates off-center
+    .withOrigin(64, 64)
+    // add 20 layers of water above the platform
+    .withAboveLayers(20, WATER)
+    // add 10 layers of stone above the water
+    .withAboveLayers(10, STONE)
+    // add 5 layers of stone below the platform
+    .withBelowLayers(5, STONE)
+    // remove any lava the generation might place
+    .removeBlocks(LAVA)
+    // build the structure with the specified generation function and biome
+    .build(generateStructureFunction, Biomes.PLAINS);
 ```
 
-**DimensionInfo Constructors:**
-- `DimensionInfo(int dimensionId)` - Uses built-in defaults for vanilla dimensions, then tries `gui.structurescanner.dimension.id.<dimensionId>`, then falls back to `Unknown (dimensionId)`
-- `DimensionInfo(int dimensionId, String displayKey)` - Uses a localization key
-- `DimensionInfo(int dimensionId, LocalizedText displayName)` - Uses either a literal or translatable descriptor
+**NOTE:** You do not need to remove the blocks from the platform, aboveLayers, or belowLayers manually; the builder handles it for you. removeBlocks is only necessary for blocks placed by the generation function that you want to clear.
 
-If no dimensions are set (`null` or empty), the structure is assumed valid in all dimensions.
+If generateStructureFunction crashes, the structure generation will fail gracefully (with error log), and the capture will be discarded. The `fromMapWithBundledFallback` method can be used to provide a fallback to a bundled NBT structure if the map generation fails.
 
----
-
-### Biomes
+#### Biomes
 
 Specify which biomes a structure can generate in:
 
@@ -250,8 +246,6 @@ Set<Biome> plainsLike = Stream.of(
     Biomes.SAVANNA,
     Biomes.MUTATED_PLAINS
 ).collect(Collectors.toSet());
-
-info.setValidBiomes(plainsLike);
 ```
 
 For modded biomes, fetch them at runtime in `postInit()`:
@@ -267,37 +261,41 @@ try {
 
 If no biomes are set (`null`), the structure has no biome restrictions.
 
----
+#### Dimensions
 
-### Rarity
-
-Rarity should be specified as either a translation key or a numeric chunk rarity:
+Specify which dimensions a structure can generate in:
 
 ```java
-// Using the built-in wrapped rarity helper
-info.setRarityKey("gui.structurescanner.rarity.common");
-info.setRarityKey("gui.structurescanner.rarity.uncommon");
-info.setRarityKey("gui.structurescanner.rarity.rare");
-info.setRarityKey("gui.structurescanner.rarity.unique");
+import com.simplestructurescanner.structure.DimensionInfo;
 
-// Using a nested translatable descriptor
-info.setRarity(LocalizedText.translatable(
-    "gui.structurescanner.rarity",
-    LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", chunksPerOccurrence)
-));
+// Single dimension
+Set<DimensionInfo> customDimensions = Collections.singleton(new DimensionInfo(42));
 
-// Numeric chunk rarity
-info.setRarity(LocalizedText.translatable(
-    "gui.structurescanner.rarity",
-    LocalizedText.translatable("gui.structurescanner.rarity.one_in_chunks", 96)
-));
+// Multiple dimensions
+Set<DimensionInfo> commonDimensions = Stream.of(
+    DimensionInfo.OVERWORLD,
+    DimensionInfo.NETHER,
+    DimensionInfo.END
+).collect(Collectors.toSet());
 ```
 
-Standard rarity keys provided by the mod:
-- `gui.structurescanner.rarity.common`
-- `gui.structurescanner.rarity.uncommon`
-- `gui.structurescanner.rarity.rare`
-- `gui.structurescanner.rarity.unique`
+For modded dimensions, fetch them at runtime in `postInit()`:
+
+```java
+try {
+    Class<?> modDimensionsClass = Class.forName("com.somemod.init.ModDimensions");
+    Integer customDimensionId = (Integer) modDimensionsClass.getField("CUSTOM_DIMENSION").get(null);
+    DimensionInfo customDimension = new DimensionInfo(customDimensionId);
+} catch (Exception e) {
+    // Handle gracefully
+}
+```
+
+If no dimensions are set (`null`), the structure has no dimension restrictions.
+
+#### Rarity
+
+For rarity, you either use a translation key directly (e.g., LocalizedText.translatable("gui.structurescanner.rarity.common")) or use RarityTextHelper methods to generate the appropriate translation keys.
 
 ### External Providers (JSON Metadata + NBT Data)
 
@@ -305,7 +303,7 @@ External provider JSON files define lightweight metadata and reference NBT files
 All user-visible text in this format should be translation keys.
 That requirement is especially important for user-made structures: they must provide user-authored translation keys.
 Generated default keys should come from the shared `StructureTranslationKeys` helpers so every provider follows the same naming scheme.
-Each JSON file defines one provider object with a `providerId`, a `modName` or `modNameKey`, and a `structures` array.
+Each JSON file defines one provider object with a `providerId`, a `modNameKey`, and a `structures` array.
 
 ```json
 {
@@ -321,7 +319,8 @@ Each JSON file defines one provider object with a `providerId`, a `modName` or `
             "nbtPath": "examplepack/ruined_tower",  // Relative to nbtRoot, without .nbt extension
             "dimensions": [0, 7],                   // Valid dimensions
             "biomes": ["minecraft:plains", "minecraft:forest"], // Valid biomes (optional)
-            "rarityKey": "gui.structurescanner.rarity.uncommon" // May also use a number (per-chunk rarity)
+            "rarityKey": "gui.structurescanner.rarity.uncommon"
+            // May also use a number (per-chunk rarity), using the "rarityChunks" field instead of "rarityKey"
         }
     ]
 }
@@ -329,10 +328,7 @@ Each JSON file defines one provider object with a `providerId`, a `modName` or `
 
 `nbtPath` is relative to `nbtRoot` (default `nbt`) under `config/simplestructurescanner/external-providers/`.
 
-Custom dimensions should define translations through the shared key format `gui.structurescanner.dimension.id.<dimensionId>`.
-This keeps dimension names shared across every provider instead of redefining them per integration.
-
-Provider, structure, and shared dimension name examples live together in `docs/examples/en_us.lang`.
+Provider and structure name examples live together in `docs/examples/en_us.lang`.
 
 For the example above, the NBT file path is:
 - `config/simplestructurescanner/external-providers/nbt/examplepack/ruined_tower.nbt`
@@ -348,137 +344,6 @@ These fallbacks are still translation keys, not human-readable titles.
 If a user-made provider relies on them, the author is expected to add matching localization entries.
 
 External providers remain non-searchable unless a Java provider supplies custom location logic.
-
----
-
-### Blocks and Layers
-
-Blocks are listed for the structure viewer. Layers provide a visual 2D slice representation. Blocks can be extracted directly from the layer data, which is preferred.
-
-#### Block Entries
-
-```java
-import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
-
-List<BlockEntry> blocks = new ArrayList<>();
-
-// Simple block entry
-IBlockState stoneState = Blocks.STONE.getDefaultState();
-ItemStack stoneStack = new ItemStack(Blocks.STONE);
-blocks.add(new BlockEntry(stoneState, stoneStack, 150));  // 150 stone blocks
-
-// Block with no item representation
-blocks.add(new BlockEntry(stoneState, null, 50));
-
-info.setBlocks(blocks);
-```
-
-**BlockEntry Parameters:**
-- `blockState`: The `IBlockState` of the block
-- `displayStack`: `ItemStack` for GUI display (can be null)
-- `count`: Number of this block in the structure
-
-#### Structure Layers
-
-Layers enable the structure viewer to show a complete visualization:
-
-```java
-import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
-
-List<StructureLayer> layers = new ArrayList<>();
-
-for (int y = 0; y < structureHeight; y++) {
-    StructureLayer layer = new StructureLayer(y, sizeX, sizeZ);
-    // Or with offsets: new StructureLayer(y, sizeX, sizeZ, xOffset, zOffset);
-    
-    for (int x = 0; x < sizeX; x++) {
-        for (int z = 0; z < sizeZ; z++) {
-            IBlockState state = getBlockAt(x, y, z);
-            layer.setBlockState(x, z, state);
-        }
-    }
-    
-    layers.add(layer);
-}
-
-info.setLayers(layers);
-```
-
-**Tip:** Use `StructureNBTParser` to automatically extract blocks and layers from NBT structure files:
-
-```java
-import com.simplestructurescanner.structure.StructureNBTParser;
-import com.simplestructurescanner.structure.StructureNBTParser.ParsedStructure;
-
-ParsedStructure parsed = StructureNBTParser.parseStructure("igloo/igloo_top");
-if (parsed != null) {
-    info.setBlocks(parsed.blocks);
-    info.setLayers(parsed.layers);
-}
-```
-
----
-
-### Loot Tables
-
-Document which loot tables can be found in a structure:
-
-```java
-import com.simplestructurescanner.structure.StructureInfo.LootEntry;
-
-List<LootEntry> lootTables = new ArrayList<>();
-
-// Create a loot entry with possible drops
-ResourceLocation lootTableId = new ResourceLocation("minecraft", "chests/desert_pyramid");
-List<ItemStack> possibleDrops = Arrays.asList(
-    new ItemStack(Items.DIAMOND),
-    new ItemStack(Items.GOLD_INGOT),
-    new ItemStack(Items.EMERALD)
-);
-String containerType = "gui.structurescanner.loot.chest";
-
-lootTables.add(new LootEntry(lootTableId, possibleDrops, containerType));
-
-info.setLootTables(lootTables);
-```
-
-`possibleDrops` exists for things that exist outside of loot tables (e.g., structures without actual loot tables). This should usually be mutually exclusive with actual loot tables, so provide either loot tables or possible drops, unless you are sure it needs special handling.
-
-**LootEntry Parameters:**
-- `lootTableId`: The `ResourceLocation` of the loot table
-- `possibleDrops`: Representative items that can drop (for display)
-- `containerType`: Type of container (e.g., "Chest", "Barrel", "Dispenser")
-
----
-
-### Entities
-
-Document entities that spawn with or in the structure:
-
-```java
-import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
-
-List<EntityEntry> entities = new ArrayList<>();
-
-// 1 entity
-entities.add(new EntityEntry(new ResourceLocation("minecraft", "witch"), 1));
-
-// Multiple entities
-entities.add(new EntityEntry(new ResourceLocation("minecraft", "zombie"), 3));
-
-// Entity from a spawner (set spawner = true)
-entities.add(new EntityEntry(new ResourceLocation("minecraft", "skeleton"), 1, true));
-
-info.setEntities(entities);
-```
-
-**EntityEntry Constructors:**
-- `EntityEntry(ResourceLocation entityId, int count)` - Regular entity
-- `EntityEntry(ResourceLocation entityId, int count, boolean spawner)` - Specify if from spawner
-
-The `spawner` flag indicates the entity comes from a mob spawner block rather than spawning directly with the structure (or naturally from the structure logic).
-
----
 
 ## Search Implementation
 
@@ -607,12 +472,13 @@ If your structure has a known Y coordinate, the provider itself should determine
 
 ## Mod Presence Check
 
-Always check if the target mod is loaded before accessing its classes:
+The presence check is usually done automatically by AbstractStructureProvider, using the provided `MOD_ID`, but you might need a custom implementation in `isAvailable()` for more complex conditions.
 
 ```java
 @Override
 public boolean isAvailable() {
-    return Loader.isModLoaded("targetmodid");
+    // multi-mod check
+    return super.isAvailable() && Loader.isModLoaded(ANOTHER_MOD_ID);
 }
 ```
 
@@ -626,12 +492,12 @@ public void postInit() {
         Class<?> modClass = Class.forName("com.othermod.SomeClass");
         Object value = modClass.getField("SOME_FIELD").get(null);
     } catch (Exception e) {
-        SimpleStructureScanner.LOGGER.error("Failed to access mod data", e);
+        SimpleStructureScanner.LOGGER.warn("Failed to access mod data", e);
     }
 }
 ```
 
-This prevents `ClassNotFoundException` when the mod is not installed. `postInit()` is only called if `isAvailable()` returns `true`, which means it is safe to access mod classes there.
+This prevents `ClassNotFoundException` when the mod is not installed, or when it is updated and the internal structure of its classes has changed. `postInit()` is only called if `isAvailable()` returns `true`, which means it is safe to access mod classes there.
 
 ---
 
@@ -657,70 +523,29 @@ import net.minecraftforge.fml.common.Loader;
 import com.simplestructurescanner.structure.*;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
+import com.simplestructurescanner.structure.providers.AbstractStructureProvider;
 
-public class ExampleStructureProvider implements StructureProvider {
+
+public class ExampleStructureProvider extends AbstractStructureProvider {
 
     private static final String PROVIDER_ID = "examplemod";
-    private static final String MOD_ID = "examplemod";
+    private static final String MOD_NAME = "gui.structurescanner.provider.examplemod";
+    private static final String MOD_ID = "xmplmod";
     
-    private List<ResourceLocation> knownStructures = new ArrayList<>();
-    private Map<ResourceLocation, StructureInfo> structureInfos = new HashMap<>();
-
-    @Override
-    public String getProviderId() {
-        return PROVIDER_ID;
+    public ExampleStructureProvider() {
+        super(PROVIDER_ID, PROVIDER_ID, MOD_NAME, MOD_ID);
     }
 
     @Override
-    public String getModName() {
-        return I18n.translateToLocal("gui.structurescanner.provider.examplemod");
-    }
-
-    @Override
-    public boolean isAvailable() {
-        return Loader.isModLoaded(MOD_ID);
-    }
-
-    @Override
-    public void postInit() {
-        if (!isAvailable()) return;
-        
+    public void postInit() {  // only called if isAvailable() returns true
         // Register structures
-        ResourceLocation towerId = new ResourceLocation(MOD_ID, "tower");
-        knownStructures.add(towerId);
-        
-        StructureInfo towerInfo = new StructureInfo(
-            towerId, 
-            I18n.translateToLocal("structure.examplemod.tower"), 
-            PROVIDER_ID, 
-            15, 30, 15  // Size
-        );
-        
-        // Set dimensions (Overworld only)
-        towerInfo.setValidDimensions(Collections.singleton(DimensionInfo.OVERWORLD));
-        
-        // Set biomes
-        Set<Biome> biomes = new HashSet<>();
-        biomes.add(Biomes.PLAINS);
-        biomes.add(Biomes.FOREST);
-        towerInfo.setValidBiomes(biomes);
-        
-        // Set rarity
-        String rarityInfo = I18n.translateToLocalFormatted("gui.structurescanner.rarity.one_in_chunks", 100);
-        towerInfo.setRarity(I18n.translateToLocalFormatted("gui.structurescanner.rarity", rarityInfo));
-        
-        // Set entities (2 guards + 1 spawner)
-        List<EntityEntry> entities = new ArrayList<>();
-        entities.add(new EntityEntry(new ResourceLocation(MOD_ID, "tower_guard"), 2));
-        entities.add(new EntityEntry(new ResourceLocation("minecraft", "skeleton"), 1, true));
-        towerInfo.setEntities(entities);
-        
-        structureInfos.put(towerId, towerInfo);
-    }
-
-    @Override
-    public List<ResourceLocation> getStructureIds() {
-        return new ArrayList<>(knownStructures);
+        register("tower")
+            .fromBundled()
+            .withEntities(
+                new EntityEntry(MOD_ID + ":tower_guard", 2),        // static spawn
+                new EntityEntry("minecraft:skeleton", 1, true))     // spawner
+            .withMetadata(biomes(Biomes.PLAINS, Biomes.FOREST), Collections.singleton(DimensionInfo.OVERWORLD))
+            .withRarity(RarityTextHelper.oneInChunks(200));
     }
 
     @Override
@@ -728,12 +553,6 @@ public class ExampleStructureProvider implements StructureProvider {
         // This structure uses deterministic generation
         // You do not need to check mod from ResourceLocation, the caller ensures this (considering you're not referencing multiple mods, which is discouraged)
         return structureId.getResourcePath().equals("tower");
-    }
-
-    @Override
-    @Nullable
-    public StructureInfo getStructureInfo(ResourceLocation structureId) {
-        return structureInfos.get(structureId);
     }
 
     @Override
@@ -780,18 +599,7 @@ public class ExampleStructureProvider implements StructureProvider {
 ## Summary Checklist
 
 - [ ] Implement `StructureProvider` interface
-- [ ] Return unique `getProviderId()`
-- [ ] Return localized `getModName()`
-- [ ] Check mod availability in `isAvailable()` using `Loader.isModLoaded()`
-- [ ] Initialize structures in `postInit()` (not constructor)
-- [ ] Create `StructureInfo` for each structure with:
-  - [ ] Valid dimensions (`setValidDimensions`)
-  - [ ] Valid biomes (`setValidBiomes`) if applicable
-  - [ ] Rarity string or localization key (`setRarity`)
-  - [ ] Block entries (`setBlocks`) for block summary
-  - [ ] Layer data (`setLayers`) for visual representation
-  - [ ] Loot table entries (`setLootTables`)
-  - [ ] Entity entries (`setEntities`) with spawner flag where applicable
+- [ ] Initialize structures in `postInit()` (not constructor), using the register() chain
 - [ ] Implement `canBeSearched()` based on structure generation type
 - [ ] Implement `findNearest()` with filter and skip support
 - [ ] Optionally implement `findAllNearby()` for batch search
