@@ -24,6 +24,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.EnumFacing;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.datafix.DataFixer;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.ChunkPos;
@@ -44,8 +45,10 @@ import net.minecraft.world.gen.structure.template.TemplateManager;
 import net.minecraft.world.storage.IPlayerFileData;
 import net.minecraft.world.storage.ISaveHandler;
 import net.minecraft.world.storage.WorldInfo;
+import net.minecraft.world.storage.loot.LootTable;
 import net.minecraft.world.storage.loot.LootTableManager;
 
+import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 import com.simplestructurescanner.structure.util.StructurePreviewStitcher;
 
@@ -54,6 +57,7 @@ import com.simplestructurescanner.structure.util.StructurePreviewStitcher;
  * In-memory world that overlays generated map changes on a finite layered platform.
  */
 public final class MapGenerationWorld extends World {
+    private static final LootTableManager MAP_LOOT_TABLE_MANAGER = new MapGenerationLootTableManager();
 
     private final int minX;
     private final int maxX;
@@ -65,12 +69,10 @@ public final class MapGenerationWorld extends World {
     private final IBlockState platformMaterial;
     private final List<MapGenerationBuilder.Layer> aboveLayers;
     private final List<MapGenerationBuilder.Layer> belowLayers;
-    private final Set<Long> changedBlocks = new HashSet<>();
+    private final Long2ObjectMap<IBlockState> changedStates = new Long2ObjectOpenHashMap<>();
     private final Map<Long, TileEntity> tileEntities = new HashMap<>();
     private final List<NBTTagCompound> generatedEntityData = new ArrayList<>();
     private final Set<Block> captureRemovedBlocks = new HashSet<>();
-
-    private int writingChunkStateDepth;
 
     MapGenerationWorld(int sizeX, int sizeZ, int platformY, IBlockState platformMaterial,
             List<MapGenerationBuilder.Layer> aboveLayers, List<MapGenerationBuilder.Layer> belowLayers,
@@ -95,7 +97,7 @@ public final class MapGenerationWorld extends World {
         this.belowLayers = Collections.unmodifiableList(new ArrayList<>(belowLayers));
         platformMinY = platformY - getLayerHeight(this.belowLayers);
         platformMaxY = platformY + getLayerHeight(this.aboveLayers);
-        this.lootTable = new LootTableManager((File) null);
+        this.lootTable = MAP_LOOT_TABLE_MANAGER;
 
         this.provider.setDimension(Integer.MAX_VALUE - 666);
         int providerDimension = this.provider.getDimension();
@@ -126,18 +128,20 @@ public final class MapGenerationWorld extends World {
         if (!isWithinPlatform(pos) || pos.getY() < 0 || pos.getY() > 255) return false;
 
         IBlockState oldState = getGeneratedState(pos);
-        boolean changed = !oldState.equals(newState);
-        boolean chunkChanged;
+        if (oldState.equals(newState)) return false;
 
-        writingChunkStateDepth++;
-        try {
-            chunkChanged = super.setBlockState(pos, newState, flags);
-        } finally {
-            writingChunkStateDepth--;
+        Block oldBlock = oldState.getBlock();
+        Block newBlock = newState.getBlock();
+        if (!isRemote) oldBlock.breakBlock(this, pos, oldState);
+        updateDelta(pos, newState);
+        if (oldBlock.hasTileEntity(oldState)) removeTileEntity(pos);
+        if (!isRemote) newBlock.onBlockAdded(this, pos, newState);
+        if (newBlock.hasTileEntity(newState)) {
+            TileEntity tileEntity = getTileEntity(pos);
+            if (tileEntity != null) tileEntity.updateContainingBlockInfo();
         }
 
-        updateDelta(pos, newState);
-        return changed || chunkChanged;
+        return true;
     }
 
     @Nonnull
@@ -289,10 +293,6 @@ public final class MapGenerationWorld extends World {
         }
     }
 
-    boolean isWritingChunkState() {
-        return writingChunkStateDepth > 0;
-    }
-
     private int getPlatformTopFilledSegment(int chunkX, int chunkZ) {
         int minChunkX = Math.max(minX, chunkX << 4);
         int maxChunkX = Math.min(maxX, (chunkX << 4) + 15);
@@ -325,14 +325,11 @@ public final class MapGenerationWorld extends World {
 
     private IBlockState getGeneratedState(BlockPos pos) {
         if (!isWithinPlatform(pos)) return Blocks.AIR.getDefaultState();
-        if (changedBlocks.contains(pos.toLong())) return getStoredBlockState(pos);
+
+        IBlockState state = changedStates.get(pos.toLong());
+        if (state != null) return state;
 
         return getPlatformState(pos);
-    }
-
-    private IBlockState getStoredBlockState(BlockPos pos) {
-        MapGenerationChunk chunk = (MapGenerationChunk) chunkProvider.provideChunk(pos.getX() >> 4, pos.getZ() >> 4);
-        return chunk.getStoredBlockState(pos);
     }
 
     private IBlockState getPlatformState(BlockPos pos) {
@@ -369,11 +366,11 @@ public final class MapGenerationWorld extends World {
     private void updateDelta(BlockPos pos, IBlockState state) {
         long key = pos.toLong();
         if (state.equals(getPlatformState(pos))) {
-            changedBlocks.remove(key);
+            changedStates.remove(key);
             return;
         }
 
-        changedBlocks.add(key);
+        changedStates.put(key, state);
     }
 
     @Nullable
@@ -386,7 +383,7 @@ public final class MapGenerationWorld extends World {
         int maxCaptureY = Integer.MIN_VALUE;
         int maxCaptureZ = Integer.MIN_VALUE;
 
-        for (long key : changedBlocks) {
+        for (long key : changedStates.keySet()) {
             BlockPos pos = BlockPos.fromLong(key);
             IBlockState state = getBlockState(pos);
             if (state.getBlock() == Blocks.AIR) continue;
@@ -433,6 +430,34 @@ public final class MapGenerationWorld extends World {
         private CaptureBounds(BlockPos minPos, BlockPos maxPos) {
             this.minPos = minPos;
             this.maxPos = maxPos;
+        }
+    }
+
+    /**
+     * Loot table duck that prevents actual loot table loading during map generation.
+     * We do not resolve actual loot tables during map generation, so there is no need to load their contents.
+     * This spares heavy I/O and processing, that are only necessary when actually
+     * viewing the structure in-game.
+     */
+    private static final class MapGenerationLootTableManager extends LootTableManager {
+
+        private MapGenerationLootTableManager() {
+            super((File) null);
+        }
+
+        @Override
+        public void reloadLootTables() {
+            // Reload nothing, as loot tables are not used during map generation
+        }
+
+        @Nonnull
+        @Override
+        public LootTable getLootTableFromLocation(ResourceLocation lootTableId) {
+            SimpleStructureScanner.LOGGER.warn(
+                "Map generation requested loot table {}; generated loot cannot retain its table metadata", lootTableId
+            );
+
+            return LootTable.EMPTY_LOOT_TABLE;
         }
     }
 
@@ -503,13 +528,7 @@ public final class MapGenerationWorld extends World {
         @Nonnull
         @Override
         public IBlockState getBlockState(BlockPos pos) {
-            if (world.isWritingChunkState()) return getStoredBlockState(pos);
-
             return world.getBlockState(pos);
-        }
-
-        private IBlockState getStoredBlockState(BlockPos pos) {
-            return super.getBlockState(pos);
         }
 
         @Override
@@ -525,8 +544,6 @@ public final class MapGenerationWorld extends World {
         @Nullable
         @Override
         public IBlockState setBlockState(BlockPos pos, IBlockState state) {
-            if (world.isWritingChunkState()) return super.setBlockState(pos, state);
-
             IBlockState oldState = world.getBlockState(pos);
             if (!world.setBlockState(pos, state, 2)) return null;
 
