@@ -6,8 +6,7 @@ from typing import Any
 
 
 class Arguments(argparse.Namespace):
-    input: Path
-    output: Path | None
+    input: list[Path]
     inplace: bool
     percent: bool
 
@@ -15,11 +14,8 @@ class Arguments(argparse.Namespace):
 total_time: dict[str, int] = {}
 
 parser = argparse.ArgumentParser(description="Clean a Spark sampler JSON file into nested time/reference/children trees.")
-parser.add_argument("input", type=Path, help="Path to the Spark JSON file to clean")
-parser.add_argument("output", nargs="?", type=Path,
-    help="Optional output path. Defaults to <input stem>.clean.json unless --in-place is used",
-)
-parser.add_argument("--inplace", action="store_true",
+parser.add_argument("input", type=Path, nargs="+", help="Path to the Spark JSON file(s) to clean")
+parser.add_argument("-i", "--inplace", action="store_true",
     help="Overwrite the input file instead of writing a sibling *.clean.json file",
 )
 parser.add_argument("-p", "--percent", action="store_true",
@@ -77,8 +73,12 @@ def expect_index(value: Any, size: int, context: str) -> int:
     return index
 
 
-def child_time_key(child: dict[str, Any]) -> int | float:
-    return child["time"]
+def child_time_key(child: dict[str, Any]) -> int | float | str:
+    t = child["time"]
+    if isinstance(t, str) and t.endswith("%"):
+        t = float(t.rstrip("%"))
+
+    return t
 
 
 def extract_time(record: dict[str, Any], context: str) -> int | float:
@@ -161,11 +161,7 @@ def clean_record(
     reference = build_reference(record, context)
     children: list[dict[str, Any]] = []
 
-    if thread_index not in total_time:
-        total_time[thread_index] = time_value
-
     total_time_value = total_time.get(thread_index, 0)
-
     if args.above and total_time_value > 0 and (time_value / total_time_value) * 100 < args.above:
         return None
 
@@ -229,6 +225,10 @@ def strip_top(thread: dict[str, Any], strip_count: int) -> dict[str, Any]:
 def clean_thread(thread_value: Any, thread_index: int, args: Arguments) -> dict[str, Any]:
     thread = expect_dict(thread_value, f"threads[{thread_index}]")
 
+    time_value = extract_time(thread, f"threads[{thread_index}]")
+    if thread_index not in total_time:
+        total_time[thread_index] = time_value
+
     # Spark stores each thread as a flat node pool and uses childrenRefs to rebuild the tree.
     node_pool = expect_list(thread.get("children", []), f"threads[{thread_index}].children")
     node_cache: dict[int, dict[str, Any]] = {}
@@ -252,23 +252,24 @@ def clean_document(document: Any, args: Arguments) -> Any:
 
 def main(argv: list[str] | None = None) -> int:
     args: Arguments = parser.parse_args(argv, Arguments)
-    if args.inplace and args.output is not None:
-        parser.error("Cannot combine --inplace with an explicit output path")
 
-    input_path = args.input.expanduser()
-    output_path = args.output
+    input_paths = [path.expanduser() for path in args.input]
     if args.inplace:
-        output_path = input_path
-    elif args.output is None:
-        output_path = input_path.with_name(f"{input_path.stem}.clean{input_path.suffix}")
+        output_paths = input_paths
     else:
-        output_path = output_path.expanduser()
+        output_paths = [input_path.with_name(f"{input_path.stem}.clean{input_path.suffix}") for input_path in input_paths]
 
-    cleaned_document = clean_document(json.loads(input_path.read_text("utf-8")), args)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(cleaned_document, indent=2))
+    for input_path, output_path in zip(input_paths, output_paths):
+        total_time.clear()
 
-    print(f"Wrote cleaned JSON to {output_path}")
+        try:
+            cleaned_document = clean_document(json.loads(input_path.read_text("utf-8")), args)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(json.dumps(cleaned_document, indent=2))
+
+            print(f"Wrote cleaned JSON to {output_path}")
+        except Exception as e:
+            print(f"Failed to clean {input_path}: {e}")
 
     return 0
 

@@ -34,7 +34,8 @@ public final class MapGenerationBuilder {
     private final IBlockState material;
     private final List<Layer> aboveLayers = new ArrayList<>();
     private final List<Layer> belowLayers = new ArrayList<>();
-    private final Set<Block> removedBlocks = new HashSet<>();
+    private final Set<Block> excludedBlocks = new HashSet<>();
+    private final Set<IBlockState> excludedStates = new HashSet<>();
 
     private int originX;
     private int originZ;
@@ -134,7 +135,7 @@ public final class MapGenerationBuilder {
             world = new MapGenerationWorld(
                 sizeX, sizeZ, y,
                 material, aboveLayers, belowLayers,
-                originX, originZ, seed, biome
+                excludedBlocks, excludedStates, originX, originZ, seed, biome
             );
 
             map.accept(world, new Random(seed));
@@ -152,14 +153,29 @@ public final class MapGenerationBuilder {
     }
 
     /**
-     * Removes matching block states from the captured layers.
+     * Excludes matching blocks from the captured layers.
+     * This excludes EVERY variant of the specified blocks.
      */
-    public MapGenerationBuilder removeBlocks(Block... blocks) {
-        if (captured) throw new IllegalStateException("Map layers are already captured");
+    public MapGenerationBuilder withoutBlocks(Block... blocks) {
+        if (built) throw new IllegalStateException("Cannot exclude blocks after the map has been built");
         if (blocks == null) return this;
 
         for (Block block : blocks) {
-            if (block != null) removedBlocks.add(block);
+            if (block != null) excludedBlocks.add(block);
+        }
+
+        return this;
+    }
+
+    /**
+     * Excludes matching block states from the captured layers.
+     */
+    public MapGenerationBuilder withoutBlockStates(IBlockState... states) {
+        if (built) throw new IllegalStateException("Cannot exclude block states after the map has been built");
+        if (states == null) return this;
+
+        for (IBlockState state : states) {
+            if (state != null) excludedStates.add(state);
         }
 
         return this;
@@ -179,7 +195,7 @@ public final class MapGenerationBuilder {
         if (MAP_PROFILE) spark = SparkWrapper.start(mapName + "-capture", 1);
 
         try {
-            capturedLayers = world.capture(removedBlocks);
+            capturedLayers = world.capture();
             if (MAP_EXPORT) exportMap(world, capturedLayers);
             return capturedLayers;
         } catch (Exception e) {

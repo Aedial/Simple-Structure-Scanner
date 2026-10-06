@@ -58,6 +58,7 @@ import com.simplestructurescanner.structure.util.StructurePreviewStitcher;
  */
 public final class MapGenerationWorld extends World {
     private static final LootTableManager MAP_LOOT_TABLE_MANAGER = new MapGenerationLootTableManager();
+    private static final IBlockState AIR = Blocks.AIR.getDefaultState();
 
     private final int minX;
     private final int maxX;
@@ -66,18 +67,25 @@ public final class MapGenerationWorld extends World {
     private final int platformY;
     private final int platformMinY;
     private final int platformMaxY;
-    private final IBlockState platformMaterial;
-    private final List<MapGenerationBuilder.Layer> aboveLayers;
-    private final List<MapGenerationBuilder.Layer> belowLayers;
+    private final IBlockState[] platformStates = new IBlockState[256];
     private final Long2ObjectMap<IBlockState> changedStates = new Long2ObjectOpenHashMap<>();
     private final Map<Long, TileEntity> tileEntities = new HashMap<>();
     private final List<NBTTagCompound> generatedEntityData = new ArrayList<>();
-    private final Set<Block> captureRemovedBlocks = new HashSet<>();
+    private final Set<Block> excludedBlocks;
+    private final Set<IBlockState> excludedStates;
+    private boolean hasCaptureContent;
+    private int minCaptureX = Integer.MAX_VALUE;
+    private int minCaptureY = Integer.MAX_VALUE;
+    private int minCaptureZ = Integer.MAX_VALUE;
+    private int maxCaptureX = Integer.MIN_VALUE;
+    private int maxCaptureY = Integer.MIN_VALUE;
+    private int maxCaptureZ = Integer.MIN_VALUE;
     @Nullable
     private BlockPos captureOrigin;
 
     MapGenerationWorld(int sizeX, int sizeZ, int platformY, IBlockState platformMaterial,
             List<MapGenerationBuilder.Layer> aboveLayers, List<MapGenerationBuilder.Layer> belowLayers,
+            Set<Block> excludedBlocks, Set<IBlockState> excludedStates,
             int originX, int originZ, long seed, Biome biome) {
 
         super(
@@ -94,11 +102,11 @@ public final class MapGenerationWorld extends World {
         minZ = originZ - sizeZ / 2;
         maxZ = minZ + sizeZ - 1;
         this.platformY = platformY;
-        this.platformMaterial = platformMaterial;
-        this.aboveLayers = Collections.unmodifiableList(new ArrayList<>(aboveLayers));
-        this.belowLayers = Collections.unmodifiableList(new ArrayList<>(belowLayers));
-        platformMinY = platformY - getLayerHeight(this.belowLayers);
-        platformMaxY = platformY + getLayerHeight(this.aboveLayers);
+        platformMinY = platformY - getLayerHeight(belowLayers);
+        platformMaxY = platformY + getLayerHeight(aboveLayers);
+        this.excludedBlocks = Collections.unmodifiableSet(new HashSet<>(excludedBlocks));
+        this.excludedStates = Collections.unmodifiableSet(new HashSet<>(excludedStates));
+        fillPlatformStates(platformMaterial, aboveLayers, belowLayers);
         this.lootTable = MAP_LOOT_TABLE_MANAGER;
 
         this.provider.setDimension(Integer.MAX_VALUE - 666);
@@ -136,7 +144,7 @@ public final class MapGenerationWorld extends World {
         Block newBlock = newState.getBlock();
         TileEntity oldTileEntity = tileEntities.get(pos.toLong());
 
-        updateDelta(pos, newState);
+        if (updateDelta(pos, newState)) updateCaptureBounds(pos, newState);
         if (!isRemote && oldBlock != newBlock) oldBlock.breakBlock(this, pos, oldState);
         if (oldTileEntity != null && oldTileEntity.shouldRefresh(this, pos, oldState, newState)) removeTileEntity(pos);
         if (!isRemote && oldBlock != newBlock) newBlock.onBlockAdded(this, pos, newState);
@@ -152,17 +160,14 @@ public final class MapGenerationWorld extends World {
     @Nonnull
     @Override
     public IBlockState getBlockState(@Nonnull BlockPos pos) {
-        IBlockState state = getGeneratedState(pos);
-        if (captureRemovedBlocks.contains(state.getBlock())) return Blocks.AIR.getDefaultState();
-
-        return state;
+        return getGeneratedState(pos);
     }
 
     @Nullable
     @Override
     public TileEntity getTileEntity(@Nonnull BlockPos pos) {
         IBlockState state = getGeneratedState(pos);
-        if (captureRemovedBlocks.contains(state.getBlock()) || !state.getBlock().hasTileEntity(state)) return null;
+        if (!state.getBlock().hasTileEntity(state)) return null;
 
         TileEntity tileEntity = tileEntities.get(pos.toLong());
         if (tileEntity != null) return tileEntity;
@@ -284,20 +289,13 @@ public final class MapGenerationWorld extends World {
         return copiedData;
     }
 
-    List<StructureLayer> capture(Set<Block> removedBlocks) {
-        captureRemovedBlocks.clear();
-        captureRemovedBlocks.addAll(removedBlocks);
+    List<StructureLayer> capture() {
         captureOrigin = null;
+        CaptureBounds bounds = getCaptureBounds();
+        if (bounds == null) return Collections.emptyList();
 
-        try {
-            CaptureBounds bounds = findCaptureBounds();
-            if (bounds == null) return Collections.emptyList();
-
-            captureOrigin = bounds.minPos;
-            return buildLayers(bounds);
-        } finally {
-            captureRemovedBlocks.clear();
-        }
+        captureOrigin = bounds.minPos;
+        return buildLayers(bounds);
     }
 
     @Nullable
@@ -336,7 +334,7 @@ public final class MapGenerationWorld extends World {
     }
 
     private IBlockState getGeneratedState(BlockPos pos) {
-        if (!isWithinPlatform(pos)) return Blocks.AIR.getDefaultState();
+        if (!isWithinPlatform(pos)) return AIR;
 
         IBlockState state = changedStates.get(pos.toLong());
         if (state != null) return state;
@@ -345,23 +343,28 @@ public final class MapGenerationWorld extends World {
     }
 
     private IBlockState getPlatformState(BlockPos pos) {
-        if (!isWithinPlatform(pos)) return Blocks.AIR.getDefaultState();
+        if (!isWithinPlatform(pos)) return AIR;
 
-        int relativeY = pos.getY() - platformY;
-        if (relativeY == 0) return platformMaterial;
+        int y = pos.getY();
+        if (y < 0 || y >= platformStates.length) return AIR;
 
-        List<MapGenerationBuilder.Layer> layers = relativeY > 0 ? aboveLayers : belowLayers;
-        return getLayerState(layers, Math.abs(relativeY));
+        IBlockState state = platformStates[y];
+        return state != null ? state : AIR;
     }
 
-    private static IBlockState getLayerState(List<MapGenerationBuilder.Layer> layers, int distance) {
-        int currentDistance = 0;
-        for (MapGenerationBuilder.Layer layer : layers) {
-            currentDistance += layer.sizeY;
-            if (distance <= currentDistance) return layer.material;
+    private void fillPlatformStates(IBlockState platformMaterial, List<MapGenerationBuilder.Layer> aboveLayers,
+            List<MapGenerationBuilder.Layer> belowLayers) {
+        platformStates[platformY] = platformMaterial;
+
+        int y = platformY;
+        for (MapGenerationBuilder.Layer layer : aboveLayers) {
+            for (int height = 0; height < layer.sizeY; height++) platformStates[++y] = layer.material;
         }
 
-        return Blocks.AIR.getDefaultState();
+        y = platformY;
+        for (MapGenerationBuilder.Layer layer : belowLayers) {
+            for (int height = 0; height < layer.sizeY; height++) platformStates[--y] = layer.material;
+        }
     }
 
     private static int getLayerHeight(List<MapGenerationBuilder.Layer> layers) {
@@ -375,47 +378,24 @@ public final class MapGenerationWorld extends World {
         return pos.getX() >= minX && pos.getX() <= maxX && pos.getZ() >= minZ && pos.getZ() <= maxZ;
     }
 
-    private void updateDelta(BlockPos pos, IBlockState state) {
+    private boolean updateDelta(BlockPos pos, IBlockState state) {
         long key = pos.toLong();
         if (state.equals(getPlatformState(pos))) {
             changedStates.remove(key);
-            return;
+            return false;
         }
 
         changedStates.put(key, state);
+        return true;
     }
 
     @Nullable
-    private CaptureBounds findCaptureBounds() {
-        boolean hasContent = false;
-        int minCaptureX = Integer.MAX_VALUE;
-        int minCaptureY = Integer.MAX_VALUE;
-        int minCaptureZ = Integer.MAX_VALUE;
-        int maxCaptureX = Integer.MIN_VALUE;
-        int maxCaptureY = Integer.MIN_VALUE;
-        int maxCaptureZ = Integer.MIN_VALUE;
+    private CaptureBounds getCaptureBounds() {
+        if (!hasCaptureContent) return null;
 
-        for (long key : changedStates.keySet()) {
-            BlockPos pos = BlockPos.fromLong(key);
-            IBlockState state = getBlockState(pos);
-            if (state.getBlock() == Blocks.AIR) continue;
-
-            hasContent = true;
-            minCaptureX = Math.min(minCaptureX, pos.getX());
-            minCaptureY = Math.min(minCaptureY, pos.getY());
-            minCaptureZ = Math.min(minCaptureZ, pos.getZ());
-            maxCaptureX = Math.max(maxCaptureX, pos.getX());
-            maxCaptureY = Math.max(maxCaptureY, pos.getY());
-            maxCaptureZ = Math.max(maxCaptureZ, pos.getZ());
-        }
-
-        if (!hasContent) return null;
-
-        minCaptureY = Math.min(minCaptureY, platformMinY);
-        maxCaptureY = Math.max(maxCaptureY, platformMaxY);
         return new CaptureBounds(
-            new BlockPos(minCaptureX, minCaptureY, minCaptureZ),
-            new BlockPos(maxCaptureX, maxCaptureY, maxCaptureZ)
+            new BlockPos(minCaptureX, Math.min(minCaptureY, platformMinY), minCaptureZ),
+            new BlockPos(maxCaptureX, Math.max(maxCaptureY, platformMaxY), maxCaptureZ)
         );
     }
 
@@ -423,16 +403,41 @@ public final class MapGenerationWorld extends World {
         StructurePreviewStitcher preview = new StructurePreviewStitcher();
 
         for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
-            BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
-            IBlockState state = getBlockState(worldPos);
-            if (state.getBlock() == Blocks.AIR) continue;
+            IBlockState state = getBlockState(mutablePos);
+            if (state.getBlock() == Blocks.AIR || isExcluded(state)) continue;
 
-            TileEntity tileEntity = getTileEntity(worldPos);
-            NBTTagCompound tileData = tileEntity != null ? tileEntity.writeToNBT(new NBTTagCompound()) : null;
-            preview.setBlock(worldPos.subtract(bounds.minPos), state, tileData);
+            NBTTagCompound tileData = null;
+            if (state.getBlock().hasTileEntity(state)) {
+                BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
+                TileEntity tileEntity = getTileEntity(worldPos);
+                if (tileEntity != null) tileData = tileEntity.writeToNBT(new NBTTagCompound());
+            }
+
+            preview.setBlock(
+                mutablePos.getX() - bounds.minPos.getX(),
+                mutablePos.getY() - bounds.minPos.getY(),
+                mutablePos.getZ() - bounds.minPos.getZ(),
+                state, tileData
+            );
         }
 
         return preview.buildLayers();
+    }
+
+    private void updateCaptureBounds(BlockPos pos, IBlockState state) {
+        if (state.getBlock() == Blocks.AIR || isExcluded(state)) return;
+
+        hasCaptureContent = true;
+        minCaptureX = Math.min(minCaptureX, pos.getX());
+        minCaptureY = Math.min(minCaptureY, pos.getY());
+        minCaptureZ = Math.min(minCaptureZ, pos.getZ());
+        maxCaptureX = Math.max(maxCaptureX, pos.getX());
+        maxCaptureY = Math.max(maxCaptureY, pos.getY());
+        maxCaptureZ = Math.max(maxCaptureZ, pos.getZ());
+    }
+
+    private boolean isExcluded(IBlockState state) {
+        return excludedBlocks.contains(state.getBlock()) || excludedStates.contains(state);
     }
 
     private static final class CaptureBounds {

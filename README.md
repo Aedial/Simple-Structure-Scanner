@@ -114,6 +114,7 @@ Use `-Dsimplestructurescanner.mapExport=true` to export every MapGen capture to 
 
 This allows converting a MapGen capture into a standalone NBT structure file that can be reused or analyzed independently. Do note that some entities may not appear, as they *spawn dynamically* and are not part of the structure generation itself.
 
+The exporting process can be pretty performance-intensive for large structures, adding multiple seconds *per structure* to the loading time. As such, it is recommended to only enable this option once (to gather the latest exports) and then disable it.
 
 ## NBT Tools
 
