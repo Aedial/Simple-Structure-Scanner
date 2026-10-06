@@ -14,6 +14,7 @@ import javax.annotation.Nullable;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
@@ -73,6 +74,8 @@ public final class MapGenerationWorld extends World {
     private final List<NBTTagCompound> generatedEntityData = new ArrayList<>();
     private final Set<Block> excludedBlocks;
     private final Set<IBlockState> excludedStates;
+    private final boolean capturePlatform;
+    private final boolean captureLowestNonOpaqueFloor;
     private boolean hasCaptureContent;
     private int minCaptureX = Integer.MAX_VALUE;
     private int minCaptureY = Integer.MAX_VALUE;
@@ -85,6 +88,7 @@ public final class MapGenerationWorld extends World {
 
     MapGenerationWorld(int sizeX, int sizeZ, int platformY, IBlockState platformMaterial,
             List<MapGenerationBuilder.Layer> aboveLayers, List<MapGenerationBuilder.Layer> belowLayers,
+            boolean capturePlatform, boolean captureLowestNonOpaqueFloor,
             Set<Block> excludedBlocks, Set<IBlockState> excludedStates,
             int originX, int originZ, long seed, Biome biome) {
 
@@ -102,6 +106,8 @@ public final class MapGenerationWorld extends World {
         minZ = originZ - sizeZ / 2;
         maxZ = minZ + sizeZ - 1;
         this.platformY = platformY;
+        this.capturePlatform = capturePlatform;
+        this.captureLowestNonOpaqueFloor = captureLowestNonOpaqueFloor;
         platformMinY = platformY - getLayerHeight(belowLayers);
         platformMaxY = platformY + getLayerHeight(aboveLayers);
         this.excludedBlocks = Collections.unmodifiableSet(new HashSet<>(excludedBlocks));
@@ -401,31 +407,92 @@ public final class MapGenerationWorld extends World {
 
     private List<StructureLayer> buildLayers(CaptureBounds bounds) {
         StructurePreviewStitcher preview = new StructurePreviewStitcher();
+        LongOpenHashSet occupiedPositions = new LongOpenHashSet();
 
-        for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
-            IBlockState state = getBlockState(mutablePos);
-            if (state.getBlock() == Blocks.AIR || isExcluded(state)) continue;
-
-            NBTTagCompound tileData = null;
-            if (state.getBlock().hasTileEntity(state)) {
-                BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
-                TileEntity tileEntity = getTileEntity(worldPos);
-                if (tileEntity != null) tileData = tileEntity.writeToNBT(new NBTTagCompound());
-            }
-
-            preview.setBlock(
-                mutablePos.getX() - bounds.minPos.getX(),
-                mutablePos.getY() - bounds.minPos.getY(),
-                mutablePos.getZ() - bounds.minPos.getZ(),
-                state, tileData
-            );
-        }
+        addGeneratedStates(preview, bounds, occupiedPositions);
+        if (capturePlatform) addPlatformStates(preview, bounds, occupiedPositions);
+        if (captureLowestNonOpaqueFloor) addNonOpaqueFloorStates(preview, bounds, occupiedPositions);
 
         return preview.buildLayers();
     }
 
+    private void addGeneratedStates(StructurePreviewStitcher preview, CaptureBounds bounds,
+            LongOpenHashSet occupiedPositions) {
+        for (Long2ObjectMap.Entry<IBlockState> entry : changedStates.long2ObjectEntrySet()) {
+            BlockPos pos = BlockPos.fromLong(entry.getLongKey());
+            addPreviewBlock(preview, pos, entry.getValue(), bounds);
+            occupiedPositions.add(entry.getLongKey());
+        }
+    }
+
+    private void addPlatformStates(StructurePreviewStitcher preview, CaptureBounds bounds,
+            LongOpenHashSet occupiedPositions) {
+        for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
+            long key = mutablePos.toLong();
+            if (occupiedPositions.contains(key)) continue;
+
+            IBlockState state = getPlatformState(mutablePos);
+            if (addPreviewBlock(preview, mutablePos, state, bounds)) occupiedPositions.add(key);
+        }
+    }
+
+    private void addNonOpaqueFloorStates(StructurePreviewStitcher preview, CaptureBounds bounds,
+            LongOpenHashSet occupiedPositions) {
+        for (Long2ObjectMap.Entry<IBlockState> entry : getNonOpaqueFloorStates().long2ObjectEntrySet()) {
+            if (occupiedPositions.contains(entry.getLongKey())) continue;
+
+            BlockPos pos = BlockPos.fromLong(entry.getLongKey());
+            if (addPreviewBlock(preview, pos, entry.getValue(), bounds)) {
+                occupiedPositions.add(entry.getLongKey());
+            }
+        }
+    }
+
+    private boolean addPreviewBlock(StructurePreviewStitcher preview, BlockPos pos, IBlockState state,
+            CaptureBounds bounds) {
+        if (state.getBlock() == Blocks.AIR || isExcluded(state)) return false;
+
+        NBTTagCompound tileData = null;
+        if (state.getBlock().hasTileEntity(state)) {
+            TileEntity tileEntity = getTileEntity(pos);
+            if (tileEntity != null) tileData = tileEntity.writeToNBT(new NBTTagCompound());
+        }
+
+        preview.setBlock(
+            pos.getX() - bounds.minPos.getX(),
+            pos.getY() - bounds.minPos.getY(),
+            pos.getZ() - bounds.minPos.getZ(),
+            state, tileData
+        );
+        return true;
+    }
+
+    private Long2ObjectMap<IBlockState> getNonOpaqueFloorStates() {
+        Long2ObjectMap<IBlockState> floorStates = new Long2ObjectOpenHashMap<>();
+        for (Long2ObjectMap.Entry<IBlockState> entry : changedStates.long2ObjectEntrySet()) {
+            IBlockState state = entry.getValue();
+            if (isExcluded(state) || state.isOpaqueCube()) continue;
+
+            BlockPos pos = BlockPos.fromLong(entry.getLongKey());
+            BlockPos floorPos = pos.down();
+            if (floorPos.getY() < 0) continue;
+
+            // Only consider the lowest non-opaque floor block for each column
+            long floorKey = floorPos.toLong();
+            if (changedStates.containsKey(floorKey)) continue;
+
+            IBlockState floorState = getPlatformState(floorPos);
+            if (floorState.getBlock() == Blocks.AIR || isExcluded(floorState)
+                    || !floorState.isOpaqueCube()) continue;
+
+            floorStates.put(floorKey, floorState);
+        }
+
+        return floorStates;
+    }
+
     private void updateCaptureBounds(BlockPos pos, IBlockState state) {
-        if (state.getBlock() == Blocks.AIR || isExcluded(state)) return;
+        if (isExcluded(state)) return;
 
         hasCaptureContent = true;
         minCaptureX = Math.min(minCaptureX, pos.getX());

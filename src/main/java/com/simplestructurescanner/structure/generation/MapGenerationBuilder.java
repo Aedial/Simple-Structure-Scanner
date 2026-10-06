@@ -37,6 +37,8 @@ public final class MapGenerationBuilder {
     private final Set<Block> excludedBlocks = new HashSet<>();
     private final Set<IBlockState> excludedStates = new HashSet<>();
 
+    private boolean capturePlatform = true;
+    private boolean captureLowestNonOpaqueFloor;
     private int originX;
     private int originZ;
     private long seed = 69L;
@@ -77,6 +79,26 @@ public final class MapGenerationBuilder {
         if (built) throw new IllegalStateException("Cannot add layers after the map has been built");
 
         addLayer(belowLayers, sizeY, layerMaterial);
+        return this;
+    }
+
+    /**
+     * Omits the platform from the captured layers.
+     */
+    public MapGenerationBuilder withoutPlatform() {
+        if (built) throw new IllegalStateException("Cannot change platform capture after the map has been built");
+
+        capturePlatform = false;
+        return this;
+    }
+
+    /**
+     * Captures the configured terrain block below each vertical run of non-opaque generated blocks.
+     */
+    public MapGenerationBuilder withLowestNonOpaqueFloor() {
+        if (built) throw new IllegalStateException("Cannot add a generated floor after the map has been built");
+
+        captureLowestNonOpaqueFloor = true;
         return this;
     }
 
@@ -134,7 +156,7 @@ public final class MapGenerationBuilder {
         try {
             world = new MapGenerationWorld(
                 sizeX, sizeZ, y,
-                material, aboveLayers, belowLayers,
+                material, aboveLayers, belowLayers, capturePlatform, captureLowestNonOpaqueFloor,
                 excludedBlocks, excludedStates, originX, originZ, seed, biome
             );
 
@@ -182,7 +204,7 @@ public final class MapGenerationBuilder {
     }
 
     /**
-     * Captures the generated structure(s) with the platform restored inside structure bounds.
+     * Captures the generated structure(s).
      */
     public List<StructureLayer> capture() {
         if (!built) throw new IllegalStateException("Build the map before capturing its layers");

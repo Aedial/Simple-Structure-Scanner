@@ -228,6 +228,10 @@ MapGenerationBuilder map = new MapGenerationBuilder(128, 128, 63, GRASS)
 
 **NOTE:** You do not need to remove the blocks from the platform, aboveLayers, or belowLayers manually; the builder handles it for you. withoutBlocks is only necessary for blocks placed by the generation function that you want to clear. Use withoutBlockStates when only specific block-state variants need exclusion.
 
+By default, the platform is shown in the captured structure. `withoutPlatform()` allows to omit the platform from it.
+
+If you have corridors and tunnels that are carved into the terrain, without a floor being generated, `withLowestNonOpaqueFloor()` ensures that the original terrain block below each vertical run of air or non-opaque generated blocks is captured. This toggle can be pretty performance-intensive, so use it judiciously.
+
 The `build()` method finalizes the map generation process. No further modifications to the map should be made after calling this method, and any attempts to do so will explicitly error.
 
 If generateStructureFunction crashes, the structure generation will fail gracefully (with error log), and the capture will be discarded. The `fromMapWithBundledFallback` method can be used to provide a fallback to a bundled NBT structure if the map generation fails.
