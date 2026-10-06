@@ -65,13 +65,6 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
 
     private static final int STRONGHOLD_COUNT = 128;
 
-    private static final IBlockState GRASS = Blocks.GRASS.getDefaultState();
-    private static final IBlockState DIRT = Blocks.DIRT.getDefaultState();
-    private static final IBlockState STONE = Blocks.STONE.getDefaultState();
-    private static final IBlockState WATER = Blocks.WATER.getDefaultState();
-    private static final IBlockState GRAVEL = Blocks.GRAVEL.getDefaultState();
-    private static final IBlockState END_STONE = Blocks.END_STONE.getDefaultState();
-
     private static final List<Biome> MONUMENT_WATER_BIOMES = Arrays.asList(
         Biomes.OCEAN, Biomes.DEEP_OCEAN, Biomes.RIVER, Biomes.FROZEN_OCEAN, Biomes.FROZEN_RIVER
     );
@@ -132,7 +125,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
             .withEntities(new EntityEntry("minecraft:wither_skeleton", 3))
             .withMetadata(null, nether, RarityTextHelper.oneInChunks(768));
 
-        // Structures from Map - FIXME: Improve performance. It takes multiple seconds *per* structure
+        // Structures from Map
 
         // Mineshaft - any biome underground
         MapGenerationBuilder mineshaftMap = new MapGenerationBuilder(256, 256, 64, GRASS)

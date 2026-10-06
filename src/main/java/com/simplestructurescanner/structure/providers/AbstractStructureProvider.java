@@ -16,6 +16,8 @@ import javax.annotation.ParametersAreNonnullByDefault;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.common.BiomeDictionary;
+import net.minecraft.block.state.IBlockState;
+import net.minecraft.init.Blocks;
 import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.structure.LocalizedText;
@@ -31,6 +33,17 @@ import com.simplestructurescanner.structure.util.StructureTranslationKeys;
 public abstract class AbstractStructureProvider implements StructureProvider {
     protected static final String CHEST_KEY = "gui.structurescanner.loot.chest";
     protected static final String MINECART_CHEST_KEY = "gui.structurescanner.loot.minecart_chest";
+
+    public static final IBlockState GRASS = Blocks.GRASS.getDefaultState();
+    public static final IBlockState DIRT = Blocks.DIRT.getDefaultState();
+    public static final IBlockState STONE = Blocks.STONE.getDefaultState();
+    public static final IBlockState GRAVEL = Blocks.GRAVEL.getDefaultState();
+    public static final IBlockState SAND = Blocks.SAND.getDefaultState();
+    public static final IBlockState SANDSTONE = Blocks.SANDSTONE.getDefaultState();
+    public static final IBlockState SNOW = Blocks.SNOW.getDefaultState();
+    public static final IBlockState END_STONE = Blocks.END_STONE.getDefaultState();
+    public static final IBlockState WATER = Blocks.WATER.getDefaultState();
+    public static final IBlockState LAVA = Blocks.LAVA.getDefaultState();
 
     /** The unique ID of this structure provider. Used for filtering and identification. Does not need to match the mod ID. */
     private final String providerId;
