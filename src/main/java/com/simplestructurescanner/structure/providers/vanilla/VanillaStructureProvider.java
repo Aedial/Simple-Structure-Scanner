@@ -8,23 +8,20 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import javax.annotation.Nullable;
 
-import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Biomes;
 import net.minecraft.init.Blocks;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.Rotation;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.ChunkPos;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.BiomeProvider;
@@ -32,6 +29,9 @@ import net.minecraft.world.chunk.ChunkPrimer;
 import net.minecraft.world.gen.ChunkGeneratorEnd;
 import net.minecraft.world.gen.ChunkGeneratorOverworld;
 import net.minecraft.world.gen.IChunkGenerator;
+import net.minecraft.world.gen.structure.MapGenMineshaft;
+import net.minecraft.world.gen.structure.MapGenStronghold;
+import net.minecraft.world.gen.structure.MapGenStructure;
 import net.minecraft.world.gen.structure.MapGenVillage;
 import net.minecraft.world.gen.structure.StructureBoundingBox;
 import net.minecraft.world.gen.structure.StructureComponent;
@@ -43,12 +43,8 @@ import net.minecraftforge.common.BiomeManager;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.DimensionInfo;
-import com.simplestructurescanner.structure.LocalizedText;
-import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
-import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
-import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.TerrainHeightCalculator;
 import com.simplestructurescanner.structure.generation.MapGenerationWorld;
 import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
@@ -71,6 +67,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
 
     private static final IBlockState GRASS = Blocks.GRASS.getDefaultState();
     private static final IBlockState DIRT = Blocks.DIRT.getDefaultState();
+    private static final IBlockState STONE = Blocks.STONE.getDefaultState();
     private static final IBlockState WATER = Blocks.WATER.getDefaultState();
     private static final IBlockState GRAVEL = Blocks.GRAVEL.getDefaultState();
     private static final IBlockState END_STONE = Blocks.END_STONE.getDefaultState();
@@ -101,55 +98,17 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         Set<DimensionInfo> nether = Collections.singleton(DimensionInfo.NETHER);
         Set<DimensionInfo> end = Collections.singleton(DimensionInfo.END);
 
-        // Mineshaft - any biome underground
-        register("mineshaft")
-            .fromBundled()
-            // TODO: add a Mineshaft bundled NBT file
-            .withFallbackBlocks(filterNulls(
-                createBlockEntry(Blocks.PLANKS, 0, 500),
-                createBlockEntry(Blocks.OAK_FENCE, 0, 200),
-                createBlockEntry(Blocks.RAIL, 0, 300),
-                createBlockEntry(Blocks.TORCH, 0, 100),
-                createBlockEntry(Blocks.WEB, 0, 50),
-                createBlockEntry(Blocks.MOB_SPAWNER, 0, 1)))
-            .withFallbackLootTables(new LootEntry("minecraft:chests/abandoned_mineshaft", MINECART_CHEST_KEY))
-            .withFallbackEntities(new EntityEntry("minecraft:cave_spider", 1, true))
-            .withMetadata(null, overworld, RarityTextHelper.oneInChunks(250.0D));
-
-        // Stronghold - fixed ring placement with 128 total structures
-        register("stronghold")
-            .fromBundled()
-            // TODO: add a Stronghold bundled NBT file
-            .withFallbackBlocks(filterNulls(
-                createBlockEntry(Blocks.STONEBRICK, 0, 3000),
-                createBlockEntry(Blocks.STONEBRICK, 1, 500),
-                createBlockEntry(Blocks.STONEBRICK, 2, 500),
-                createBlockEntry(Blocks.STONE_BRICK_STAIRS, 0, 200),
-                createBlockEntry(Blocks.IRON_BARS, 0, 100),
-                createBlockEntry(Blocks.IRON_DOOR, 0, 10),
-                createBlockEntry(Blocks.BOOKSHELF, 0, 100),
-                createBlockEntry(Blocks.END_PORTAL_FRAME, 0, 12),
-                createBlockEntry(Blocks.MOB_SPAWNER, 0, 1)))
-            .withFallbackLootTables(
-                new LootEntry("minecraft:chests/stronghold_corridor", CHEST_KEY),
-                new LootEntry("minecraft:chests/stronghold_crossing", CHEST_KEY),
-                new LootEntry("minecraft:chests/stronghold_library", CHEST_KEY))
-            .withFallbackEntities(new EntityEntry("minecraft:silverfish", 1, true))
-            .withMetadata(null, overworld)
-            .withRarity(RarityTextHelper.oneInChunks(
-                RarityTextHelper.averageChunksForFixedCountInRadius(STRONGHOLD_COUNT, 1472.0D)));
-
         // Desert Temple - Desert, Desert Hills
         register("desert_temple")
             .fromBundled()
             .withMetadata(biomes(Biomes.DESERT, Biomes.DESERT_HILLS), overworld)
-            .withRarity(RarityTextHelper.oneInChunks(1024));
+            .oneInChunks(1024);
 
         // Jungle Temple - Jungle, Jungle Hills
         register("jungle_temple")
             .fromBundled()
             .withMetadata(biomes(Biomes.JUNGLE, Biomes.JUNGLE_HILLS), overworld)
-            .withRarity(RarityTextHelper.oneInChunks(1024));
+            .oneInChunks(1024);
 
         // Witch Hut - Swamp
         register("witch_hut")
@@ -160,14 +119,12 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         register("igloo")
             .fromBundled()
             .withMetadata(biomes(Biomes.ICE_PLAINS, Biomes.COLD_TAIGA), overworld)
-            .withRarity(RarityTextHelper.oneInChunks(1024));
+            .oneInChunks(1024);
 
         // Dungeon - any biome underground
         register("dungeon")
             .fromBundled()
-            .withMetadata(null, overworld)
-            .withRarity(LocalizedText.translatable("gui.structurescanner.rarity",
-                LocalizedText.translatable("gui.structurescanner.rarity.common")));
+            .withMetadata(null, overworld, Rarity.UNCOMMON);
 
         // Nether Fortress
         register("fortress")
@@ -176,6 +133,32 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
             .withMetadata(null, nether, RarityTextHelper.oneInChunks(768));
 
         // Structures from Map - FIXME: Improve performance. It takes multiple seconds *per* structure
+
+        // Mineshaft - any biome underground
+        MapGenerationBuilder mineshaftMap = new MapGenerationBuilder(256, 256, 64, GRASS)
+            .withName("minecraft:mineshaft")
+            .withBelowLayers(63, STONE)
+            .withoutPlatform()
+            .withLowestNonOpaqueFloor()
+            .build(VanillaStructureProvider::generateMineshaft, Biomes.PLAINS);
+
+        register("mineshaft")
+            .fromMap(mineshaftMap)
+            .withFallbackEntities(new EntityEntry("minecraft:cave_spider", 1, true))
+            .withMetadata(null, overworld, RarityTextHelper.oneInChunks(250.0D));
+
+        // Stronghold - fixed ring placement with 128 total structures
+        MapGenerationBuilder strongholdMap = new MapGenerationBuilder(256, 256, 64, GRASS)
+            .withName("minecraft:stronghold")
+            .withBelowLayers(63, STONE)
+            .withoutPlatform()
+            .withLowestNonOpaqueFloor()
+            .build(VanillaStructureProvider::generateStronghold, Biomes.PLAINS);
+
+        register("stronghold")
+            .fromMap(strongholdMap)
+            .withMetadata(null, overworld)
+            .oneInChunks(RarityTextHelper.averageChunksForFixedCountInRadius(STRONGHOLD_COUNT, 1472.0D));
 
         // Village - Plains, Desert, Savanna, Taiga
 
@@ -207,10 +190,10 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
             .withMetadata(biomes(Biomes.DEEP_OCEAN), overworld, RarityTextHelper.oneInChunks(1024));
 
         // Woodland Mansion - Roofed Forest
-        MapGenerationBuilder mansionMap = null; /* new MapGenerationBuilder(128, 128, 63, GRASS)
+        MapGenerationBuilder mansionMap = new MapGenerationBuilder(128, 128, 63, GRASS)
             .withName("minecraft:mansion")
             .withOrigin(-32, 16)                // Mansion's start is near the entrance
-            .build(VanillaStructureProvider::generateMansion, Biomes.ROOFED_FOREST); */
+            .build(VanillaStructureProvider::generateMansion, Biomes.ROOFED_FOREST);
 
         Set<Biome> mansionBiomes = biomes(Biomes.ROOFED_FOREST, Biomes.MUTATED_ROOFED_FOREST);
         register("mansion")
@@ -218,9 +201,9 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
             .withMetadata(mansionBiomes, overworld, RarityTextHelper.oneInChunks(6400));
 
         // End City & End Ship
-        MapGenerationBuilder endCityMap = null; /* new MapGenerationBuilder(192, 192, 63, END_STONE)
+        MapGenerationBuilder endCityMap = new MapGenerationBuilder(192, 192, 63, END_STONE)
             .withName("minecraft:endcity")
-            .build(VanillaStructureProvider::generateEndCity, Biomes.SKY); */
+            .build(VanillaStructureProvider::generateEndCity, Biomes.SKY);
 
         register("endcity")
             .fromMapWithBundledFallback(endCityMap)
@@ -234,6 +217,40 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
     private static void generateVillage(MapGenerationWorld world, Random random) {
         (new MapGenVillage.Start(world, random, 0, 0, 0))
             .generateStructure(world, random, getMapBounds(world));
+    }
+
+    private static void generateMineshaft(MapGenerationWorld world, Random random) {
+        generateMapStructure(world, random, new MapGenMineshaft() {
+            @Override
+            protected boolean canSpawnStructureAtCoords(int chunkX, int chunkZ) {
+                return chunkX == 0 && chunkZ == 0;
+            }
+        });
+    }
+
+    private static void generateStronghold(MapGenerationWorld world, Random random) {
+        generateMapStructure(world, random, new MapGenStronghold() {
+            @Override
+            protected boolean canSpawnStructureAtCoords(int chunkX, int chunkZ) {
+                return chunkX == 0 && chunkZ == 0;
+            }
+        });
+    }
+
+    private static void generateMapStructure(MapGenerationWorld world, Random random, MapGenStructure mapGenerator) {
+        mapGenerator.generate(world, 0, 0, new ChunkPrimer());
+
+        int minChunkX = world.getMinX() >> 4;
+        int maxChunkX = world.getMaxX() >> 4;
+        int minChunkZ = world.getMinZ() >> 4;
+        int maxChunkZ = world.getMaxZ() >> 4;
+
+        random.setSeed(world.getSeed());
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                mapGenerator.generateStructure(world, random, new ChunkPos(chunkX, chunkZ));
+            }
+        }
     }
 
     private static void generateMonument(MapGenerationWorld world, Random random) {
@@ -267,20 +284,6 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
 
     private static StructureBoundingBox getMapBounds(MapGenerationWorld world) {
         return new StructureBoundingBox(world.getMinX(), 0, world.getMinZ(), world.getMaxX(), 255, world.getMaxZ());
-    }
-
-    // Procedural structures use hardcoded estimates since they're generated algorithmically
-
-    @SuppressWarnings("deprecation")
-    private BlockEntry createBlockEntry(Block block, int meta, int count) {
-        IBlockState state = block.getStateFromMeta(meta);
-
-        return StructureNBTParser.createBlockEntry(state, count);
-    }
-
-    @SafeVarargs
-    private final <T> List<T> filterNulls(T... elements) {
-        return Stream.of(elements).filter(Objects::nonNull).collect(Collectors.toList());
     }
 
     @Override

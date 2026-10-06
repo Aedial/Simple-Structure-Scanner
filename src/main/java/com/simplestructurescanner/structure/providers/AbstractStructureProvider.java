@@ -1,6 +1,8 @@
 package com.simplestructurescanner.structure.providers;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +15,7 @@ import javax.annotation.ParametersAreNonnullByDefault;
 
 import net.minecraft.world.biome.Biome;
 import net.minecraft.util.ResourceLocation;
+import net.minecraftforge.common.BiomeDictionary;
 import net.minecraftforge.fml.common.Loader;
 
 import com.simplestructurescanner.structure.LocalizedText;
@@ -41,6 +44,30 @@ public abstract class AbstractStructureProvider implements StructureProvider {
 
     protected final List<ResourceLocation> knownStructures = new ArrayList<>();
     protected final Map<ResourceLocation, StructureInfo> structureInfos = new LinkedHashMap<>();
+
+    public enum Rarity {
+        COMMON("common", 0xAAAAAA),
+        UNCOMMON("uncommon", 0x55FF55),
+        RARE("rare", 0x55AAFF),
+        UNIQUE("unique", 0xFF55FF),
+        FIXED_POSITION("fixed_position", 0xFFAA00);
+
+        private final String key;
+        private final int color;
+
+        Rarity(String key, int color) {
+            this.key = key;
+            this.color = color;
+        }
+
+        public LocalizedText getKey() {
+            return LocalizedText.translatable("gui.structurescanner.rarity." + key);
+        }
+
+        public int getColor() {
+            return color;
+        }
+    }
 
     /**
      * Creates a structure provider that is always available, regardless of mod presence.
@@ -135,6 +162,37 @@ public abstract class AbstractStructureProvider implements StructureProvider {
 
     protected Set<Biome> biomes(Biome... biomes) {
         return Stream.of(biomes).collect(Collectors.toSet());
+    }
+
+    protected Set<Biome> hasAnyBiomes(BiomeDictionary.Type... types) {
+        return Stream.of(types)
+            .flatMap(type -> BiomeDictionary.getBiomes(type).stream())
+            .collect(Collectors.toSet());
+    }
+
+    protected Set<Biome> hasAllBiomes(BiomeDictionary.Type... types) {
+        Set<BiomeDictionary.Type> requiredTypes = new HashSet<>(Arrays.asList(types));
+
+        Set<Biome> biomes = new HashSet<>();
+        for (Biome biome : Biome.REGISTRY) {
+            if (BiomeDictionary.getTypes(biome).containsAll(requiredTypes)) biomes.add(biome);
+        }
+
+        return biomes;
+    }
+
+    protected Set<Biome> hasBiomesBut(Set<Biome> biomes, BiomeDictionary.Type... types) {
+        Set<Biome> result = new HashSet<>(biomes);
+        for (Biome biome : biomes) {
+            for (BiomeDictionary.Type type : types) {
+                if (BiomeDictionary.hasType(biome, type)) {
+                    result.remove(biome);
+                    break;
+                }
+            }
+        }
+
+        return result;
     }
 
     protected void addChestLoot(StructureContentSink builder, String namespace, String path) {

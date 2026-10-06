@@ -714,8 +714,8 @@ public class GuiStructureScanner extends GuiScreen {
 
             // Rarity
             String rarity = ClientTextResolver.resolve(selectedInfo.getRarity());
-            if (!rarity.isEmpty()) {
-                int rarityColor = getRarityColor(rarity);
+            if (selectedInfo.getRarityValue() != null) {
+                int rarityColor = selectedInfo.getRarityValue().getColor();
                 textY = drawElidedString(fontRenderer, rarity, textX, textY, 14, textW, rarityColor);
             }
         }
@@ -960,16 +960,6 @@ public class GuiStructureScanner extends GuiScreen {
         GlStateManager.matrixMode(GL11.GL_MODELVIEW);
         GlStateManager.depthMask(true);
         GlStateManager.color(1.0F, 1.0F, 1.0F, 1.0F);
-    }
-
-    private int getRarityColor(String rarity) {
-        // TODO: refactor to use an enum
-        if (rarity.toLowerCase().contains("common")) return 0xAAAAAA;
-        if (rarity.toLowerCase().contains("uncommon")) return 0x55FF55;
-        if (rarity.toLowerCase().contains("rare")) return 0x55AAFF;
-        if (rarity.toLowerCase().contains("unique")) return 0xFF55FF;
-
-        return 0xFFFFFF;
     }
 
     /**

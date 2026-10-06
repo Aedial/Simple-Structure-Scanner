@@ -86,7 +86,6 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
 
         // Fire Dragon Roost - warm, non-snowy land biomes
         Set<Biome> fireDragonRoostBiomes = new HashSet<>();
-        Set<Biome> fireDragonCaveBiomes = new HashSet<>();
         for (Biome biome : Biome.REGISTRY) {
             if (!biome.getEnableSnow()
                     && biome.getDefaultTemperature() > 0.0F
@@ -97,18 +96,14 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
                     && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.OCEAN)
                     && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.RIVER)) {
                 fireDragonRoostBiomes.add(biome);
-
-                if (!BiomeDictionary.hasType(biome, BiomeDictionary.Type.BEACH)) {
-                    fireDragonCaveBiomes.add(biome);
-                }
             }
         }
-
         register("fire_dragon_roost")
             .fromBundled()
             .withMetadata(fireDragonRoostBiomes, overworld)
             .withRarity(calculateDragonRarity(fireDragonRoostBiomes, true, dragonRoostChance));
 
+        Set<Biome> fireDragonCaveBiomes = hasBiomesBut(fireDragonRoostBiomes, BiomeDictionary.Type.BEACH);
         register("fire_dragon_cave")
             .fromBundled()
             .withLootTables(
@@ -118,25 +113,14 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
             .withMetadata(fireDragonCaveBiomes, overworld)
             .withRarity(calculateDragonRarity(fireDragonCaveBiomes, false, dragonDenChance));
 
-        // Ice Dragon Roost - cold, snowy biomes
-        Set<Biome> iceDragonRoostBiomes = new HashSet<>();
-        Set<Biome> iceDragonCaveBiomes = new HashSet<>();
-        for (Biome biome : Biome.REGISTRY) {
-            if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.COLD)
-                    && BiomeDictionary.hasType(biome, BiomeDictionary.Type.SNOWY)) {
-                iceDragonRoostBiomes.add(biome);
-
-                if (!BiomeDictionary.hasType(biome, BiomeDictionary.Type.BEACH)) {
-                    iceDragonCaveBiomes.add(biome);
-                }
-            }
-        }
-
+        // Ice Dragon Roost - cold & snowy biomes
+        Set<Biome> iceDragonRoostBiomes = hasAllBiomes(BiomeDictionary.Type.COLD, BiomeDictionary.Type.SNOWY);
         register("ice_dragon_roost")
             .fromBundled()
             .withMetadata(iceDragonRoostBiomes, overworld)
             .withRarity(calculateDragonRarity(iceDragonRoostBiomes, true, dragonRoostChance));
 
+        Set<Biome> iceDragonCaveBiomes = hasBiomesBut(iceDragonRoostBiomes, BiomeDictionary.Type.BEACH);
         register("ice_dragon_cave")
             .fromBundled()
             .withLootTables(
@@ -147,14 +131,8 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
             .withRarity(calculateDragonRarity(iceDragonCaveBiomes, false, dragonDenChance));
 
         // Lightning Dragon Roost/Cave - jungle, mesa, savanna biomes
-        Set<Biome> lightningDragonBiomes = new HashSet<>();
-        for (Biome biome : Biome.REGISTRY) {
-            if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.JUNGLE)
-                    || BiomeDictionary.hasType(biome, BiomeDictionary.Type.MESA)
-                    || BiomeDictionary.hasType(biome, BiomeDictionary.Type.SAVANNA)) {
-                lightningDragonBiomes.add(biome);
-            }
-        }
+        Set<Biome> lightningDragonBiomes = hasAnyBiomes(BiomeDictionary.Type.JUNGLE,
+            BiomeDictionary.Type.MESA, BiomeDictionary.Type.SAVANNA);
 
         register("lightning_dragon_roost")
             .fromBundled()
@@ -173,10 +151,7 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
             .withRarity(calculateDragonRarity(lightningDragonBiomes, false, dragonDenChance));
 
         // Cyclops Cave - beach biomes
-        Set<Biome> beachBiomes = new HashSet<>();
-        for (Biome biome : Biome.REGISTRY) {
-            if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.BEACH)) beachBiomes.add(biome);
-        }
+        Set<Biome> beachBiomes = hasAnyBiomes(BiomeDictionary.Type.BEACH);
 
         register("cyclops_cave")
             .fromBundled()
@@ -196,27 +171,16 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
             .withRarity(calculateApproximateRarity(mausoleumChance + 1.0D, worldGenDistance));
 
         // Hydra Lair - swamp biomes
-        Set<Biome> swampBiomes = new HashSet<>();
-        for (Biome biome : Biome.REGISTRY) {
-            if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.SWAMP)) {
-                swampBiomes.add(biome);
-            }
-        }
+        Set<Biome> swampBiomes = hasAnyBiomes(BiomeDictionary.Type.SWAMP);
 
         register("hydra_lair")
             .fromBundled()
             .withMetadata(swampBiomes, overworld)
             .withRarity(calculateApproximateRarity(hydraChance + 1.0D, worldGenDistance));
 
-        // Myrmex Hive Desert - hot, dry, sandy biomes
-        Set<Biome> desertBiomes = new HashSet<>();
-        for (Biome biome : Biome.REGISTRY) {
-            if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.HOT)
-                    && BiomeDictionary.hasType(biome, BiomeDictionary.Type.DRY)
-                    && BiomeDictionary.hasType(biome, BiomeDictionary.Type.SANDY)) {
-                desertBiomes.add(biome);
-            }
-        }
+        // Myrmex Hive Desert - hot & dry & sandy biomes
+        Set<Biome> desertBiomes = hasAllBiomes(BiomeDictionary.Type.HOT,
+            BiomeDictionary.Type.DRY, BiomeDictionary.Type.SANDY);
 
         register("myrmex_hive_desert")
             .fromBundled()
@@ -224,13 +188,7 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
             .withRarity(calculateApproximateRarity(myrmexChance, MYRMEX_MIN_DISTANCE_BLOCKS));
 
         // Myrmex Hive Jungle - jungle biomes
-        Set<Biome> jungleBiomes = new HashSet<>();
-        for (Biome biome : Biome.REGISTRY) {
-            if (BiomeDictionary.hasType(biome, BiomeDictionary.Type.JUNGLE)) {
-                jungleBiomes.add(biome);
-            }
-        }
-
+        Set<Biome> jungleBiomes = hasAnyBiomes(BiomeDictionary.Type.JUNGLE);
         register("myrmex_hive_jungle")
             .fromBundled()
             .withLootTables(

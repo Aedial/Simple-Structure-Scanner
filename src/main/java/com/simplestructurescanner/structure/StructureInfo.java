@@ -27,7 +27,9 @@ import net.minecraftforge.fluids.FluidStack;
 import com.simplestructurescanner.Tags;
 import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
+import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.StructureContentAccumulator;
+import com.simplestructurescanner.structure.providers.AbstractStructureProvider.Rarity;
 
 
 /**
@@ -51,6 +53,7 @@ public class StructureInfo {
     private Set<Biome> validBiomes;
     // null means unrestricted, empty means unknown/not applicable, non-empty is an allow-list.
     private Set<DimensionInfo> validDimensions;
+    private Rarity rarityValue;
     private LocalizedText rarity;
 
     private PreviewSnapshot previewSnapshot;
@@ -348,6 +351,19 @@ public class StructureInfo {
     }
 
     /**
+     * Sets the metadata for this structure. The fields can be :
+     * <ul>
+     *   <li>{@code null}: Indicates that there are no restrictions for this field.</li>
+     *   <li>{@code empty}: Indicates that the field is explicitly unknown.</li>
+     * </ul>
+     * <p>
+     */
+    public StructureInfo withMetadata(@Nullable Set<Biome> biomes,
+            @Nullable Set<DimensionInfo> dimensions, Rarity rarity) {
+        return withMetadata(biomes, dimensions).withRarity(rarity);
+    }
+
+    /**
      * Sets the metadata for this structure. The fields can be null if unrestricted.
      * Chain with {@link #withRarity(LocalizedText)} if you also want to set the rarity.
      */
@@ -359,9 +375,6 @@ public class StructureInfo {
         return this;
     }
 
-    // TODO: Add a Rarity enum for common, rare, etc
-    // TODO: Maybe add some convenience methods that mirror RarityTextHelper. The lengthy kind.
-
     /**
      * Sets the rarity for this structure. {@link #withMetadata(Set, Set, LocalizedText)} is preferred
      * if the rarity text is short enough, this method exists for readability only.
@@ -370,6 +383,16 @@ public class StructureInfo {
         setRarity(rarity);
 
         return this;
+    }
+
+    public StructureInfo withRarity(Rarity rarity) {
+        this.rarityValue = rarity;
+
+        return withRarity(LocalizedText.translatable("gui.structurescanner.rarity", rarity.getKey()));
+    }
+
+    public StructureInfo oneInChunks(int chunks) {
+        return withRarity(RarityTextHelper.oneInChunks(chunks));
     }
 
     /**
@@ -397,6 +420,11 @@ public class StructureInfo {
     @Nullable
     public LocalizedText getRarity() {
         return rarity;
+    }
+
+    @Nullable
+    public Rarity getRarityValue() {
+        return rarityValue;
     }
 
     /**

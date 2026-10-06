@@ -90,8 +90,7 @@ public class AetherStructureProvider extends AbstractStructureProvider {
             .fromBundled()
             .withLootTables(new LootEntry("aether_legacy:chests/bronze_dungeon_reward", REWARD_KEY))
             .withEntities(new EntityEntry("aether_legacy:mimic", 3))
-            .withMetadata(null, aetherDim, LocalizedText.translatable("gui.structurescanner.rarity",
-                LocalizedText.translatable("gui.structurescanner.rarity.common")));
+            .withMetadata(null, aetherDim, Rarity.COMMON);
     }
 
     /**

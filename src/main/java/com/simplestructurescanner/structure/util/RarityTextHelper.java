@@ -44,10 +44,10 @@ public final class RarityTextHelper {
         return Math.PI * protectedRadiusChunks * protectedRadiusChunks;
     }
 
-    public static double averageChunksForFixedCountInRadius(int structureCount, double outerRadiusChunks) {
-        if (structureCount <= 0 || outerRadiusChunks <= 0.0D) return Double.POSITIVE_INFINITY;
+    public static int averageChunksForFixedCountInRadius(int structureCount, double outerRadiusChunks) {
+        if (structureCount <= 0 || outerRadiusChunks <= 0.0D) return Integer.MAX_VALUE;
 
-        return Math.PI * outerRadiusChunks * outerRadiusChunks / structureCount;
+        return (int) (Math.PI * outerRadiusChunks * outerRadiusChunks / structureCount);
     }
 
     public static LocalizedText fixedPosition() {

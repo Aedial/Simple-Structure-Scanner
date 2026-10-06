@@ -128,8 +128,7 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
                 new LootEntry("abyssalcraft:chests/stronghold_crossing", CHEST_KEY))
             .withFallbackEntities(new EntityEntry("abyssalcraft:abyssalzombie", 1, true))
             .withMetadata(wastelandsBiomes, abyssalWasteland)
-            .withRarity(RarityTextHelper.oneInChunks(
-                RarityTextHelper.averageChunksForFixedCountInRadius(128, 1472.0D)));
+            .oneInChunks(RarityTextHelper.averageChunksForFixedCountInRadius(128, 1472.0D));
 
         // Dreadlands Mineshaft
         register("dreadlands_mineshaft")
@@ -144,7 +143,7 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
             .withFallbackEntities(
                 new EntityEntry("abyssalcraft:jzahar", 1),
                 new EntityEntry("abyssalcraft:jzaharminion", 3))
-            .withMetadata(omotholBiomes, omothol, RarityTextHelper.fixedPosition());
+            .withMetadata(omotholBiomes, omothol, Rarity.FIXED_POSITION);
 
         // Omothol City - randomly generated buildings with various loot
         register("omothol_city")
@@ -168,27 +167,16 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
 
         // Shoggoth Lairs spawn in SWAMP and RIVER biomes in the Overworld.
         // We do not calculate the Omothol rarity, because people usually need to find the first one in the Overworld
-        Set<Biome> shoggothBiomes = new HashSet<>();
-        int swampBiomeCount = 0;
-        int riverBiomeCount = 0;
+        Set<Biome> swampBiomes = hasAnyBiomes(BiomeDictionary.Type.SWAMP);
+        Set<Biome> riverBiomes = hasBiomesBut(hasAnyBiomes(BiomeDictionary.Type.RIVER), BiomeDictionary.Type.OCEAN);
+        riverBiomes.removeAll(swampBiomes);
 
-        for (Biome biome : Biome.REGISTRY) {
-            boolean isSwamp = BiomeDictionary.hasType(biome, BiomeDictionary.Type.SWAMP);
-            boolean isRiver = BiomeDictionary.hasType(biome, BiomeDictionary.Type.RIVER)
-                && !BiomeDictionary.hasType(biome, BiomeDictionary.Type.OCEAN);
-            if (!isSwamp && !isRiver) continue;
-
-            shoggothBiomes.add(biome);
-            if (isSwamp) {
-                swampBiomeCount++;
-                continue;
-            }
-
-            riverBiomeCount++;
-        }
-
+        Set<Biome> shoggothBiomes = new HashSet<>(swampBiomes);
+        shoggothBiomes.addAll(riverBiomes);
         if (omotholBiome != null) shoggothBiomes.add(omotholBiome);
 
+        int swampBiomeCount = swampBiomes.size();
+        int riverBiomeCount = riverBiomes.size();
 
         register("shoggoth_lair")
             .fromBundled()
