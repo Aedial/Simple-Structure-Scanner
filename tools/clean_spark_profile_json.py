@@ -82,7 +82,7 @@ def child_time_key(child: dict[str, Any]) -> int | float | str:
 
 
 def extract_time(record: dict[str, Any], context: str) -> int | float:
-    if "times" in record:
+    if "times" in record and record["times"]:
         times = expect_list(record["times"], f"{context}.times")
         if not times:
             raise ValueError(f"{context}.times must not be empty")
@@ -168,7 +168,7 @@ def clean_record(
     if args.percent:
         time_value = format_percentage(time_value, total_time_value)
 
-    if "childrenRefs" in record:
+    if "childrenRefs" in record and record["childrenRefs"]:
         if node_pool is None:
             raise ValueError(f"{context}.childrenRefs requires a node pool")
 
