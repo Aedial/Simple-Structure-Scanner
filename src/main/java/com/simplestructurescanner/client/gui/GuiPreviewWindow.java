@@ -16,6 +16,7 @@ import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 public class GuiPreviewWindow extends Gui {
     private static final int HEADER_HEIGHT = 20;
     private static final int PADDING = 10;
+    private static final int FOOTER_HEIGHT = 12;
     private static final int WINDOW_MARGIN = 40;
 
     private final String title;
@@ -53,6 +54,7 @@ public class GuiPreviewWindow extends Gui {
     public void hide() {
         visible = false;
         hiddenForNavigation = false;
+        previewRenderer.setCutawayEnabled(false);
     }
 
     public boolean restoreIfHiddenForNavigation() {
@@ -144,6 +146,9 @@ public class GuiPreviewWindow extends Gui {
 
         Minecraft mc = Minecraft.getMinecraft();
         FontRenderer font = mc.fontRenderer;
+        previewRenderer.setCutawayEnabled(
+            Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT)
+        );
 
         // Draw window background
         Gui.drawRect(windowX - 1, windowY - 1, windowX + windowW + 1, windowY + windowH + 1, palette.frameColor);
@@ -166,7 +171,7 @@ public class GuiPreviewWindow extends Gui {
         int previewX = windowX + PADDING;
         int previewY = windowY + HEADER_HEIGHT + PADDING;
         int previewSize = windowW - PADDING * 2;
-        int previewHeight = windowH - HEADER_HEIGHT - PADDING * 2;
+        int previewHeight = windowH - HEADER_HEIGHT - PADDING * 2 - FOOTER_HEIGHT;
 
         Gui.drawRect(previewX - 1, previewY - 1, previewX + previewSize + 1, previewY + previewHeight + 1, 0xFF333333);
         Gui.drawRect(previewX, previewY, previewX + previewSize, previewY + previewHeight, 0xFF1A1A1A);
@@ -188,6 +193,9 @@ public class GuiPreviewWindow extends Gui {
             previewRenderer.setBackgroundColor(0xFF1A1A1A);
             previewRenderer.render(previewX, previewY, previewSize, previewHeight);
         }
+
+        drawCenteredPreviewStatus(font, previewX, previewY + previewHeight + 4, previewSize, FOOTER_HEIGHT,
+            I18n.format("gui.structurescanner.preview.footer"), palette.titleColor);
     }
 
     public void drawTooltips(int mouseX, int mouseY) {

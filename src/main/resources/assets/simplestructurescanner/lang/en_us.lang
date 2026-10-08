@@ -432,6 +432,7 @@ gui.structurescanner.previewTooltip=Click to enlarge preview
 gui.structurescanner.preview.loading=Loading preview
 gui.structurescanner.preview.title=Preview: %s
 gui.structurescanner.preview.unavailable=No preview available
+gui.structurescanner.preview.footer=Hit §bEsc§r to exit. Hold §bShift§r to see inside.
 gui.structurescanner.entities.count=%d entities
 gui.structurescanner.entities.entityName=Name: %s
 gui.structurescanner.entities.entityId=ID: %s

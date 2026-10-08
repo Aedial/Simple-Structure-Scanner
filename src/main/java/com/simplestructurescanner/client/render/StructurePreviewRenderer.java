@@ -4,8 +4,11 @@ import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.annotation.Nullable;
 
@@ -63,6 +66,14 @@ public class StructurePreviewRenderer {
         BlockRenderLayer.CUTOUT_MIPPED,
         BlockRenderLayer.CUTOUT
     };
+    // Keeps floors visible while stripping exterior walls and ceilings
+    private static final EnumFacing[] CUTAWAY_OUTSIDE_DIRECTIONS = new EnumFacing[] {
+        EnumFacing.UP,
+        EnumFacing.NORTH,
+        EnumFacing.SOUTH,
+        EnumFacing.WEST,
+        EnumFacing.EAST
+    };
 
     private static final FloatBuffer LIGHT_POSITION = makeLightBuffer(0.5f, 1.0f, 0.8f, 0.0f);
     private static final FloatBuffer LIGHT_DIFFUSE = makeLightBuffer(0.9f, 0.9f, 0.9f, 1.0f);
@@ -77,6 +88,13 @@ public class StructurePreviewRenderer {
     private DummyWorld world;
     @Nullable
     private Thread buildThread;
+    @Nullable
+    private Thread cutawayBuildThread;
+    @Nullable
+    private PreviewSnapshot cutawaySnapshot;
+    @Nullable
+    private volatile CutawayRenderCache cutawayCache;
+    private volatile VboLayout cutawayVboLayout = VboLayout.empty();
     private LightingMode lightingMode = LightingMode.STRUCTURE;
     private float zoom_factor = 0.75f;
     private float centerX = 0.5f;
@@ -85,6 +103,7 @@ public class StructurePreviewRenderer {
     private float maxDimension = 1.0f;
     private boolean buffersUploaded;
     private boolean loggedUnsupportedLayerWarning;
+    private boolean cutawayEnabled;
     private volatile boolean buildReady = true;
     private volatile boolean released;
 
@@ -198,17 +217,32 @@ public class StructurePreviewRenderer {
         return lightingMode;
     }
 
+    public void setCutawayEnabled(boolean cutawayEnabled) {
+        this.cutawayEnabled = cutawayEnabled;
+        if (!cutawayEnabled) return;
+
+        startCutawayBuild();
+    }
+
     public void release() {
         Thread threadToStop;
+        Thread cutawayThreadToStop;
 
         synchronized (buildLock) {
             released = true;
             buildReady = false;
             threadToStop = buildThread;
             buildThread = null;
+            cutawayThreadToStop = cutawayBuildThread;
+            cutawayBuildThread = null;
+            cutawaySnapshot = null;
+            cutawayCache = null;
+            cutawayVboLayout = VboLayout.empty();
+            cutawayEnabled = false;
         }
 
         if (threadToStop != null) threadToStop.interrupt();
+        if (cutawayThreadToStop != null) cutawayThreadToStop.interrupt();
 
         deleteLayerBuffers();
         clearPendingLayerUploadData();
@@ -343,6 +377,24 @@ public class StructurePreviewRenderer {
         startBuildTask(() -> preparePreview(previewSnapshot));
     }
 
+    private void startCutawayBuild() {
+        PreviewSnapshot previewSnapshot;
+        Thread thread;
+
+        synchronized (buildLock) {
+            if (released || !buildReady || cutawayCache != null || cutawayBuildThread != null) return;
+
+            previewSnapshot = cutawaySnapshot;
+            if (previewSnapshot == null) return;
+
+            thread = new Thread(() -> buildCutaway(previewSnapshot), "Structure Preview Cutaway Builder");
+            thread.setDaemon(true);
+            cutawayBuildThread = thread;
+        }
+
+        thread.start();
+    }
+
     private void startBuildTask(PreviewBuildTask buildTask) {
         released = false;
         buildReady = false;
@@ -383,6 +435,70 @@ public class StructurePreviewRenderer {
 
             if (!installed && preparedPreview != null) preparedPreview.world.clear();
         }
+    }
+
+    private void buildCutaway(PreviewSnapshot previewSnapshot) {
+        CutawayRenderCache preparedCutaway = null;
+
+        try {
+            preparedCutaway = prepareCutaway(previewSnapshot);
+            if (preparedCutaway == null) return;
+
+            preparedCutaway = preparedCutaway.withVboDrawRanges(cutawayVboLayout);
+
+            synchronized (buildLock) {
+                if (released || cutawayBuildThread != Thread.currentThread() ||
+                    cutawaySnapshot != previewSnapshot) return;
+
+                cutawayCache = preparedCutaway;
+                cutawaySnapshot = null;
+            }
+        } finally {
+            synchronized (buildLock) {
+                if (cutawayBuildThread == Thread.currentThread()) cutawayBuildThread = null;
+            }
+        }
+    }
+
+    /*
+     * Detect which blocks are wall/ceiling blocks, and should be stripped in the cutaway view.
+     * Such block is considered as:
+     * - Generated block
+     * - Adjacent to neither a generated block nor recorded air (exterior)
+     * - Having recorded air or a non-opaque generated block (interior) in the opposite direction
+     */
+    @Nullable
+    private CutawayRenderCache prepareCutaway(PreviewSnapshot previewSnapshot) {
+        Map<BlockPos, IBlockState> generatedBlocks = new HashMap<>();
+
+        for (PreviewBlockEntry entry : previewSnapshot.getBlocks()) {
+            if (shouldCancelBuild()) return null;
+
+            generatedBlocks.put(entry.pos, entry.state);
+        }
+
+        Set<BlockPos> strippedBlocks = new HashSet<>();
+
+        for (BlockPos pos : generatedBlocks.keySet()) {
+            if (shouldCancelBuild()) return null;
+
+            for (EnumFacing outsideDirection : CUTAWAY_OUTSIDE_DIRECTIONS) {
+                // Outside has neither a generated block nor recorded air
+                BlockPos outsidePos = pos.offset(outsideDirection);
+                if (generatedBlocks.containsKey(outsidePos) || previewSnapshot.hasRecordedAir(outsidePos)) continue;
+
+                // Interior has recorded air or a non-opaque generated block
+                BlockPos interiorPos = pos.offset(outsideDirection.getOpposite());
+                IBlockState interiorState = generatedBlocks.get(interiorPos);
+                if (!previewSnapshot.hasRecordedAir(interiorPos)
+                        && (interiorState == null || interiorState.isOpaqueCube())) continue;
+
+                strippedBlocks.add(pos);
+                break;
+            }
+        }
+
+        return new CutawayRenderCache(strippedBlocks);
     }
 
     @Nullable
@@ -647,11 +763,17 @@ public class StructurePreviewRenderer {
 
                 BufferBuilder buffer = new BufferBuilder(CACHE_BUFFER_SIZE);
                 buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK);
+                List<BlockVertexRange> blockVertexRanges = new ArrayList<>();
 
                 for (RenderBlockEntry entry : entries) {
                     if (shouldCancelBuild()) return null;
 
+                    int firstVertex = buffer.getVertexCount();
                     blockRenderer.renderBlock(entry.state, entry.pos, buildWorld, buffer);
+                    int vertexCount = buffer.getVertexCount() - firstVertex;
+                    if (vertexCount > 0) {
+                        blockVertexRanges.add(new BlockVertexRange(entry.pos, firstVertex, vertexCount));
+                    }
                 }
 
                 if (buffer.getVertexCount() <= 0) {
@@ -661,7 +783,9 @@ public class StructurePreviewRenderer {
 
                 buffer.finishDrawing();
                 buildLayerBufferData.put(layer,
-                    new PreparedLayerBufferData(copyVertexData(buffer.getByteBuffer()), buffer.getDrawMode()));
+                    new PreparedLayerBufferData(
+                        copyVertexData(buffer.getByteBuffer()), buffer.getDrawMode(), blockVertexRanges
+                    ));
             }
 
             return buildLayerBufferData;
@@ -677,6 +801,32 @@ public class StructurePreviewRenderer {
         copy.put(source);
         copy.flip();
         return copy;
+    }
+
+    private static VboLayout createVboLayout(EnumMap<BlockRenderLayer, PreparedLayerBufferData> layerBufferData) {
+        EnumMap<BlockRenderLayer, List<BlockVertexRange>> blockVertexRanges = new EnumMap<>(BlockRenderLayer.class);
+
+        for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            PreparedLayerBufferData preparedData = layerBufferData.get(layer);
+            if (preparedData == null || preparedData.blockVertexRanges.isEmpty()) continue;
+
+            blockVertexRanges.put(layer, preparedData.blockVertexRanges);
+        }
+
+        return new VboLayout(blockVertexRanges);
+    }
+
+    private VboLayout createVboLayoutFromLayerBuffers() {
+        EnumMap<BlockRenderLayer, List<BlockVertexRange>> blockVertexRanges = new EnumMap<>(BlockRenderLayer.class);
+
+        for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+            List<BlockVertexRange> ranges = layerBuffers.get(layer).blockVertexRanges;
+            if (ranges == null || ranges.isEmpty()) continue;
+
+            blockVertexRanges.put(layer, ranges);
+        }
+
+        return new VboLayout(blockVertexRanges);
     }
             
 
@@ -698,6 +848,10 @@ public class StructurePreviewRenderer {
         centerY = preparedPreview.centerY;
         centerZ = preparedPreview.centerZ;
         maxDimension = preparedPreview.maxDimension;
+        cutawaySnapshot = preparedPreview.previewSnapshot;
+        cutawayCache = null;
+        cutawayVboLayout = createVboLayout(preparedPreview.layerBufferData);
+        cutawayEnabled = false;
         buffersUploaded = false;
 
         if (PROFILE_PREPARE_PREVIEW) {
@@ -800,11 +954,11 @@ public class StructurePreviewRenderer {
         try {
             if (OpenGlHelper.useVbo()) {
                 ensureLayerBuffersUploaded(blockRenderer);
-                renderLayerBuffers();
+                renderLayerBuffers(getActiveCutawayCache());
                 return;
             }
 
-            renderImmediateLayers(blockRenderer);
+            renderImmediateLayers(blockRenderer, getActiveCutawayCache());
         } finally {
             ForgeHooksClient.setRenderLayer(oldLayer);
         }
@@ -819,6 +973,7 @@ public class StructurePreviewRenderer {
 
         TileEntityRendererDispatcher dispatcher = TileEntityRendererDispatcher.instance;
         World previousWorld = dispatcher.world;
+        CutawayRenderCache activeCutaway = getActiveCutawayCache();
         dispatcher.setWorld(world);
 
         RenderHelper.enableStandardItemLighting();
@@ -838,6 +993,7 @@ public class StructurePreviewRenderer {
                 for (RenderTileEntityEntry entry : tileEntityEntries) {
                     TileEntity tileEntity = entry.tileEntity;
                     if (tileEntity == null || tileEntity.isInvalid()) continue;
+                    if (activeCutaway != null && activeCutaway.isStripped(entry.pos)) continue;
                     if (!tileEntity.shouldRenderInPass(pass)) continue;
 
                     TileEntitySpecialRenderer<TileEntity> renderer = dispatcher.getRenderer(tileEntity);
@@ -884,6 +1040,7 @@ public class StructurePreviewRenderer {
                 layerBuffer.vertexBuffer = new VertexBuffer(DefaultVertexFormats.BLOCK);
                 layerBuffer.drawMode = preparedData.drawMode;
                 layerBuffer.vertexBuffer.bufferData(preparedData.vertexData.duplicate());
+                layerBuffer.blockVertexRanges = preparedData.blockVertexRanges;
                 layerBuffer.preparedData = null;
                 preparedLayerCount++;
                 continue;
@@ -898,9 +1055,15 @@ public class StructurePreviewRenderer {
 
             BufferBuilder buffer = new BufferBuilder(CACHE_BUFFER_SIZE);
             buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK);
+            List<BlockVertexRange> blockVertexRanges = new ArrayList<>();
 
             for (RenderBlockEntry entry : entries) {
+                int firstVertex = buffer.getVertexCount();
                 blockRenderer.renderBlock(entry.state, entry.pos, world, buffer);
+                int vertexCount = buffer.getVertexCount() - firstVertex;
+                if (vertexCount > 0) {
+                    blockVertexRanges.add(new BlockVertexRange(entry.pos, firstVertex, vertexCount));
+                }
             }
 
             if (buffer.getVertexCount() <= 0) {
@@ -913,8 +1076,10 @@ public class StructurePreviewRenderer {
             layerBuffer.vertexBuffer = new VertexBuffer(DefaultVertexFormats.BLOCK);
             layerBuffer.drawMode = buffer.getDrawMode();
             layerBuffer.vertexBuffer.bufferData(buffer.getByteBuffer());
+            layerBuffer.blockVertexRanges = blockVertexRanges;
         }
 
+        if (cutawayVboLayout.isEmpty()) cutawayVboLayout = createVboLayoutFromLayerBuffers();
         buffersUploaded = true;
 
         if (PROFILE_PREPARE_PREVIEW) {
@@ -926,19 +1091,34 @@ public class StructurePreviewRenderer {
         }
     }
 
-    private void renderImmediateLayers(BlockRendererDispatcher blockRenderer) {
+    @Nullable
+    private CutawayRenderCache getActiveCutawayCache() {
+        if (!cutawayEnabled) return null;
+
+        CutawayRenderCache activeCutaway = cutawayCache;
+        if (activeCutaway == null) return null;
+        if (activeCutaway.hasVboLayout(cutawayVboLayout)) return activeCutaway;
+
+        activeCutaway = activeCutaway.withVboDrawRanges(cutawayVboLayout);
+        cutawayCache = activeCutaway;
+        return activeCutaway;
+    }
+
+    private void renderImmediateLayers(BlockRendererDispatcher blockRenderer,
+            @Nullable CutawayRenderCache activeCutaway) {
         Tessellator tessellator = Tessellator.getInstance();
         BufferBuilder buffer = tessellator.getBuffer();
 
         for (BlockRenderLayer layer : OPAQUE_LAYERS) {
-            renderImmediateLayer(blockRenderer, tessellator, buffer, layer, false);
+            renderImmediateLayer(blockRenderer, tessellator, buffer, layer, false, activeCutaway);
         }
 
-        renderImmediateLayer(blockRenderer, tessellator, buffer, BlockRenderLayer.TRANSLUCENT, true);
+        renderImmediateLayer(blockRenderer, tessellator, buffer, BlockRenderLayer.TRANSLUCENT, true, activeCutaway);
     }
 
-    private void renderImmediateLayer(BlockRendererDispatcher blockRenderer, Tessellator tessellator, BufferBuilder buffer,
-            BlockRenderLayer layer, boolean translucent) {
+    private void renderImmediateLayer(BlockRendererDispatcher blockRenderer, Tessellator tessellator,
+            BufferBuilder buffer, BlockRenderLayer layer, boolean translucent,
+            @Nullable CutawayRenderCache activeCutaway) {
         List<RenderBlockEntry> entries = layerEntries.get(layer);
         if (entries == null || entries.isEmpty()) return;
 
@@ -961,6 +1141,8 @@ public class StructurePreviewRenderer {
         buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.BLOCK);
 
         for (RenderBlockEntry entry : entries) {
+            if (activeCutaway != null && activeCutaway.isStripped(entry.pos)) continue;
+
             blockRenderer.renderBlock(entry.state, entry.pos, world, buffer);
         }
 
@@ -974,7 +1156,7 @@ public class StructurePreviewRenderer {
         buffer.setTranslation(0, 0, 0);
     }
 
-    private void renderLayerBuffers() {
+    private void renderLayerBuffers(@Nullable CutawayRenderCache activeCutaway) {
         GlStateManager.glEnableClientState(GL11.GL_VERTEX_ARRAY);
         GlStateManager.glEnableClientState(GL11.GL_COLOR_ARRAY);
         GlStateManager.glEnableClientState(GL11.GL_TEXTURE_COORD_ARRAY);
@@ -986,7 +1168,7 @@ public class StructurePreviewRenderer {
             for (BlockRenderLayer layer : OPAQUE_LAYERS) {
                 GlStateManager.disableBlend();
                 GlStateManager.depthMask(true);
-                renderLayerBuffer(layer);
+                renderLayerBuffer(layer, activeCutaway);
             }
 
             GlStateManager.enableBlend();
@@ -997,7 +1179,7 @@ public class StructurePreviewRenderer {
                 GlStateManager.DestFactor.ZERO
             );
             GlStateManager.depthMask(false);
-            renderLayerBuffer(BlockRenderLayer.TRANSLUCENT);
+            renderLayerBuffer(BlockRenderLayer.TRANSLUCENT, activeCutaway);
         } finally {
             OpenGlHelper.glBindBuffer(OpenGlHelper.GL_ARRAY_BUFFER, 0);
             OpenGlHelper.setClientActiveTexture(OpenGlHelper.lightmapTexUnit);
@@ -1010,13 +1192,23 @@ public class StructurePreviewRenderer {
         }
     }
 
-    private void renderLayerBuffer(BlockRenderLayer layer) {
+    private void renderLayerBuffer(BlockRenderLayer layer, @Nullable CutawayRenderCache activeCutaway) {
         LayerBufferCache layerBuffer = layerBuffers.get(layer);
         if (layerBuffer == null || layerBuffer.vertexBuffer == null) return;
 
         ForgeHooksClient.setRenderLayer(layer);
         layerBuffer.vertexBuffer.bindBuffer();
         setupBlockArrayPointers();
+
+        List<VertexRange> drawRanges = activeCutaway != null ? activeCutaway.getDrawRanges(layer) : null;
+        if (drawRanges != null) {
+            for (VertexRange range : drawRanges) {
+                GL11.glDrawArrays(layerBuffer.drawMode, range.firstVertex, range.vertexCount);
+            }
+
+            return;
+        }
+
         layerBuffer.vertexBuffer.drawArrays(layerBuffer.drawMode);
     }
 
@@ -1031,11 +1223,13 @@ public class StructurePreviewRenderer {
 
     private void deleteLayerBuffers() {
         for (LayerBufferCache layerBuffer : layerBuffers.values()) {
-            if (layerBuffer.vertexBuffer == null) continue;
+            if (layerBuffer.vertexBuffer != null) {
+                layerBuffer.vertexBuffer.deleteGlBuffers();
+                layerBuffer.vertexBuffer = null;
+            }
 
-            layerBuffer.vertexBuffer.deleteGlBuffers();
-            layerBuffer.vertexBuffer = null;
             layerBuffer.drawMode = GL11.GL_QUADS;
+            layerBuffer.blockVertexRanges = null;
         }
 
         buffersUploaded = false;
@@ -1079,15 +1273,137 @@ public class StructurePreviewRenderer {
         private int drawMode = GL11.GL_QUADS;
         @Nullable
         private PreparedLayerBufferData preparedData;
+        @Nullable
+        private List<BlockVertexRange> blockVertexRanges;
     }
 
     private static class PreparedLayerBufferData {
         private final ByteBuffer vertexData;
         private final int drawMode;
+        private final List<BlockVertexRange> blockVertexRanges;
 
-        private PreparedLayerBufferData(ByteBuffer vertexData, int drawMode) {
+        private PreparedLayerBufferData(ByteBuffer vertexData, int drawMode, List<BlockVertexRange> blockVertexRanges) {
             this.vertexData = vertexData;
             this.drawMode = drawMode;
+            this.blockVertexRanges = blockVertexRanges;
+        }
+    }
+
+    private static class BlockVertexRange {
+        private final BlockPos pos;
+        private final int firstVertex;
+        private final int vertexCount;
+
+        private BlockVertexRange(BlockPos pos, int firstVertex, int vertexCount) {
+            this.pos = pos;
+            this.firstVertex = firstVertex;
+            this.vertexCount = vertexCount;
+        }
+    }
+
+    private static class VertexRange {
+        private final int firstVertex;
+        private final int vertexCount;
+
+        private VertexRange(int firstVertex, int vertexCount) {
+            this.firstVertex = firstVertex;
+            this.vertexCount = vertexCount;
+        }
+    }
+
+    private static class VboLayout {
+        private final EnumMap<BlockRenderLayer, List<BlockVertexRange>> blockVertexRanges;
+
+        private VboLayout(EnumMap<BlockRenderLayer, List<BlockVertexRange>> blockVertexRanges) {
+            this.blockVertexRanges = blockVertexRanges;
+        }
+
+        private static VboLayout empty() {
+            return new VboLayout(new EnumMap<>(BlockRenderLayer.class));
+        }
+
+        private boolean isEmpty() {
+            return blockVertexRanges.isEmpty();
+        }
+    }
+
+    private static class CutawayRenderCache {
+        private final Set<BlockPos> strippedBlocks;
+        @Nullable
+        private final VboLayout vboLayout;
+        @Nullable
+        private final EnumMap<BlockRenderLayer, List<VertexRange>> drawRanges;
+
+        private CutawayRenderCache(Set<BlockPos> strippedBlocks) {
+            this(strippedBlocks, null, null);
+        }
+
+        private CutawayRenderCache(Set<BlockPos> strippedBlocks, @Nullable VboLayout vboLayout,
+                @Nullable EnumMap<BlockRenderLayer, List<VertexRange>> drawRanges) {
+            this.strippedBlocks = strippedBlocks;
+            this.vboLayout = vboLayout;
+            this.drawRanges = drawRanges;
+        }
+
+        private boolean isStripped(BlockPos pos) {
+            return strippedBlocks.contains(pos);
+        }
+
+        private boolean hasVboLayout(VboLayout vboLayout) {
+            return this.vboLayout == vboLayout;
+        }
+
+        @Nullable
+        private List<VertexRange> getDrawRanges(BlockRenderLayer layer) {
+            return drawRanges != null ? drawRanges.get(layer) : null;
+        }
+
+        private CutawayRenderCache withVboDrawRanges(VboLayout vboLayout) {
+            if (vboLayout.isEmpty()) return new CutawayRenderCache(strippedBlocks, vboLayout, null);
+
+            EnumMap<BlockRenderLayer, List<VertexRange>> drawRanges = new EnumMap<>(BlockRenderLayer.class);
+
+            for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+                List<BlockVertexRange> blockRanges = vboLayout.blockVertexRanges.get(layer);
+                List<VertexRange> visibleRanges = new ArrayList<>();
+
+                if (blockRanges != null) {
+                    int firstVertex = -1;
+                    int endVertex = -1;
+
+                    for (BlockVertexRange range : blockRanges) {
+                        if (strippedBlocks.contains(range.pos)) {
+                            if (firstVertex >= 0) {
+                                visibleRanges.add(new VertexRange(firstVertex, endVertex - firstVertex));
+                                firstVertex = -1;
+                            }
+
+                            continue;
+                        }
+
+                        if (firstVertex < 0) {
+                            firstVertex = range.firstVertex;
+                            endVertex = range.firstVertex + range.vertexCount;
+                            continue;
+                        }
+
+                        if (endVertex == range.firstVertex) {
+                            endVertex += range.vertexCount;
+                            continue;
+                        }
+
+                        visibleRanges.add(new VertexRange(firstVertex, endVertex - firstVertex));
+                        firstVertex = range.firstVertex;
+                        endVertex = range.firstVertex + range.vertexCount;
+                    }
+
+                    if (firstVertex >= 0) visibleRanges.add(new VertexRange(firstVertex, endVertex - firstVertex));
+                }
+
+                drawRanges.put(layer, visibleRanges);
+            }
+
+            return new CutawayRenderCache(strippedBlocks, vboLayout, drawRanges);
         }
     }
 
@@ -1105,6 +1421,8 @@ public class StructurePreviewRenderer {
         private final float centerY;
         private final float centerZ;
         private final float maxDimension;
+        @Nullable
+        private final PreviewSnapshot previewSnapshot;
 
         private PreparedPreview(DummyWorld world, EnumMap<BlockRenderLayer, List<RenderBlockEntry>> layerEntries,
                 List<RenderTileEntityEntry> tileEntityEntries,
@@ -1118,6 +1436,7 @@ public class StructurePreviewRenderer {
             this.centerY = centerY;
             this.centerZ = centerZ;
             this.maxDimension = maxDimension;
+            this.previewSnapshot = null;
         }
 
         private PreparedPreview(DummyWorld world, EnumMap<BlockRenderLayer, List<RenderBlockEntry>> layerEntries,
@@ -1142,6 +1461,7 @@ public class StructurePreviewRenderer {
             this.centerY = previewCenterY;
             this.centerZ = previewCenterZ;
             this.maxDimension = previewMaxDimension;
+            this.previewSnapshot = previewSnapshot;
         }
     }
 }

@@ -3,8 +3,10 @@ package com.simplestructurescanner.structure.util;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import javax.annotation.Nullable;
@@ -50,6 +52,11 @@ public class StructurePreviewStitcher {
         layer.add(x, z, new PreviewBlock(state, blockEntityData));
     }
 
+    public void setRecordedAir(int x, int y, int z) {
+        PreviewLayerAccumulator layer = layersByY.computeIfAbsent(y, PreviewLayerAccumulator::new);
+        layer.addRecordedAir(x, z);
+    }
+
     public void addParsedStructure(StructureNBTParser.ParsedStructure parsed, BlockPos origin) {
         addParsedStructure(parsed, origin, Mirror.NONE, Rotation.NONE);
     }
@@ -64,11 +71,13 @@ public class StructurePreviewStitcher {
             for (int x = 0; x < layer.width; x++) {
                 for (int z = 0; z < layer.depth; z++) {
                     IBlockState state = layer.getBlockState(x, z);
-                    if (state == null) continue;
+                    boolean recordedAir = layer.hasRecordedAir(x, z);
+                    if (state == null && !recordedAir) continue;
 
                     BlockPos offsetPos = new BlockPos(layer.xOffset + x, layer.y, layer.zOffset + z);
                     BlockPos pos = transformParsedPosition(parsed, offsetPos, origin, mirror, rotation);
-                    setBlock(pos, state, layer.getBlockEntityData(x, z));
+                    if (state != null) setBlock(pos, state, layer.getBlockEntityData(x, z));
+                    else setRecordedAir(pos.getX(), pos.getY(), pos.getZ());
                 }
             }
         }
@@ -137,14 +146,30 @@ public class StructurePreviewStitcher {
         private int minZ = Integer.MAX_VALUE;
         private int maxZ = Integer.MIN_VALUE;
         private final Map<Long, PreviewBlock> blocks = new LinkedHashMap<>();
+        private final Set<Long> recordedAir = new LinkedHashSet<>();
 
         private PreviewLayerAccumulator(int y) {
             this.y = y;
         }
 
         private void add(int x, int z, PreviewBlock block) {
-            blocks.put(createColumnKey(x, z), block);
+            long key = createColumnKey(x, z);
+            blocks.put(key, block);
+            recordedAir.remove(key);
 
+            updateBounds(x, z);
+        }
+
+        private void addRecordedAir(int x, int z) {
+            long key = createColumnKey(x, z);
+            if (blocks.containsKey(key)) return;
+
+            recordedAir.add(key);
+
+            updateBounds(x, z);
+        }
+
+        private void updateBounds(int x, int z) {
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
             if (z < minZ) minZ = z;
@@ -161,6 +186,12 @@ public class StructurePreviewStitcher {
                 int z = unpackZ(entry.getKey());
                 PreviewBlock block = entry.getValue();
                 layer.setBlockState(x - minX, z - minZ, block.state, block.blockEntityData);
+            }
+
+            for (long key : recordedAir) {
+                int x = unpackX(key);
+                int z = unpackZ(key);
+                layer.setRecordedAir(x - minX, z - minZ);
             }
 
             return layer;

@@ -3,7 +3,9 @@ package com.simplestructurescanner.structure;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -658,7 +660,7 @@ public class StructureInfo {
     public static PreviewSnapshot createPreviewSnapshot(@Nullable List<StructureLayer> layers) {
         if (layers == null || layers.isEmpty()) return PreviewSnapshot.empty();
 
-        // Compute flattened preview blocks and their bounding box
+        // Compute flattened preview blocks, recorded air, and their bounding box
         int minLayerY = Integer.MAX_VALUE;
         int maxLayerY = Integer.MIN_VALUE;
 
@@ -673,6 +675,7 @@ public class StructureInfo {
 
         int yOffset = minLayerY < 0 ? -minLayerY : 0;
         List<PreviewBlockEntry> blocks = new ArrayList<>();
+        Set<BlockPos> recordedAir = Collections.emptySet();
         int minX = Integer.MAX_VALUE;
         int minZ = Integer.MAX_VALUE;
         int maxX = Integer.MIN_VALUE;
@@ -701,11 +704,21 @@ public class StructureInfo {
 
                 blocks.add(new PreviewBlockEntry(new BlockPos(x, y, z), state, layer.blockEntityData[index]));
             }
+
+            for (int index = layer.recordedAir.nextSetBit(0); index >= 0;
+                    index = layer.recordedAir.nextSetBit(index + 1)) {
+                if (recordedAir.isEmpty()) recordedAir = new HashSet<>();
+
+                int x = index % layer.width + layer.xOffset;
+                int z = index / layer.width + layer.zOffset;
+                int y = layer.y + yOffset;
+                recordedAir.add(new BlockPos(x, y, z));
+            }
         }
 
         if (blocks.isEmpty()) return PreviewSnapshot.empty();
 
-        return new PreviewSnapshot(blocks, minX, minY, minZ, maxX, maxY, maxZ);
+        return new PreviewSnapshot(blocks, recordedAir, minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     /**
@@ -757,9 +770,11 @@ public class StructureInfo {
     }
 
     public static class PreviewSnapshot {
-        private static final PreviewSnapshot EMPTY = new PreviewSnapshot(Collections.emptyList(), 0, 0, 0, 0, 0, 0);
+        private static final PreviewSnapshot EMPTY = new PreviewSnapshot(Collections.emptyList(), Collections.emptySet(),
+            0, 0, 0, 0, 0, 0);
 
         private final List<PreviewBlockEntry> blocks;
+        private final Set<BlockPos> recordedAir;
         private final int minX;
         private final int minY;
         private final int minZ;
@@ -767,8 +782,10 @@ public class StructureInfo {
         private final int maxY;
         private final int maxZ;
 
-        private PreviewSnapshot(List<PreviewBlockEntry> blocks, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        private PreviewSnapshot(List<PreviewBlockEntry> blocks, Set<BlockPos> recordedAir, int minX, int minY,
+                int minZ, int maxX, int maxY, int maxZ) {
             this.blocks = Collections.unmodifiableList(blocks);
+            this.recordedAir = Collections.unmodifiableSet(recordedAir);
             this.minX = minX;
             this.minY = minY;
             this.minZ = minZ;
@@ -783,6 +800,10 @@ public class StructureInfo {
 
         public List<PreviewBlockEntry> getBlocks() {
             return blocks;
+        }
+
+        public boolean hasRecordedAir(BlockPos pos) {
+            return recordedAir.contains(pos);
         }
 
         public boolean isEmpty() {
@@ -829,7 +850,7 @@ public class StructureInfo {
 
     /**
      * Represents a single Y-level layer of the structure.
-     * Contains a 2D grid of block states for rendering.
+     * Contains a 2D grid of block states and recorded air for rendering.
      */
     public static class StructureLayer {
         public final int y;
@@ -839,6 +860,7 @@ public class StructureInfo {
         public final int xOffset;
         public final int zOffset;
         private final NBTTagCompound[] blockEntityData;
+        private final BitSet recordedAir;
 
         public StructureLayer(int y, int width, int depth, int xOffset, int zOffset) {
             this.y = y;
@@ -849,6 +871,7 @@ public class StructureInfo {
             this.zOffset = zOffset;
             this.blockStates = new IBlockState[width * depth];
             this.blockEntityData = new NBTTagCompound[width * depth];
+            this.recordedAir = new BitSet(width * depth);
         }
 
         public StructureLayer(int y, int width, int depth) {
@@ -865,6 +888,22 @@ public class StructureInfo {
             int index = x + z * width;
             blockStates[index] = state;
             blockEntityData[index] = tileEntityData != null && !tileEntityData.isEmpty() ? tileEntityData.copy() : null;
+            recordedAir.clear(index);
+        }
+
+        public void setRecordedAir(int x, int z) {
+            if (x < 0 || x >= width || z < 0 || z >= depth) return;
+
+            int index = x + z * width;
+            if (blockStates[index] != null) return;
+
+            recordedAir.set(index);
+        }
+
+        public boolean hasRecordedAir(int x, int z) {
+            if (x < 0 || x >= width || z < 0 || z >= depth) return false;
+
+            return recordedAir.get(x + z * width);
         }
 
         @Nullable

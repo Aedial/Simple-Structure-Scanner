@@ -420,7 +420,16 @@ public final class MapGenerationWorld extends World {
             LongOpenHashSet occupiedPositions) {
         for (Long2ObjectMap.Entry<IBlockState> entry : changedStates.long2ObjectEntrySet()) {
             BlockPos pos = BlockPos.fromLong(entry.getLongKey());
-            addPreviewBlock(preview, pos, entry.getValue(), bounds);
+            IBlockState state = entry.getValue();
+            if (state.getBlock() == Blocks.AIR && !isExcluded(state)) {
+                preview.setRecordedAir(
+                    pos.getX() - bounds.minPos.getX(),
+                    pos.getY() - bounds.minPos.getY(),
+                    pos.getZ() - bounds.minPos.getZ()
+                );
+            } else {
+                addPreviewBlock(preview, pos, state, bounds);
+            }
             occupiedPositions.add(entry.getLongKey());
         }
     }

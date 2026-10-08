@@ -172,7 +172,7 @@ public class StructureNBTParser {
     }
 
     /**
-     * Mutable builder used by parser extensions to add blocks, layers, entities, and loot.
+     * Mutable builder used by parser extensions to add blocks, recorded air, layers, entities, and loot.
      */
     public static class ParsedStructureBuilder implements StructureContentSink {
         private final int sizeX;
@@ -248,10 +248,21 @@ public class StructureNBTParser {
         public void setLayerBlock(int x, int y, int z, @Nullable IBlockState state,
                 @Nullable NBTTagCompound blockEntityData) {
             if (state == null) return;
+            if (state.getBlock() == Blocks.AIR) {
+                setLayerRecordedAir(x, y, z);
+                return;
+            }
             if (!storeLayers || layerBlocks == null) return;
             if (y < 0 || y >= sizeY || x < 0 || x >= sizeX || z < 0 || z >= sizeZ) return;
 
             layerBlocks.get(y).setBlockState(x, z, state, blockEntityData);
+        }
+
+        public void setLayerRecordedAir(int x, int y, int z) {
+            if (!storeLayers || layerBlocks == null) return;
+            if (y < 0 || y >= sizeY || x < 0 || x >= sizeX || z < 0 || z >= sizeZ) return;
+
+            layerBlocks.get(y).setRecordedAir(x, z);
         }
 
         @Override
@@ -548,7 +559,9 @@ public class StructureNBTParser {
             int y = posTag.getIntAt(1);
             int z = posTag.getIntAt(2);
 
-            if (parseExtension.shouldStoreLayerBlock(state, block)) {
+            if (block == Blocks.AIR) {
+                builder.setLayerRecordedAir(x, y, z);
+            } else if (parseExtension.shouldStoreLayerBlock(state, block)) {
                 builder.setLayerBlock(x, y, z, state, blockEntityData);
             }
 
