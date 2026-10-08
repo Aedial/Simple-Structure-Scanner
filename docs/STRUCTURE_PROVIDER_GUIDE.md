@@ -154,7 +154,7 @@ import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
 
 private void addStructure(Set<Biome> biomes, Set<DimensionInfo> dimensions, LocalizedText rarityKey) {
     // tries to load the structure from the bundled NBT file (will still work if the file is missing)
-    register(<structureName>)
+    register(<structureName>, true)  // true indicates that the structure is searchable
         .fromBundled()
         .withMetadata(biomes, dimensions, rarityKey);
 
@@ -169,7 +169,6 @@ private void addStructure(Set<Biome> biomes, Set<DimensionInfo> dimensions, Loca
     // the bundled NBT file is used as a fallback if available and the map building crashes
     MapGenerationBuilder map = new MapGenerationBuilder(<sizeX>, <sizeZ>, <yLevel>, <groundBlock>)
             .withName(<structureName3>)
-            .withOrigin(<originX>, <originZ>)  // if the structure doesn't start at the center
             .build(<generateFunction>, <biome>);
     register(<structureName3>)
         .fromMapWithBundledFallback(map)  // or .fromMap(map)
@@ -197,21 +196,13 @@ You will need to provide the translation key for localization purposes :
 
 When a structure is generated programmatically rather than loaded from a bundled NBT file, you use the MapGenerationBuilder to define its layers. This usually goes like that :
 ```java
-import net.minecraft.block.state.IBlockState;
-import net.minecraft.init.Blocks;
-
 import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
-
-IBlockState GRASS = Blocks.GRASS.getDefaultState();
-IBlockState WATER = Blocks.WATER.getDefaultState();
-IBlockState STONE = Blocks.STONE.getDefaultState();
-IBlockState LAVA = Blocks.LAVA.getDefaultState();
 
 // create a 128x128 platform at y-level 63 with GRASS as the ground block
 MapGenerationBuilder map = new MapGenerationBuilder(128, 128, 63, GRASS)
     // name for logging purposes, only used for the Map itself
-    .withName("example_map")
-    // origin point for the structure (optional): re-center the map if it generates off-center
+    .withName("mymod:example_map")
+    // origin point for the structure (optional): re-center the map if it starts off-center
     .withOrigin(64, 64)
     // add 20 layers of water above the platform
     .withAboveLayers(20, WATER)
@@ -226,15 +217,33 @@ MapGenerationBuilder map = new MapGenerationBuilder(128, 128, 63, GRASS)
     .build(generateStructureFunction, Biomes.PLAINS);
 ```
 
-**NOTE:** You do not need to remove the blocks from the platform, aboveLayers, or belowLayers manually; the builder handles it for you. withoutBlocks is only necessary for blocks placed by the generation function that you want to clear. Use withoutBlockStates when only specific block-state variants need exclusion.
+**NOTE:** You do not need to remove the blocks from the aboveLayers or belowLayers manually; the builder handles them for you. `withoutBlocks`/`withoutBlockStates` is only necessary for blocks placed by the generation function that you want to clear. By default, the platform is shown in the captured structure, use `withoutPlatform()` to omit it.
 
-By default, the platform is shown in the captured structure. `withoutPlatform()` allows to omit the platform from it.
+If you have corridors and tunnels that are carved into the terrain without any floor being generated, `withLowestNonOpaqueFloor()` ensures that a floor composed of the provided layer blocks (`withBelowLayers(...)`) is placed below each vertical run of air or non-opaque generated blocks. This toggle can be pretty performance-intensive, so use it judiciously.
 
-If you have corridors and tunnels that are carved into the terrain, without a floor being generated, `withLowestNonOpaqueFloor()` ensures that the original terrain block below each vertical run of air or non-opaque generated blocks is captured. This toggle can be pretty performance-intensive, so use it judiciously.
+To help with underground structures, you are offered `MapGenerationBuilder.ofBuried()` and `MapGenerationBuilder.ofBuriedWithFloor()`. They are shorthand constructors for a 64-layers tall underground map, with platform disabled.
 
 The `build()` method finalizes the map generation process. No further modifications to the map should be made after calling this method, and any attempts to do so will explicitly error.
 
-If generateStructureFunction crashes, the structure generation will fail gracefully (with error log), and the capture will be discarded. The `fromMapWithBundledFallback` method can be used to provide a fallback to a bundled NBT structure if the map generation fails.
+If generateStructureFunction crashes, the structure generation will fail gracefully (with error log), and the capture will be discarded. The `fromMapWithBundledFallback` method can be used to provide a fallback to a bundled NBT structure if it happens.
+
+#### Generation function (`generateStructureFunction`)
+
+As the provider should remain decoupled from a specific mod version, the generation function should use reflection to access the necessary classes and methods at runtime. For this purpose, several helpers are provided, such as :
+```java
+// Generate at 0, platformY, 0
+createMapGenerator(String rawClassPath);
+
+// Generate at 0, platformY + offset, 0
+createMapGenerator(String rawClassPath, int yOffset);
+createMapGenerator(String rawClassPath, int yOffset, Class<?>[] parameterTypes, Object... parameters);
+
+// Generate at a specific offset (if x or z are offset too)
+createMapGenerator(String rawClassPath, BlockPos offset);
+createMapGenerator(String rawClassPath, BlockPos offset, Class<?>[] parameterTypes, Object... parameters);
+```
+
+The "parameters" alternatives allow you to pass additional arguments to the structure's constructor. This is used by some structures that reuse the same class for multiple structure variants (e.g., different sizes or styles of the same base structure).
 
 #### Biomes
 
@@ -243,16 +252,22 @@ Specify which biomes a structure can generate in:
 ```java
 import net.minecraft.world.biome.Biome;
 import net.minecraft.init.Biomes;
+import net.minecraftforge.common.BiomeDictionary;
 
 // Single biome
-Set<Biome> desertOnly = Collections.singleton(Biomes.DESERT);
+Set<Biome> desertOnly = biomes(Biomes.DESERT);
 
 // Multiple biomes
-Set<Biome> plainsLike = Stream.of(
-    Biomes.PLAINS,
-    Biomes.SAVANNA,
-    Biomes.MUTATED_PLAINS
-).collect(Collectors.toSet());
+Set<Biome> plainsLike = biomes(Biomes.PLAINS, Biomes.SAVANNA, Biomes.MUTATED_PLAINS);
+
+// Using biome types: cold AND snowy
+Set<Biome> iceBiomes = hasAllBiomes(BiomeDictionary.Type.COLD, BiomeDictionary.Type.SNOWY);
+
+// Exclude certain biome types from the selection
+Set<Biome> iceBiomesWithoutBeach = hasBiomesBut(iceBiomes, BiomeDictionary.Type.BEACH);
+
+// Any of the specified biome types
+Set<Biome> coldOrMountainBiomes = hasAnyBiomes(BiomeDictionary.Type.COLD, BiomeDictionary.Type.MOUNTAIN);
 ```
 
 For modded biomes, fetch them at runtime in `postInit()`:

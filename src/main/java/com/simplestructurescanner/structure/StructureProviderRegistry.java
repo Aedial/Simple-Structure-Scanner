@@ -132,12 +132,14 @@ public class StructureProviderRegistry {
      * Register a structure provider.
      */
     public static void registerProvider(StructureProvider provider) {
+        long startTime = System.currentTimeMillis();
+
         provider.postInit();  // Allow provider to set up structure data
         providers.add(provider);
         int visibleStructures = indexProviderStructures(provider);
 
-        SimpleStructureScanner.LOGGER.info("Registered structure provider: {} ({} structures)",
-            provider.getModName(), visibleStructures);
+        SimpleStructureScanner.LOGGER.info("Registered structure provider: {} ({} structures) in {} ms",
+            provider.getModName(), visibleStructures, System.currentTimeMillis() - startTime);
     }
 
     private static int indexProviderStructures(StructureProvider provider) {
@@ -161,7 +163,7 @@ public class StructureProviderRegistry {
     @Nullable
     private static StructureProvider findProvider(String providerId) {
         for (StructureProvider provider : providers) {
-            if (providerId.equals(provider.getProviderId())) return provider;
+            if (provider.getProviderId().equals(providerId)) return provider;
         }
 
         return null;
@@ -293,8 +295,8 @@ public class StructureProviderRegistry {
             @Nullable Predicate<BlockPos> locationFilter) {
         StructureProvider provider = getProviderForStructure(structureId);
         if (provider == null) return null;
-        if (world != null && !canBeSearched(structureId, world.provider.getDimension())) return null;
-
+        if (world == null || !canBeSearched(structureId, world.provider.getDimension())) return null;
+    
         return provider.findNearest(world, structureId, pos, skipCount, locationFilter);
     }
 
@@ -307,7 +309,7 @@ public class StructureProviderRegistry {
     public static List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
         StructureProvider provider = getProviderForStructure(structureId);
         if (provider == null) return null;
-        if (world != null && !canBeSearched(structureId, world.provider.getDimension())) {
+        if (world == null || !canBeSearched(structureId, world.provider.getDimension())) {
             return Collections.emptyList();
         }
 

@@ -15,9 +15,7 @@ import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
-import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Biomes;
-import net.minecraft.init.Blocks;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.Rotation;
 import net.minecraft.util.math.BlockPos;
@@ -92,35 +90,35 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         Set<DimensionInfo> end = Collections.singleton(DimensionInfo.END);
 
         // Desert Temple - Desert, Desert Hills
-        register("desert_temple")
+        register("desert_temple", true)
             .fromBundled()
             .withMetadata(biomes(Biomes.DESERT, Biomes.DESERT_HILLS), overworld)
             .oneInChunks(1024);
 
         // Jungle Temple - Jungle, Jungle Hills
-        register("jungle_temple")
+        register("jungle_temple", true)
             .fromBundled()
             .withMetadata(biomes(Biomes.JUNGLE, Biomes.JUNGLE_HILLS), overworld)
             .oneInChunks(1024);
 
         // Witch Hut - Swamp
-        register("witch_hut")
+        register("witch_hut", true)
             .fromBundled()
             .withMetadata(biomes(Biomes.SWAMPLAND), overworld, RarityTextHelper.oneInChunks(1024));
 
         // Igloo - Snowy biomes
-        register("igloo")
+        register("igloo", true)
             .fromBundled()
             .withMetadata(biomes(Biomes.ICE_PLAINS, Biomes.COLD_TAIGA), overworld)
             .oneInChunks(1024);
 
-        // Dungeon - any biome underground
+        // Dungeon - any biome underground (not searchable)
         register("dungeon")
             .fromBundled()
             .withMetadata(null, overworld, Rarity.UNCOMMON);
 
         // Nether Fortress
-        register("fortress")
+        register("fortress", true)
             .fromBundled()
             .withEntities(new EntityEntry("minecraft:wither_skeleton", 3))
             .withMetadata(null, nether, RarityTextHelper.oneInChunks(768));
@@ -128,27 +126,21 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         // Structures from Map
 
         // Mineshaft - any biome underground
-        MapGenerationBuilder mineshaftMap = new MapGenerationBuilder(256, 256, 64, GRASS)
+        MapGenerationBuilder mineshaftMap = MapGenerationBuilder.ofBuriedWithFloor(256, 256, STONE)
             .withName("minecraft:mineshaft")
-            .withBelowLayers(63, STONE)
-            .withoutPlatform()
-            .withLowestNonOpaqueFloor()
             .build(VanillaStructureProvider::generateMineshaft, Biomes.PLAINS);
 
-        register("mineshaft")
+        register("mineshaft", true)
             .fromMap(mineshaftMap)
             .withFallbackEntities(new EntityEntry("minecraft:cave_spider", 1, true))
             .withMetadata(null, overworld, RarityTextHelper.oneInChunks(250.0D));
 
         // Stronghold - fixed ring placement with 128 total structures
-        MapGenerationBuilder strongholdMap = new MapGenerationBuilder(256, 256, 64, GRASS)
+        MapGenerationBuilder strongholdMap = MapGenerationBuilder.ofBuried(256, 256, STONE)
             .withName("minecraft:stronghold")
-            .withBelowLayers(63, STONE)
-            .withoutPlatform()
-            .withLowestNonOpaqueFloor()
             .build(VanillaStructureProvider::generateStronghold, Biomes.PLAINS);
 
-        register("stronghold")
+        register("stronghold", true)
             .fromMap(strongholdMap)
             .withMetadata(null, overworld)
             .oneInChunks(RarityTextHelper.averageChunksForFixedCountInRadius(STRONGHOLD_COUNT, 1472.0D));
@@ -163,7 +155,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
             .build(VanillaStructureProvider::generateVillage, Biomes.PLAINS); */
 
         Set<Biome> villageBiomes = biomes(Biomes.PLAINS, Biomes.DESERT, Biomes.SAVANNA, Biomes.TAIGA);
-        register("village")
+        register("village", true)
             .fromMapWithBundledFallback(villageMap)
             .withMetadata(villageBiomes, overworld, RarityTextHelper.oneInChunks(1024));
 
@@ -177,7 +169,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
             .withAboveLayers(64 - 38, WATER)    // need water for it to generate correctly
             .build(VanillaStructureProvider::generateMonument, Biomes.DEEP_OCEAN); */
 
-        register("monument")
+        register("monument", true)
             .fromMapWithBundledFallback(monumentMap)
             .withEntitiesForMap(new EntityEntry("minecraft:guardian", 30))
             .withMetadata(biomes(Biomes.DEEP_OCEAN), overworld, RarityTextHelper.oneInChunks(1024));
@@ -189,7 +181,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
             .build(VanillaStructureProvider::generateMansion, Biomes.ROOFED_FOREST);
 
         Set<Biome> mansionBiomes = biomes(Biomes.ROOFED_FOREST, Biomes.MUTATED_ROOFED_FOREST);
-        register("mansion")
+        register("mansion", true)
             .fromMapWithBundledFallback(mansionMap)
             .withMetadata(mansionBiomes, overworld, RarityTextHelper.oneInChunks(6400));
 
@@ -198,7 +190,7 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
             .withName("minecraft:endcity")
             .build(VanillaStructureProvider::generateEndCity, Biomes.SKY);
 
-        register("endcity")
+        register("endcity", true)
             .fromMapWithBundledFallback(endCityMap)
             .withMetadata(null, end, RarityTextHelper.oneInChunks(400));
 
@@ -275,21 +267,10 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
         for (StructureComponent component : components) component.addComponentParts(world, random, bounds);
     }
 
-    private static StructureBoundingBox getMapBounds(MapGenerationWorld world) {
-        return new StructureBoundingBox(world.getMinX(), 0, world.getMinZ(), world.getMaxX(), 255, world.getMaxZ());
-    }
-
-    @Override
-    public boolean canBeSearched(ResourceLocation structureId) {
-        return knownStructures.contains(structureId) && !structureId.getPath().equals("dungeon");
-    }
-
     @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {
-        if (world == null || !canBeSearched(structureId)) return null;
-
         World generationWorld = ValidationContextManager.getGenerationWorld(world);
         String path = structureId.getPath();
         Long seed = SeedHelper.getWorldSeed(generationWorld);
@@ -339,9 +320,6 @@ public class VanillaStructureProvider extends AbstractStructureProvider {
 
     @Override
     public List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
-        if (world == null) return Collections.emptyList();
-        if (!canBeSearched(structureId)) return Collections.emptyList();
-
         World generationWorld = ValidationContextManager.getGenerationWorld(world);
         String path = structureId.getPath();
         Long seed = SeedHelper.getWorldSeed(generationWorld);

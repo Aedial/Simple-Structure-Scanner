@@ -94,9 +94,6 @@ gui.structurescanner.structures.abyssalcraft.omothol_storage=奥穆索储藏室
 gui.structurescanner.structures.abyssalcraft.shoggoth_lair=修格斯巢穴
 gui.structurescanner.structures.abyssalcraft.graveyard=墓园
 
-## AbyssalCraft: Loot containers
-gui.structurescanner.loot.abyssalcraft.crate=板条箱
-
 # The Aether
 
 ## Aether: Structures

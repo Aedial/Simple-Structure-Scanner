@@ -62,6 +62,27 @@ public final class MapGenerationBuilder {
         this.material = material;
     }
 
+    public static MapGenerationBuilder ofBuried(int sizeX, int sizeZ, int y, IBlockState material) {
+        return new MapGenerationBuilder(sizeX, sizeZ, y, material)
+            .withBelowLayers(y, material)
+            .withoutPlatform();
+    }
+
+    public static MapGenerationBuilder ofBuried(int sizeX, int sizeZ, IBlockState material) {
+        return ofBuried(sizeX, sizeZ, 64, material);
+    }
+
+    public static MapGenerationBuilder ofBuriedWithFloor(int sizeX, int sizeZ, int y, IBlockState material) {
+        return new MapGenerationBuilder(sizeX, sizeZ, y, material)
+            .withBelowLayers(y, material)
+            .withLowestNonOpaqueFloor()
+            .withoutPlatform();
+    }
+
+    public static MapGenerationBuilder ofBuriedWithFloor(int sizeX, int sizeZ, IBlockState material) {
+        return ofBuriedWithFloor(sizeX, sizeZ, 64, material);
+    }
+
     /**
      * Adds a material band directly above the previous upper band.
      */

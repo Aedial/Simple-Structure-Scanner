@@ -147,11 +147,6 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     }
 
     @Override
-    public boolean canBeSearched(ResourceLocation structureId) {
-        return dungeonsById.containsKey(structureId);
-    }
-
-    @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {
@@ -309,7 +304,7 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
     }
 
     private void registerDungeon(DungeonDefinition dungeon) {
-        register(dungeon.id)
+        register(dungeon.id, true)  // all Chocolate Quest Repoured dungeons are searchable
             .fromContentsSupplier(() -> populateDungeonContents(dungeon))
             .withMetadata(dungeon.biomes, dungeon.dimensions, dungeon.rarity);
         dungeonsById.put(dungeon.id, dungeon);

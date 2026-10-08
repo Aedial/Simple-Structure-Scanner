@@ -13,7 +13,7 @@ class Arguments(argparse.Namespace):
 
 total_time: dict[str, int] = {}
 
-parser = argparse.ArgumentParser(description="Clean a Spark sampler JSON file into nested time/reference/children trees.")
+parser = argparse.ArgumentParser(description="Clean Spark sampler JSON file(s) into a streamlined format")
 parser.add_argument("input", type=Path, nargs="+", help="Path to the Spark JSON file(s) to clean")
 parser.add_argument("-i", "--inplace", action="store_true",
     help="Overwrite the input file instead of writing a sibling *.clean.json file",
@@ -239,13 +239,45 @@ def clean_thread(thread_value: Any, thread_index: int, args: Arguments) -> dict[
     return cleaned_thread
 
 
+def clean_sources(sources: dict) -> list | dict:
+    if not isinstance(sources, dict):
+        return sources
+
+    new_sources: list[str] = []
+    for data in sources.values():
+        name = data.get("name")
+        version = data.get("version")
+
+        if name is not None and version is not None:
+            version_short = version.split("|")[0].strip()
+            new_sources.append(f"{name} {version_short}")
+
+    new_sources.sort()
+
+    return new_sources
+
+
 def clean_document(document: Any, args: Arguments) -> Any:
     if isinstance(document, dict) and "threads" in document:
         thread_values = expect_list(document["threads"], "threads")
-        return [clean_thread(thread_value, thread_index, args) for thread_index, thread_value in enumerate(thread_values)]
+        if not thread_values:
+            raise ValueError("No time data found in the document")
+
+        document["threads"] = [
+            clean_thread(thread_value, thread_index, args)
+            for thread_index, thread_value in enumerate(thread_values)
+        ]
+
+        if "metadata" in document and "sources" in document["metadata"]:
+            document["metadata"]["sources"] = clean_sources(document["metadata"]["sources"])
+
+        return document
 
     if isinstance(document, list):
-        return [clean_thread(thread_value, thread_index, args) for thread_index, thread_value in enumerate(document)]
+        return [
+            clean_thread(thread_value, thread_index, args)
+            for thread_index, thread_value in enumerate(document)
+        ]
 
     return clean_thread(document, 0, args)
 

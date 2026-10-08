@@ -179,11 +179,6 @@ public class BomdStructureProvider extends AbstractStructureProvider {
     }
 
     @Override
-    public boolean canBeSearched(ResourceLocation structureId) {
-        return definitionsById.containsKey(structureId);
-    }
-
-    @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {
@@ -211,7 +206,7 @@ public class BomdStructureProvider extends AbstractStructureProvider {
         Set<DimensionInfo> dimensions = definition.resolveDimensions(worldConfigClass);
         LocalizedText rarity = definition.resolveRarity(worldConfigClass);
 
-        register(structureId)
+        register(structureId, true)  // all Bomd structures are searchable
             .fromContentsSupplier(() -> populateStructureContents(definition))
             .withMetadata(null, dimensions, rarity);
         definitionsById.put(structureId, definition);

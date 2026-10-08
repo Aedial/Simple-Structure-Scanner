@@ -137,6 +137,10 @@ public class StructureNBTParser {
 
         void addLootTable(ResourceLocation lootTableId);
 
+        default void addLootTable(ResourceLocation lootTableId, @Nullable IBlockState state) {
+            addLootTable(lootTableId);
+        }
+
         void addLootEntry(@Nullable LootEntry lootEntry);
     }
 
@@ -582,7 +586,7 @@ public class StructureNBTParser {
 
         if (nbtData.hasKey("LootTable")) {
             String lootTable = nbtData.getString("LootTable");
-            if (!lootTable.isEmpty()) builder.addLootTable(new ResourceLocation(lootTable));
+            if (!lootTable.isEmpty()) builder.addLootTable(new ResourceLocation(lootTable), state);
         }
 
         // Some manually-authored structures include both fixed items and a loot table tag.

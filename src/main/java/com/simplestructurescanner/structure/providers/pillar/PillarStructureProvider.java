@@ -151,14 +151,6 @@ public class PillarStructureProvider extends AbstractStructureProvider {
     }
 
     @Override
-    public boolean canBeSearched(ResourceLocation structureId) {
-        PillarSchemaProxy schema = getSchema(structureId);
-        if (schema == null) return false;
-
-        return schema.generatorType != PillarGeneratorType.NONE;
-    }
-
-    @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {
@@ -349,7 +341,8 @@ public class PillarStructureProvider extends AbstractStructureProvider {
             dimensions = Collections.emptySet();
         }
 
-        register(id, LocalizedText.translatable("structure.pillar." + schema.structureName))
+        boolean searchable = schema.generatorType != PillarGeneratorType.NONE;
+        register(id, LocalizedText.translatable("structure.pillar." + schema.structureName), searchable)
             .fromContentsSupplier(info -> populateStructureContents(schema, info))
             .withMetadata(biomes, dimensions)
             .withRarity(RarityTextHelper.oneInChunks(schema.rarity));

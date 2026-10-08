@@ -91,11 +91,9 @@ gui.structurescanner.structures.abyssalcraft.dreadlands_mineshaft=Dreadlands Min
 gui.structurescanner.structures.abyssalcraft.jzahar_temple=J'zahar Temple
 gui.structurescanner.structures.abyssalcraft.omothol_city=Omothol City
 gui.structurescanner.structures.abyssalcraft.omothol_storage=Omothol Storage
+gui.structurescanner.structures.abyssalcraft.chagaroth_lair=Cha'garoth Lair
 gui.structurescanner.structures.abyssalcraft.shoggoth_lair=Shoggoth Lair
 gui.structurescanner.structures.abyssalcraft.graveyard=Graveyard
-
-## AbyssalCraft: Loot containers
-gui.structurescanner.loot.abyssalcraft.crate=Crate
 
 # The Aether
 

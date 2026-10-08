@@ -102,11 +102,6 @@ public class AstralSorceryStructureProvider extends AbstractStructureProvider {
     }
 
     @Override
-    public boolean canBeSearched(ResourceLocation structureId) {
-        return false;
-    }
-
-    @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {

@@ -134,9 +134,14 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
 
     @Override
     public void addLootTable(ResourceLocation lootTableId) {
+        addLootTable(lootTableId, null);
+    }
+
+    @Override
+    public void addLootTable(ResourceLocation lootTableId, @Nullable IBlockState state) {
         if (lootTableId == null) return;
 
-        addLootEntry(createLootTableEntry(lootTableId));
+        addLootEntry(createLootTableEntry(lootTableId, state));
     }
 
     @Override
@@ -203,9 +208,11 @@ public class StructureContentAccumulator implements StructureNBTParser.Structure
         for (LootEntry lootEntry : previewData.lootEntries) addLootEntry(lootEntry);
     }
 
-    private static LootEntry createLootTableEntry(ResourceLocation lootTableId) {
-        return new LootEntry(lootTableId, new ArrayList<>(),
-            LocalizedText.translatable("gui.structurescanner.loot.chest"));
+    private static LootEntry createLootTableEntry(ResourceLocation lootTableId, @Nullable IBlockState state) {
+        LocalizedText containerType = state == null || state.getBlock() == Blocks.CHEST
+            ? LocalizedText.translatable("gui.structurescanner.loot.chest")
+            : LocalizedText.translatable(state.getBlock().getTranslationKey() + ".name");
+        return new LootEntry(lootTableId, new ArrayList<>(), containerType);
     }
 
     private static final class BlockAggregate {

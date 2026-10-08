@@ -11,6 +11,7 @@ import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
+import net.minecraft.init.Biomes;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
@@ -22,6 +23,7 @@ import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
+import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.SeedHelper;
@@ -37,6 +39,7 @@ public class AetherStructureProvider extends AbstractStructureProvider {
     private static final String MOD_ID = "aether_legacy";
     private static final String MOD_NAME = "gui.structurescanner.provider.aether_legacy";
     private static final String REWARD_KEY = "gui.structurescanner.loot.aether.reward";
+    private static final String DUNGEON_CLASS_PREFIX = "com.gildedgames.the_aether.world.";
 
     // Cache: seed -> list of dungeon positions
     private static final Map<Long, List<BlockPos>> silverDungeonCache = new HashMap<>();
@@ -73,19 +76,29 @@ public class AetherStructureProvider extends AbstractStructureProvider {
             GOLD_GRID_SIZE, goldPrimaryChance, goldSecondaryChance);
 
         // Silver Dungeon (Valkyrie Queen)
-        register("silver_dungeon")
-            .fromBundled()
+        MapGenerationBuilder silverDungeonMap = new MapGenerationBuilder(256, 256, 64, AIR)
+            .withName(MOD_ID + ":silver_dungeon")
+            .withoutPlatform()
+            .build(createMapStructureStart(DUNGEON_CLASS_PREFIX + "gen.MapGenSilverDungeon$Start"), Biomes.PLAINS);
+        register("silver_dungeon", true)
+            .fromMap(silverDungeonMap)
             .withLootTables(new LootEntry("aether_legacy:chests/silver_dungeon_reward", REWARD_KEY))
             .withEntities(new EntityEntry("aether_legacy:mimic", 3))
             .withMetadata(null, aetherDim, silverRarity);
 
-        // Gold Dungeon (Sun Spirit)
-        register("gold_dungeon")
-            .fromBundled()
+        // Gold Dungeon (Sun Spirit) - despite being a floating island, it requires terrain to generate correctly
+        MapGenerationBuilder goldDungeonMap = new MapGenerationBuilder(128, 128, 64, AIR)
+            .withName(MOD_ID + ":gold_dungeon")
+            .withOrigin(64, 64)
+            // FIXME: the island is *bald*
+            .build(createMapStructureStart(DUNGEON_CLASS_PREFIX + "gen.MapGenGoldenDungeon$Start"), Biomes.PLAINS);
+        register("gold_dungeon", true)
+            .fromMap(goldDungeonMap)
             .withLootTables(new LootEntry("aether_legacy:chests/gold_dungeon_reward", REWARD_KEY))
             .withMetadata(null, aetherDim, goldRarity);
 
-        // Bronze Dungeon (Slider) - not searchable due to terrain dependency
+        // Bronze Dungeon (Slider) - not searchable due to tricky terrain dependency
+        // The dungeon generation code is a complete trainwreck, trying to replicate its MapGen is just not worth
         register("bronze_dungeon")
             .fromBundled()
             .withLootTables(new LootEntry("aether_legacy:chests/bronze_dungeon_reward", REWARD_KEY))
@@ -143,17 +156,9 @@ public class AetherStructureProvider extends AbstractStructureProvider {
     }
 
     @Override
-    public boolean canBeSearched(ResourceLocation structureId) {
-        if (!knownStructures.contains(structureId)) return false;
-
-        // Bronze dungeon can technically be searched, but it's terrain-dependent so very annoying
-        return !structureId.getPath().equals("bronze_dungeon");
-    }
-    @Override
     @Nullable
     public StructureLocation findNearest(World world, ResourceLocation structureId, BlockPos pos, int skipCount,
             @Nullable Predicate<BlockPos> locationFilter) {
-        if (world == null || !canBeSearched(structureId)) return null;
         if (world.provider.getDimension() != aetherDimensionId) return null;
 
         Long seed = SeedHelper.getWorldSeed(world);
@@ -188,7 +193,6 @@ public class AetherStructureProvider extends AbstractStructureProvider {
 
     @Override
     public List<BlockPos> findAllNearby(World world, ResourceLocation structureId, BlockPos pos, int maxResults) {
-        if (world == null || !canBeSearched(structureId)) return Collections.emptyList();
         if (world.provider.getDimension() != aetherDimensionId) return Collections.emptyList();
 
         Long seed = SeedHelper.getWorldSeed(world);
@@ -289,9 +293,6 @@ public class AetherStructureProvider extends AbstractStructureProvider {
      *   long i = rand.nextLong();
      *   long j = rand.nextLong();
      *   rand.setSeed((chunkX * i) ^ (chunkZ * j) ^ worldSeed);
-     * <p>
-     * Additionally, there's 1 random call consumed between setSeed and the spawn
-     * check (likely from MapGenStructure internals or during structure lookup).
      */
     private boolean canSpawnStructureAtCoords(long seed, int chunkX, int chunkZ, int gridSize,
             int primaryChance, int secondaryChance) {
@@ -299,8 +300,8 @@ public class AetherStructureProvider extends AbstractStructureProvider {
         // Seed using standard chunk random formula
         Random rand = SeedHelper.seedChunkRandom(seed, chunkX, chunkZ);
 
-        // Skip 1 random call - this happens between setSeed and canSpawnStructureAtCoords
-        // in the Aether's MapGenStructure flow. Verified through instrumentation.
+        // Skip 1 random call between setSeed and canSpawnStructureAtCoords
+        // in the Aether's MapGenStructure flow (likely from MapGenStructure internals/structure lookup)
         rand.nextInt(1);
 
         // Replicate RandomTracker.testRandom behavior
@@ -322,7 +323,7 @@ public class AetherStructureProvider extends AbstractStructureProvider {
      * Replicate RandomTracker.testRandom behavior.
      * NOTE: The Aether's implementation has a bug where the recursive call's
      * return value is ignored, causing it to return -1 when result == lastRand.
-     * We must replicate this bug for accuracy.
+     * We replicate this bug for accuracy.
      */
     private int testRandom(Random random, int bound, int lastRand) {
         int result = random.nextInt(bound);

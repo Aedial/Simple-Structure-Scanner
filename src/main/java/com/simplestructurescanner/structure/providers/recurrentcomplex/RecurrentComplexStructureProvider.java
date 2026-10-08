@@ -149,7 +149,7 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         }
 
         int[] size = getStructureSize(structure);
-        register(structureId)
+        register(structureId, true)  // all Recurrent Complex structures are searchable
             .withSize(
                 size.length > 0 ? size[0] : 0,
                 size.length > 1 ? size[1] : 0,
@@ -1345,11 +1345,6 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
         provider.setDimension(dimensionId);
         return provider;
-    }
-
-    @Override
-    public boolean canBeSearched(ResourceLocation structureId) {
-        return structureInfos.containsKey(structureId);
     }
 
     @Override
