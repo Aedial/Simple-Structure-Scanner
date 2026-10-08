@@ -74,6 +74,22 @@ class NbtFormatError(ValueError):
     pass
 
 
+parser = argparse.ArgumentParser(
+    description="Strip air blocks from a Minecraft structure NBT or restore the capture-compatible air mask."
+)
+subparsers = parser.add_subparsers(dest="command", required=True)
+
+for command, help_text in (
+    ("strip", "Remove all minecraft:air block entries and write sibling *.stripped.nbt files."),
+    ("restore", "Rebuild the capture-compatible air mask from non-air block positions and write sibling *.restored.nbt files."),
+):
+    command_parser = subparsers.add_parser(command, help=help_text)
+    command_parser.add_argument("inputs", nargs="+", type=Path, help="One or more .nbt files or directories to process")
+    command_parser.add_argument("--dry", action="store_true", help="Compute and print the output without writing any files")
+    command_parser.add_argument("-f", "--force", action="store_true", help="Overwrite existing output files")
+    command_parser.add_argument("-i", "--inplace", action="store_true", help="Overwrite each input file instead of writing a sibling output file")
+
+
 def read_exact(stream: BinaryIO, size: int) -> bytes:
     data = stream.read(size)
     if len(data) != size:
@@ -506,50 +522,348 @@ def strip_air_blocks(root_tag: Tag) -> RewriteStats:
     )
 
 
-def include_axis_extents(axis_map: dict[tuple[int, int], list[int]], key: tuple[int, int], value: int) -> None:
-    extents = axis_map.get(key)
-    if extents is None:
-        axis_map[key] = [value, value]
-        return
+class AirRetentionMask:
+    AXIS_X = 0
+    AXIS_Z = 1
 
-    extents[0] = min(extents[0], value)
-    extents[1] = max(extents[1], value)
+    def __init__(self, size: tuple[int, int, int]) -> None:
+        self.width, self.height, self.depth = size
+        self.halo_width = self.width + 2
+        self.halo_height = self.height + 2
+        self.halo_depth = self.depth + 2
+        self.non_air = bytearray(self.width * self.height * self.depth)
+        self.x_lines = [0] * (self.height * self.depth)
+        self.y_lines = [0] * (self.width * self.depth)
+        self.z_lines = [0] * (self.width * self.height)
+        self.outside = bytearray(self.halo_width * self.halo_height * self.halo_depth)
+        self.entrances: dict[int, bool] = {}
+        self.plane_tags: dict[int, int] = {}
+        self.next_plane_tag = 1
 
+    def include(self, position: tuple[int, int, int]) -> None:
+        x_position, y_position, z_position = position
+        self.non_air[self.get_index(x_position, y_position, z_position)] = 1
+        self.x_lines[y_position * self.depth + z_position] |= 1 << x_position
+        self.y_lines[x_position * self.depth + z_position] |= 1 << y_position
+        self.z_lines[x_position * self.height + y_position] |= 1 << z_position
 
-def contains_axis_interior(axis_map: dict[tuple[int, int], list[int]], key: tuple[int, int], value: int) -> bool:
-    extents = axis_map.get(key)
-    return extents is not None and value > extents[0] and value < extents[1]
+    def should_keep(self, index: int) -> bool:
+        x_position, y_position, z_position = self.get_position(index)
+        return not self.is_outside(x_position, y_position, z_position)
 
+    def classify_outside(self) -> None:
+        queue = [self.get_halo_index(-1, -1, -1)]
+        self.outside[queue[0]] = 1
+        head = 0
 
-def build_air_retention_axes(non_air_positions: set[tuple[int, int, int]]) -> tuple[dict[tuple[int, int], list[int]], dict[tuple[int, int], list[int]], dict[tuple[int, int], list[int]]]:
-    x_axis: dict[tuple[int, int], list[int]] = {}
-    y_axis: dict[tuple[int, int], list[int]] = {}
-    z_axis: dict[tuple[int, int], list[int]] = {}
+        while head < len(queue):
+            index = queue[head]
+            head += 1
+            x_position = index % self.halo_width - 1
+            plane_index = index // self.halo_width
+            z_position = plane_index % self.halo_depth - 1
+            y_position = plane_index // self.halo_depth - 1
 
-    for x_position, y_position, z_position in non_air_positions:
-        include_axis_extents(x_axis, (y_position, z_position), x_position)
-        include_axis_extents(y_axis, (x_position, z_position), y_position)
-        include_axis_extents(z_axis, (x_position, y_position), z_position)
+            self.enqueue_outside(queue, x_position, y_position, z_position, x_position - 1, y_position, z_position)
+            self.enqueue_outside(queue, x_position, y_position, z_position, x_position + 1, y_position, z_position)
+            self.enqueue_outside(queue, x_position, y_position, z_position, x_position, y_position - 1, z_position)
+            self.enqueue_outside(queue, x_position, y_position, z_position, x_position, y_position + 1, z_position)
+            self.enqueue_outside(queue, x_position, y_position, z_position, x_position, y_position, z_position - 1)
+            self.enqueue_outside(queue, x_position, y_position, z_position, x_position, y_position, z_position + 1)
 
-    return x_axis, y_axis, z_axis
+    def enqueue_outside(
+        self,
+        queue: list[int],
+        x_position: int,
+        y_position: int,
+        z_position: int,
+        neighbor_x: int,
+        neighbor_y: int,
+        neighbor_z: int,
+    ) -> None:
+        if not self.is_inside_halo(neighbor_x, neighbor_y, neighbor_z):
+            return
 
+        neighbor_index = self.get_halo_index(neighbor_x, neighbor_y, neighbor_z)
+        if self.outside[neighbor_index] or not self.is_air(neighbor_x, neighbor_y, neighbor_z):
+            return
 
-def should_keep_air(position: tuple[int, int, int], x_axis: dict[tuple[int, int], list[int]], y_axis: dict[tuple[int, int], list[int]], z_axis: dict[tuple[int, int], list[int]]) -> bool:
-    x_position, y_position, z_position = position
-    if contains_axis_interior(x_axis, (y_position, z_position), x_position):
+        if not self.can_traverse(x_position, y_position, z_position, neighbor_x, neighbor_y, neighbor_z):
+            return
+
+        self.outside[neighbor_index] = 1
+        queue.append(neighbor_index)
+
+    def can_traverse(
+        self,
+        x_position: int,
+        y_position: int,
+        z_position: int,
+        neighbor_x: int,
+        neighbor_y: int,
+        neighbor_z: int,
+    ) -> bool:
+        if x_position != neighbor_x:
+            return self.can_traverse_entrance(
+                x_position, y_position, z_position, neighbor_x, neighbor_y, neighbor_z, self.AXIS_X
+            )
+
+        if z_position != neighbor_z:
+            return self.can_traverse_entrance(
+                x_position, y_position, z_position, neighbor_x, neighbor_y, neighbor_z, self.AXIS_Z
+            )
+
         return True
 
-    if contains_axis_interior(y_axis, (x_position, z_position), y_position):
+    def can_traverse_entrance(
+        self,
+        x_position: int,
+        y_position: int,
+        z_position: int,
+        neighbor_x: int,
+        neighbor_y: int,
+        neighbor_z: int,
+        axis: int,
+    ) -> bool:
+        direction = neighbor_x - x_position if axis == self.AXIS_X else neighbor_z - z_position
+        if self.is_inside(neighbor_x, neighbor_y, neighbor_z) and \
+           self.is_entrance(neighbor_x, neighbor_y, neighbor_z, axis):
+            far_x = neighbor_x + direction if axis == self.AXIS_X else neighbor_x
+            far_z = neighbor_z + direction if axis == self.AXIS_Z else neighbor_z
+            if not self.is_outside(far_x, neighbor_y, far_z):
+                return False
+
+        if self.is_inside(x_position, y_position, z_position) and \
+           self.is_entrance(x_position, y_position, z_position, axis):
+            far_x = x_position - direction if axis == self.AXIS_X else x_position
+            far_z = z_position - direction if axis == self.AXIS_Z else z_position
+            if not self.is_outside(far_x, y_position, far_z):
+                return False
+
         return True
 
-    return contains_axis_interior(z_axis, (x_position, y_position), z_position)
+    def is_entrance(self, x_position: int, y_position: int, z_position: int, axis: int) -> bool:
+        key = self.get_plane_key(x_position, y_position, z_position, axis)
+        entrance = self.entrances.get(key)
+        if entrance is not None:
+            return entrance
+
+        if not self.has_air_on_both_sides(x_position, y_position, z_position, axis):
+            self.entrances[key] = False
+            return False
+
+        if not self.has_connected_frame(x_position, y_position, z_position, axis):
+            self.entrances[key] = False
+            return False
+
+        return self.tag_entrance(x_position, y_position, z_position, axis)
+
+    def has_air_on_both_sides(self, x_position: int, y_position: int, z_position: int, axis: int) -> bool:
+        if axis == self.AXIS_X:
+            return self.is_air(x_position - 1, y_position, z_position) and \
+                   self.is_air(x_position + 1, y_position, z_position)
+
+        return self.is_air(x_position, y_position, z_position - 1) and \
+               self.is_air(x_position, y_position, z_position + 1)
+
+    def has_connected_frame(self, x_position: int, y_position: int, z_position: int, axis: int) -> bool:
+        lower_y = self.find_previous_non_air_y(x_position, y_position, z_position)
+        upper_y = self.find_next_non_air_y(x_position, y_position, z_position)
+        if lower_y < 0 or upper_y < 0:
+            return False
+
+        if axis == self.AXIS_X:
+            first = self.find_previous_non_air_z(x_position, y_position, z_position)
+            second = self.find_next_non_air_z(x_position, y_position, z_position)
+        else:
+            first = self.find_previous_non_air_x(x_position, y_position, z_position)
+            second = self.find_next_non_air_x(x_position, y_position, z_position)
+
+        if first < 0 or second < 0:
+            return False
+
+        tag = self.get_plane_tag(x_position, lower_y, z_position, axis)
+        if tag != self.get_plane_tag(x_position, upper_y, z_position, axis):
+            return False
+
+        first_x = x_position if axis == self.AXIS_X else first
+        first_z = first if axis == self.AXIS_X else z_position
+        if tag != self.get_plane_tag(first_x, y_position, first_z, axis):
+            return False
+
+        second_x = x_position if axis == self.AXIS_X else second
+        second_z = second if axis == self.AXIS_X else z_position
+        return tag == self.get_plane_tag(second_x, y_position, second_z, axis)
+
+    def tag_entrance(self, x_position: int, y_position: int, z_position: int, axis: int) -> bool:
+        queue = [self.get_index(x_position, y_position, z_position)]
+        self.entrances[self.get_plane_key(x_position, y_position, z_position, axis)] = True
+        reaches_boundary = False
+        head = 0
+
+        while head < len(queue):
+            index = queue[head]
+            head += 1
+            current_x, current_y, current_z = self.get_position(index)
+            reaches_boundary |= self.is_plane_boundary(current_x, current_y, current_z, axis)
+
+            if axis == self.AXIS_X:
+                self.add_entrance_position(queue, current_x, current_y - 1, current_z, axis)
+                self.add_entrance_position(queue, current_x, current_y + 1, current_z, axis)
+                self.add_entrance_position(queue, current_x, current_y, current_z - 1, axis)
+                self.add_entrance_position(queue, current_x, current_y, current_z + 1, axis)
+            else:
+                self.add_entrance_position(queue, current_x - 1, current_y, current_z, axis)
+                self.add_entrance_position(queue, current_x + 1, current_y, current_z, axis)
+                self.add_entrance_position(queue, current_x, current_y - 1, current_z, axis)
+                self.add_entrance_position(queue, current_x, current_y + 1, current_z, axis)
+
+        if not reaches_boundary:
+            return True
+
+        for index in queue:
+            self.entrances[self.get_plane_key_for_index(index, axis)] = False
+
+        return False
+
+    def add_entrance_position(
+        self, queue: list[int], x_position: int, y_position: int, z_position: int, axis: int
+    ) -> None:
+        if not self.is_inside(x_position, y_position, z_position) or \
+           self.is_non_air(x_position, y_position, z_position):
+            return
+
+        key = self.get_plane_key(x_position, y_position, z_position, axis)
+        if self.entrances.get(key) is True:
+            return
+
+        self.entrances[key] = True
+        queue.append(self.get_index(x_position, y_position, z_position))
+
+    def is_plane_boundary(self, x_position: int, y_position: int, z_position: int, axis: int) -> bool:
+        if axis == self.AXIS_X:
+            return y_position in (0, self.height - 1) or z_position in (0, self.depth - 1)
+
+        return x_position in (0, self.width - 1) or y_position in (0, self.height - 1)
+
+    def get_plane_tag(self, x_position: int, y_position: int, z_position: int, axis: int) -> int:
+        key = self.get_plane_key(x_position, y_position, z_position, axis)
+        tag = self.plane_tags.get(key)
+        if tag is not None:
+            return tag
+
+        tag = self.next_plane_tag
+        self.next_plane_tag += 1
+        self.plane_tags[key] = tag
+        queue = [self.get_index(x_position, y_position, z_position)]
+        head = 0
+
+        while head < len(queue):
+            index = queue[head]
+            head += 1
+            current_x, current_y, current_z = self.get_position(index)
+
+            if axis == self.AXIS_X:
+                self.add_plane_position(queue, current_x, current_y - 1, current_z, axis, tag)
+                self.add_plane_position(queue, current_x, current_y + 1, current_z, axis, tag)
+                self.add_plane_position(queue, current_x, current_y, current_z - 1, axis, tag)
+                self.add_plane_position(queue, current_x, current_y, current_z + 1, axis, tag)
+            else:
+                self.add_plane_position(queue, current_x - 1, current_y, current_z, axis, tag)
+                self.add_plane_position(queue, current_x + 1, current_y, current_z, axis, tag)
+                self.add_plane_position(queue, current_x, current_y - 1, current_z, axis, tag)
+                self.add_plane_position(queue, current_x, current_y + 1, current_z, axis, tag)
+
+        return tag
+
+    def add_plane_position(
+        self, queue: list[int], x_position: int, y_position: int, z_position: int, axis: int, tag: int
+    ) -> None:
+        if not self.is_inside(x_position, y_position, z_position) or \
+           not self.is_non_air(x_position, y_position, z_position):
+            return
+
+        key = self.get_plane_key(x_position, y_position, z_position, axis)
+        if key in self.plane_tags:
+            return
+
+        self.plane_tags[key] = tag
+        queue.append(self.get_index(x_position, y_position, z_position))
+
+    def find_previous_non_air_x(self, x_position: int, y_position: int, z_position: int) -> int:
+        return self.find_previous_non_air(self.x_lines[y_position * self.depth + z_position], x_position)
+
+    def find_next_non_air_x(self, x_position: int, y_position: int, z_position: int) -> int:
+        return self.find_next_non_air(self.x_lines[y_position * self.depth + z_position], x_position)
+
+    def find_previous_non_air_y(self, x_position: int, y_position: int, z_position: int) -> int:
+        return self.find_previous_non_air(self.y_lines[x_position * self.depth + z_position], y_position)
+
+    def find_next_non_air_y(self, x_position: int, y_position: int, z_position: int) -> int:
+        return self.find_next_non_air(self.y_lines[x_position * self.depth + z_position], y_position)
+
+    def find_previous_non_air_z(self, x_position: int, y_position: int, z_position: int) -> int:
+        return self.find_previous_non_air(self.z_lines[x_position * self.height + y_position], z_position)
+
+    def find_next_non_air_z(self, x_position: int, y_position: int, z_position: int) -> int:
+        return self.find_next_non_air(self.z_lines[x_position * self.height + y_position], z_position)
+
+    @staticmethod
+    def find_previous_non_air(bits: int, position: int) -> int:
+        before = bits & ((1 << position) - 1)
+        return before.bit_length() - 1 if before else -1
+
+    @staticmethod
+    def find_next_non_air(bits: int, position: int) -> int:
+        after = bits >> (position + 1)
+        return position + (after & -after).bit_length() if after else -1
+
+    def is_air(self, x_position: int, y_position: int, z_position: int) -> bool:
+        return self.is_inside_halo(x_position, y_position, z_position) and (
+            not self.is_inside(x_position, y_position, z_position)
+            or not self.is_non_air(x_position, y_position, z_position)
+        )
+
+    def is_non_air(self, x_position: int, y_position: int, z_position: int) -> bool:
+        return bool(self.non_air[self.get_index(x_position, y_position, z_position)])
+
+    def is_outside(self, x_position: int, y_position: int, z_position: int) -> bool:
+        return self.is_inside_halo(x_position, y_position, z_position) and \
+            bool(self.outside[self.get_halo_index(x_position, y_position, z_position)])
+
+    def is_inside(self, x_position: int, y_position: int, z_position: int) -> bool:
+        return 0 <= x_position < self.width and 0 <= y_position < self.height and 0 <= z_position < self.depth
+
+    def is_inside_halo(self, x_position: int, y_position: int, z_position: int) -> bool:
+        return -1 <= x_position <= self.width and -1 <= y_position <= self.height and -1 <= z_position <= self.depth
+
+    def get_index(self, x_position: int, y_position: int, z_position: int) -> int:
+        return x_position + self.width * (z_position + self.depth * y_position)
+
+    def get_position(self, index: int) -> tuple[int, int, int]:
+        x_position = index % self.width
+        plane_index = index // self.width
+        z_position = plane_index % self.depth
+        y_position = plane_index // self.depth
+
+        return x_position, y_position, z_position
+
+    def get_halo_index(self, x_position: int, y_position: int, z_position: int) -> int:
+        return x_position + 1 + self.halo_width * (z_position + 1 + self.halo_depth * (y_position + 1))
+
+    def get_plane_key(self, x_position: int, y_position: int, z_position: int, axis: int) -> int:
+        return self.get_plane_key_for_index(self.get_index(x_position, y_position, z_position), axis)
+
+    @staticmethod
+    def get_plane_key_for_index(index: int, axis: int) -> int:
+        return index * 2 + axis
 
 
 def restore_air_blocks(root_tag: Tag) -> RewriteStats:
     root_value, size, palette_entries, block_entries = get_structure_parts(root_tag)
 
     non_air_blocks: list[Tag] = []
-    non_air_positions: set[tuple[int, int, int]] = set()
+    air_retention_mask = AirRetentionMask(size)
     used_state_ids: set[int] = set()
     existing_air_palette_entry: Tag | None = None
     removed_air_blocks = 0
@@ -570,25 +884,19 @@ def restore_air_blocks(root_tag: Tag) -> RewriteStats:
             continue
 
         non_air_blocks.append(block_tag)
-        non_air_positions.add(position)
+        air_retention_mask.include(position)
         used_state_ids.add(state_index)
 
-    x_axis, y_axis, z_axis = build_air_retention_axes(non_air_positions)
-    added_air_positions: list[tuple[int, int, int]] = []
+    air_retention_mask.classify_outside()
+    added_air_indices: list[int] = []
 
-    # Air is restored with the same rule the ruler uses: it must sit strictly between non-air blocks on one axis.
-    for y_position in range(size[1]):
-        for x_position in range(size[0]):
-            for z_position in range(size[2]):
-                position = (x_position, y_position, z_position)
-                if position in non_air_positions:
-                    continue
-
-                if should_keep_air(position, x_axis, y_axis, z_axis):
-                    added_air_positions.append(position)
+    # Air is restored with the same hidden-space rule as StructureCaptureService.
+    for index, is_non_air in enumerate(air_retention_mask.non_air):
+        if not is_non_air and air_retention_mask.should_keep(index):
+            added_air_indices.append(index)
 
     air_palette_entry = existing_air_palette_entry if existing_air_palette_entry is not None else default_air_palette_entry()
-    appended_entries = [air_palette_entry] if added_air_positions else []
+    appended_entries = [air_palette_entry] if added_air_indices else []
     new_palette, remapped_state_ids = rebuild_palette(palette_entries, used_state_ids, appended_entries)
 
     for block_index, block_tag in enumerate(non_air_blocks):
@@ -596,10 +904,10 @@ def restore_air_blocks(root_tag: Tag) -> RewriteStats:
         set_block_state_index(block_tag, remapped_state_ids[old_state_index])
 
     new_blocks = list(non_air_blocks)
-    if added_air_positions:
+    if added_air_indices:
         air_state_index = len(new_palette) - 1
-        for position in added_air_positions:
-            new_blocks.append(build_air_block_tag(position, air_state_index))
+        for index in added_air_indices:
+            new_blocks.append(build_air_block_tag(air_retention_mask.get_position(index), air_state_index))
 
     root_value["palette"] = make_list_tag(TAG_COMPOUND, new_palette)
     root_value["blocks"] = make_list_tag(TAG_COMPOUND, new_blocks)
@@ -610,7 +918,7 @@ def restore_air_blocks(root_tag: Tag) -> RewriteStats:
         input_palette=len(palette_entries),
         output_palette=len(new_palette),
         air_removed=removed_air_blocks,
-        air_added=len(added_air_positions),
+        air_added=len(added_air_indices),
     )
 
 
@@ -747,25 +1055,6 @@ def process_file(command: str, input_path: Path, dry_run: bool, force: bool, inp
     print_processed_entry(input_path, stats, input_size, len(output_bytes), additional_log_line)
 
 
-def build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Strip air blocks from a Minecraft structure NBT or restore the ruler-compatible air mask."
-    )
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    for command, help_text in (
-        ("strip", "Remove all minecraft:air block entries and write sibling *.stripped.nbt files."),
-        ("restore", "Rebuild the ruler-compatible air mask from non-air block positions and write sibling *.restored.nbt files."),
-    ):
-        command_parser = subparsers.add_parser(command, help=help_text)
-        command_parser.add_argument("inputs", nargs="+", type=Path, help="One or more .nbt files or directories to process")
-        command_parser.add_argument("--dry", action="store_true", help="Compute and print the output without writing any files")
-        command_parser.add_argument("-f", "--force", action="store_true", help="Overwrite existing output files")
-        command_parser.add_argument("-i", "--inplace", action="store_true", help="Overwrite each input file instead of writing a sibling output file")
-
-    return parser
-
-
 def run_command(command: str, inputs: list[Path], dry_run: bool, force: bool, inplace: bool) -> int:
     had_error = False
     processed_any_file = False
@@ -793,7 +1082,6 @@ def run_command(command: str, inputs: list[Path], dry_run: bool, force: bool, in
 
 
 def main() -> int:
-    parser = build_argument_parser()
     args = parser.parse_args()
 
     return run_command(args.command, args.inputs, args.dry, args.force, args.inplace)

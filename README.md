@@ -120,7 +120,7 @@ The exporting process can be pretty performance-intensive for large structures, 
 
 ### Structure NBT manipulation utilities
 - `python3.12 tools/structure_nbt_air.py strip <path...>` removes every `minecraft:air` block entry and writes sibling `*.stripped.nbt` files.
-- `python3.12 tools/structure_nbt_air.py restore <path...>` adds back only the air blocks the Structure Capture Ruler would keep and writes sibling `*.restored.nbt` files.
+- `python3.12 tools/structure_nbt_air.py restore <path...>` adds back air inside of the structure and writes sibling `*.restored.nbt` files.
 - Each path may be a file or a directory. Directory inputs recurse and process every `.nbt` file they contain.
 - Add `--dry` to print the per-file summary without writing output files.
 - Add `-f` or `--force` to replace an existing `*.stripped.nbt` or `*.restored.nbt` file.

@@ -6,6 +6,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -45,6 +46,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraftforge.fml.common.FMLCommonHandler;
 import net.minecraftforge.common.util.Constants;
 
+import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.BlockDisplayKey;
 import com.simplestructurescanner.structure.StructureInfo.StructureLayer;
 
@@ -242,7 +244,11 @@ public final class StructureCaptureService {
         ContentBounds finalBounds = collectFinalBounds(frozenCapture, exclusions);
         if (!finalBounds.hasContent()) return null;
 
+        long startTime = System.currentTimeMillis();
         NBTTagCompound structureNbt = writeStructureNbt(frozenCapture, finalBounds, exclusions);
+        long endTime = System.currentTimeMillis();
+        SimpleStructureScanner.LOGGER.debug("Structure NBT generation took %s ms", endTime - startTime);
+
         return new CapturedStructure(
             structureNbt,
             finalBounds.getSizeX(),
@@ -482,7 +488,7 @@ public final class StructureCaptureService {
 
     private static AirRetentionMask buildAirRetentionMask(FrozenCapture frozenCapture, ContentBounds bounds,
             StructureCaptureExclusions exclusions) {
-        AirRetentionMask airRetentionMask = new AirRetentionMask();
+        AirRetentionMask airRetentionMask = new AirRetentionMask(bounds);
 
         for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
             BlockPos worldPos = new BlockPos(mutablePos.getX(), mutablePos.getY(), mutablePos.getZ());
@@ -495,6 +501,7 @@ public final class StructureCaptureService {
             airRetentionMask.include(relativePos);
         }
 
+        airRetentionMask.classifyOutside();
         return airRetentionMask;
     }
 
@@ -765,10 +772,6 @@ public final class StructureCaptureService {
         return nextId;
     }
 
-    private static long createLineKey(int first, int second) {
-        return ((long) first << 32) | (second & 0xFFFFFFFFL);
-    }
-
     private static NBTTagList writeInts(int... values) {
         NBTTagList list = new NBTTagList();
         for (int value : values) list.appendTag(new NBTTagInt(value));
@@ -982,54 +985,365 @@ public final class StructureCaptureService {
     }
 
     /**
-     * Only keep air that is bracketed by kept non-air blocks on at least one axis.
+     * Only keeps air hidden behind structure walls. The exterior fill reaches every air block
+     * connected to capture's sides unless a framed entrance separates the air spaces.
+     * <p>
+     * Outside air is defined as :
+     * - Any air connected to the sides of the capture area
+     * - That does not cross an entrance (connected frame)
+     * - Unless it is a 1-thick arch
+     * <p>
+     * This means a tunnel or a room is considered inside air. A 2-thick arch is a 2-thick tunnel.
      */
     private static final class AirRetentionMask {
-        private final Map<Long, AxisExtents> xAxis = new LinkedHashMap<>();
-        private final Map<Long, AxisExtents> yAxis = new LinkedHashMap<>();
-        private final Map<Long, AxisExtents> zAxis = new LinkedHashMap<>();
+        private static final int AXIS_X = 0;
+        private static final int AXIS_Z = 1;
+
+        // Non-air bitsets and entrance/plane tagging are used to drastically reduce the number of checks.
+        // This keeps the computational complexity manageable by doing the job once per relevant group.
+        private final int sizeX;
+        private final int sizeY;
+        private final int sizeZ;
+        private final int haloSizeX;
+        private final int haloSizeY;
+        private final int haloSizeZ;
+        private final BitSet nonAirX;
+        private final BitSet nonAirY;
+        private final BitSet nonAirZ;
+        private final BitSet outside;
+        private final Map<Long, Boolean> entrances = new HashMap<>();
+        private final Map<Long, Integer> planeTags = new HashMap<>();
+        private final int[] outsideQueue;
+        private final int[] planeQueue;
+        private int nextPlaneTag = 1;
+
+        private AirRetentionMask(ContentBounds bounds) {
+            sizeX = bounds.getSizeX();
+            sizeY = bounds.getSizeY();
+            sizeZ = bounds.getSizeZ();
+            haloSizeX = sizeX + 2;
+            haloSizeY = sizeY + 2;
+            haloSizeZ = sizeZ + 2;
+            nonAirX = new BitSet(sizeX * sizeY * sizeZ);
+            nonAirY = new BitSet(sizeX * sizeY * sizeZ);
+            nonAirZ = new BitSet(sizeX * sizeY * sizeZ);
+            outside = new BitSet(haloSizeX * haloSizeY * haloSizeZ);
+            outsideQueue = new int[haloSizeX * haloSizeY * haloSizeZ];
+            planeQueue = new int[sizeX * sizeY * sizeZ];
+        }
 
         private void include(BlockPos relativePos) {
-            include(xAxis, relativePos.getY(), relativePos.getZ(), relativePos.getX());
-            include(yAxis, relativePos.getX(), relativePos.getZ(), relativePos.getY());
-            include(zAxis, relativePos.getX(), relativePos.getY(), relativePos.getZ());
+            int x = relativePos.getX();
+            int y = relativePos.getY();
+            int z = relativePos.getZ();
+            nonAirX.set(getIndexX(x, y, z));
+            nonAirY.set(getIndexY(x, y, z));
+            nonAirZ.set(getIndexZ(x, y, z));
         }
 
         private boolean shouldKeep(BlockPos relativePos) {
-            if (containsInterior(xAxis, relativePos.getY(), relativePos.getZ(), relativePos.getX())) return true;
-            if (containsInterior(yAxis, relativePos.getX(), relativePos.getZ(), relativePos.getY())) return true;
-
-            return containsInterior(zAxis, relativePos.getX(), relativePos.getY(), relativePos.getZ());
+            return !isOutside(relativePos.getX(), relativePos.getY(), relativePos.getZ());
         }
 
-        private void include(Map<Long, AxisExtents> axis, int first, int second, int value) {
-            long key = createLineKey(first, second);
-            AxisExtents extents = axis.get(key);
-            if (extents == null) {
-                extents = new AxisExtents();
-                axis.put(key, extents);
+        private void classifyOutside() {
+            int head = 0;
+            int tail = 0;
+            outside.set(0);
+            outsideQueue[tail++] = 0;
+
+            while (head < tail) {
+                int index = outsideQueue[head++];
+                int x = index % haloSizeX - 1;
+                int planeIndex = index / haloSizeX;
+                int z = planeIndex % haloSizeZ - 1;
+                int y = planeIndex / haloSizeZ - 1;
+
+                tail = enqueueOutside(x, y, z, x - 1, y, z, tail);
+                tail = enqueueOutside(x, y, z, x + 1, y, z, tail);
+                tail = enqueueOutside(x, y, z, x, y - 1, z, tail);
+                tail = enqueueOutside(x, y, z, x, y + 1, z, tail);
+                tail = enqueueOutside(x, y, z, x, y, z - 1, tail);
+                tail = enqueueOutside(x, y, z, x, y, z + 1, tail);
+            }
+        }
+
+        private int enqueueOutside(int x, int y, int z, int neighborX, int neighborY, int neighborZ, int tail) {
+            if (!isInsideHalo(neighborX, neighborY, neighborZ)) return tail;
+
+            int neighborIndex = getHaloIndex(neighborX, neighborY, neighborZ);
+            if (outside.get(neighborIndex)) return tail;
+            if (!isAir(neighborX, neighborY, neighborZ)) return tail;
+            if (!canTraverse(x, y, z, neighborX, neighborY, neighborZ)) return tail;
+
+            outside.set(neighborIndex);
+            outsideQueue[tail++] = neighborIndex;
+            return tail;
+        }
+
+        private boolean canTraverse(int x, int y, int z, int neighborX, int neighborY, int neighborZ) {
+            if (x != neighborX) {
+                return canTraverseEntrance(x, y, z, neighborX, neighborY, neighborZ, AXIS_X);
             }
 
-            extents.include(value);
+            if (z != neighborZ) {
+                return canTraverseEntrance(x, y, z, neighborX, neighborY, neighborZ, AXIS_Z);
+            }
+
+            return true;
         }
 
-        private boolean containsInterior(Map<Long, AxisExtents> axis, int first, int second, int value) {
-            AxisExtents extents = axis.get(createLineKey(first, second));
-            return extents != null && extents.containsInterior(value);
+        private boolean canTraverseEntrance(int x, int y, int z, int neighborX, int neighborY, int neighborZ,
+                int axis) {
+            int direction = axis == AXIS_X ? neighborX - x : neighborZ - z;
+            if (isInside(neighborX, neighborY, neighborZ)
+                    && isEntrance(neighborX, neighborY, neighborZ, axis)
+                    && !isOutside(axis == AXIS_X ? neighborX + direction : neighborX, neighborY,
+                        axis == AXIS_Z ? neighborZ + direction : neighborZ)) {
+                return false;
+            }
+
+            if (isInside(x, y, z)
+                    && isEntrance(x, y, z, axis)
+                    && !isOutside(axis == AXIS_X ? x - direction : x, y,
+                        axis == AXIS_Z ? z - direction : z)) {
+                return false;
+            }
+
+            return true;
         }
-    }
 
-    private static final class AxisExtents {
-        private int min = Integer.MAX_VALUE;
-        private int max = Integer.MIN_VALUE;
+        private boolean isEntrance(int x, int y, int z, int axis) {
+            long key = getPlaneKey(x, y, z, axis);
+            Boolean entrance = entrances.get(key);
+            if (entrance != null) return entrance;
 
-        private void include(int value) {
-            min = Math.min(min, value);
-            max = Math.max(max, value);
+            if (!hasAirOnBothSides(x, y, z, axis)) {
+                entrances.put(key, Boolean.FALSE);
+                return false;
+            }
+
+            if (!hasConnectedFrame(x, y, z, axis)) {
+                entrances.put(key, Boolean.FALSE);
+                return false;
+            }
+
+            return tagEntrance(x, y, z, axis);
         }
 
-        private boolean containsInterior(int value) {
-            return value > min && value < max;
+        private boolean hasAirOnBothSides(int x, int y, int z, int axis) {
+            if (axis == AXIS_X) return isAir(x - 1, y, z) && isAir(x + 1, y, z);
+
+            return isAir(x, y, z - 1) && isAir(x, y, z + 1);
+        }
+
+        private boolean hasConnectedFrame(int x, int y, int z, int axis) {
+            int lowerY = findPreviousNonAirY(x, y, z);
+            int upperY = findNextNonAirY(x, y, z);
+            if (lowerY < 0 || upperY < 0) return false;
+
+            int first = axis == AXIS_X
+                ? findPreviousNonAirZ(x, y, z)
+                : findPreviousNonAirX(x, y, z);
+            int second = axis == AXIS_X
+                ? findNextNonAirZ(x, y, z)
+                : findNextNonAirX(x, y, z);
+            if (first < 0 || second < 0) return false;
+
+            int tag = getPlaneTag(x, lowerY, z, axis);
+            if (tag != getPlaneTag(x, upperY, z, axis)) return false;
+            if (tag != getPlaneTag(axis == AXIS_X ? x : first, y, axis == AXIS_X ? first : z, axis)) return false;
+
+            return tag == getPlaneTag(axis == AXIS_X ? x : second, y, axis == AXIS_X ? second : z, axis);
+        }
+
+        private boolean tagEntrance(int x, int y, int z, int axis) {
+            int head = 0;
+            int tail = 0;
+            boolean reachesBoundary = false;
+            long key = getPlaneKey(x, y, z, axis);
+            entrances.put(key, Boolean.TRUE);
+            planeQueue[tail++] = getIndexX(x, y, z);
+
+            while (head < tail) {
+                int index = planeQueue[head++];
+                int currentX = index % sizeX;
+                int planeIndex = index / sizeX;
+                int currentZ = planeIndex % sizeZ;
+                int currentY = planeIndex / sizeZ;
+                reachesBoundary |= isPlaneBoundary(currentX, currentY, currentZ, axis);
+
+                if (axis == AXIS_X) {
+                    tail = addEntrancePosition(currentX, currentY - 1, currentZ, axis, tail);
+                    tail = addEntrancePosition(currentX, currentY + 1, currentZ, axis, tail);
+                    tail = addEntrancePosition(currentX, currentY, currentZ - 1, axis, tail);
+                    tail = addEntrancePosition(currentX, currentY, currentZ + 1, axis, tail);
+                } else {
+                    tail = addEntrancePosition(currentX - 1, currentY, currentZ, axis, tail);
+                    tail = addEntrancePosition(currentX + 1, currentY, currentZ, axis, tail);
+                    tail = addEntrancePosition(currentX, currentY - 1, currentZ, axis, tail);
+                    tail = addEntrancePosition(currentX, currentY + 1, currentZ, axis, tail);
+                }
+            }
+
+            if (!reachesBoundary) return true;
+
+            for (int index = 0; index < tail; index++) {
+                int position = planeQueue[index];
+                entrances.put(getPlaneKeyForIndex(position, axis), Boolean.FALSE);
+            }
+
+            return false;
+        }
+
+        private int addEntrancePosition(int x, int y, int z, int axis, int tail) {
+            if (!isInside(x, y, z) || isNonAir(x, y, z)) return tail;
+
+            long key = getPlaneKey(x, y, z, axis);
+            if (Boolean.TRUE.equals(entrances.get(key))) return tail;
+
+            entrances.put(key, Boolean.TRUE);
+            planeQueue[tail++] = getIndexX(x, y, z);
+            return tail;
+        }
+
+        private boolean isPlaneBoundary(int x, int y, int z, int axis) {
+            if (axis == AXIS_X) return y == 0 || y == sizeY - 1 || z == 0 || z == sizeZ - 1;
+
+            return x == 0 || x == sizeX - 1 || y == 0 || y == sizeY - 1;
+        }
+
+        private int getPlaneTag(int x, int y, int z, int axis) {
+            long key = getPlaneKey(x, y, z, axis);
+            Integer tag = planeTags.get(key);
+            if (tag != null) return tag;
+
+            tag = nextPlaneTag++;
+            int head = 0;
+            int tail = 0;
+            planeTags.put(key, tag);
+            planeQueue[tail++] = getIndexX(x, y, z);
+
+            while (head < tail) {
+                int index = planeQueue[head++];
+                int currentX = index % sizeX;
+                int planeIndex = index / sizeX;
+                int currentZ = planeIndex % sizeZ;
+                int currentY = planeIndex / sizeZ;
+
+                if (axis == AXIS_X) {
+                    tail = addPlanePosition(currentX, currentY - 1, currentZ, axis, tag, tail);
+                    tail = addPlanePosition(currentX, currentY + 1, currentZ, axis, tag, tail);
+                    tail = addPlanePosition(currentX, currentY, currentZ - 1, axis, tag, tail);
+                    tail = addPlanePosition(currentX, currentY, currentZ + 1, axis, tag, tail);
+                } else {
+                    tail = addPlanePosition(currentX - 1, currentY, currentZ, axis, tag, tail);
+                    tail = addPlanePosition(currentX + 1, currentY, currentZ, axis, tag, tail);
+                    tail = addPlanePosition(currentX, currentY - 1, currentZ, axis, tag, tail);
+                    tail = addPlanePosition(currentX, currentY + 1, currentZ, axis, tag, tail);
+                }
+            }
+
+            return tag;
+        }
+
+        private int addPlanePosition(int x, int y, int z, int axis, int tag, int tail) {
+            if (!isInside(x, y, z) || !isNonAir(x, y, z)) return tail;
+
+            long key = getPlaneKey(x, y, z, axis);
+            if (planeTags.containsKey(key)) return tail;
+
+            planeTags.put(key, tag);
+            planeQueue[tail++] = getIndexX(x, y, z);
+            return tail;
+        }
+
+        private int findPreviousNonAirX(int x, int y, int z) {
+            if (x <= 0) return -1;
+
+            int lineStart = getIndexX(0, y, z);
+            int index = nonAirX.previousSetBit(getIndexX(x - 1, y, z));
+            return index >= lineStart ? index - lineStart : -1;
+        }
+
+        private int findNextNonAirX(int x, int y, int z) {
+            int lineStart = getIndexX(0, y, z);
+            int lineEnd = lineStart + sizeX - 1;
+            int index = nonAirX.nextSetBit(getIndexX(x + 1, y, z));
+            return index >= 0 && index <= lineEnd ? index - lineStart : -1;
+        }
+
+        private int findPreviousNonAirY(int x, int y, int z) {
+            if (y <= 0) return -1;
+
+            int lineStart = getIndexY(x, 0, z);
+            int index = nonAirY.previousSetBit(getIndexY(x, y - 1, z));
+            return index >= lineStart ? index - lineStart : -1;
+        }
+
+        private int findNextNonAirY(int x, int y, int z) {
+            int lineStart = getIndexY(x, 0, z);
+            int lineEnd = lineStart + sizeY - 1;
+            int index = nonAirY.nextSetBit(getIndexY(x, y + 1, z));
+            return index >= 0 && index <= lineEnd ? index - lineStart : -1;
+        }
+
+        private int findPreviousNonAirZ(int x, int y, int z) {
+            if (z <= 0) return -1;
+
+            int lineStart = getIndexZ(x, y, 0);
+            int index = nonAirZ.previousSetBit(getIndexZ(x, y, z - 1));
+            return index >= lineStart ? index - lineStart : -1;
+        }
+
+        private int findNextNonAirZ(int x, int y, int z) {
+            int lineStart = getIndexZ(x, y, 0);
+            int lineEnd = lineStart + sizeZ - 1;
+            int index = nonAirZ.nextSetBit(getIndexZ(x, y, z + 1));
+            return index >= 0 && index <= lineEnd ? index - lineStart : -1;
+        }
+
+        private boolean isAir(int x, int y, int z) {
+            return isInsideHalo(x, y, z) && (!isInside(x, y, z) || !isNonAir(x, y, z));
+        }
+
+        private boolean isNonAir(int x, int y, int z) {
+            return nonAirX.get(getIndexX(x, y, z));
+        }
+
+        private boolean isOutside(int x, int y, int z) {
+            return isInsideHalo(x, y, z) && outside.get(getHaloIndex(x, y, z));
+        }
+
+        private boolean isInside(int x, int y, int z) {
+            return x >= 0 && x < sizeX && y >= 0 && y < sizeY && z >= 0 && z < sizeZ;
+        }
+
+        private boolean isInsideHalo(int x, int y, int z) {
+            return x >= -1 && x <= sizeX && y >= -1 && y <= sizeY && z >= -1 && z <= sizeZ;
+        }
+
+        private int getIndexX(int x, int y, int z) {
+            return x + sizeX * (z + sizeZ * y);
+        }
+
+        private int getIndexY(int x, int y, int z) {
+            return y + sizeY * (z + sizeZ * x);
+        }
+
+        private int getIndexZ(int x, int y, int z) {
+            return z + sizeZ * (y + sizeY * x);
+        }
+
+        private int getHaloIndex(int x, int y, int z) {
+            return x + 1 + haloSizeX * (z + 1 + haloSizeZ * (y + 1));
+        }
+
+        private long getPlaneKey(int x, int y, int z, int axis) {
+            return getPlaneKeyForIndex(getIndexX(x, y, z), axis);
+        }
+
+        private long getPlaneKeyForIndex(int index, int axis) {
+            return ((long) index << 1) | axis;
         }
     }
 
