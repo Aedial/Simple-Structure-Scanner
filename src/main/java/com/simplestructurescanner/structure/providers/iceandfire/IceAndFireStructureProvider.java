@@ -3,9 +3,7 @@ package com.simplestructurescanner.structure.providers.iceandfire;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Random;
 import java.util.Set;
-import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
@@ -25,7 +23,6 @@ import com.simplestructurescanner.structure.DimensionInfo;
 import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
-import com.simplestructurescanner.structure.generation.MapGenerationWorld;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 
 
@@ -104,14 +101,14 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
         }
         register("fire_dragon_roost")
             .fromMapWithBundledFallback(createSurfaceMap("fire_dragon_roost", Biomes.PLAINS,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenFireDragonRoosts"), GRASS))
+                WORLD_GENERATOR_PACKAGE + "WorldGenFireDragonRoosts", GRASS))
             .withMetadata(fireDragonRoostBiomes, overworld)
             .withRarity(calculateDragonRarity(fireDragonRoostBiomes, true, dragonRoostChance));
 
         Set<Biome> fireDragonCaveBiomes = hasBiomesBut(fireDragonRoostBiomes, BiomeDictionary.Type.BEACH);
         register("fire_dragon_cave")
             .fromMapWithBundledFallback(createUndergroundMap("fire_dragon_cave", Biomes.PLAINS,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenFireDragonCave", -32)))
+                WORLD_GENERATOR_PACKAGE + "WorldGenFireDragonCave", -32))
             .withMetadata(fireDragonCaveBiomes, overworld)
             .withRarity(calculateDragonRarity(fireDragonCaveBiomes, false, dragonDenChance));
 
@@ -119,14 +116,14 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
         Set<Biome> iceDragonRoostBiomes = hasAllBiomes(BiomeDictionary.Type.COLD, BiomeDictionary.Type.SNOWY);
         register("ice_dragon_roost")
             .fromMapWithBundledFallback(createSurfaceMap("ice_dragon_roost", Biomes.ICE_PLAINS,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenIceDragonRoosts"), SNOW))
+                WORLD_GENERATOR_PACKAGE + "WorldGenIceDragonRoosts", SNOW))
             .withMetadata(iceDragonRoostBiomes, overworld)
             .withRarity(calculateDragonRarity(iceDragonRoostBiomes, true, dragonRoostChance));
 
         Set<Biome> iceDragonCaveBiomes = hasBiomesBut(iceDragonRoostBiomes, BiomeDictionary.Type.BEACH);
         register("ice_dragon_cave")
             .fromMapWithBundledFallback(createUndergroundMap("ice_dragon_cave", Biomes.ICE_PLAINS,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenIceDragonCave", -32)))
+                WORLD_GENERATOR_PACKAGE + "WorldGenIceDragonCave", -32))
             .withMetadata(iceDragonCaveBiomes, overworld)
             .withRarity(calculateDragonRarity(iceDragonCaveBiomes, false, dragonDenChance));
 
@@ -136,13 +133,13 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
 
         register("lightning_dragon_roost")
             .fromMapWithBundledFallback(createSurfaceMap("lightning_dragon_roost", Biomes.SAVANNA,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenLightningDragonRoosts"), GRASS))
+                WORLD_GENERATOR_PACKAGE + "WorldGenLightningDragonRoosts", GRASS))
             .withMetadata(lightningDragonBiomes, overworld)
             .withRarity(calculateDragonRarity(lightningDragonBiomes, true, dragonRoostChance));
 
         register("lightning_dragon_cave")
             .fromMapWithBundledFallback(createUndergroundMap("lightning_dragon_cave", Biomes.SAVANNA,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenLightningDragonCave", -32)))
+                WORLD_GENERATOR_PACKAGE + "WorldGenLightningDragonCave", -32))
             .withMetadata(lightningDragonBiomes, overworld)
             .withRarity(calculateDragonRarity(lightningDragonBiomes, false, dragonDenChance));
 
@@ -151,23 +148,23 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
 
         register("cyclops_cave")
             .fromMapWithBundledFallback(createSurfaceMap("cyclops_cave", Biomes.BEACH, 3,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenCyclopsCave"), STONE))
+                WORLD_GENERATOR_PACKAGE + "WorldGenCyclopsCave", STONE))
             .withMetadata(beachBiomes, overworld)
             .withRarity(calculateApproximateRarity(cyclopsCaveChance + 1.0D, worldGenDistance));
 
         // Gorgon Temple - beach biomes
         register("gorgon_temple")
             .fromMapWithBundledFallback(createSurfaceMap("gorgon_temple", Biomes.BEACH,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenGorgonTemple", 0,
-                    new Class<?>[] { EnumFacing.class }, EnumFacing.NORTH), SAND))
+                WORLD_GENERATOR_PACKAGE + "WorldGenGorgonTemple", SAND,
+                new Class<?>[] { EnumFacing.class }, EnumFacing.NORTH))
             .withMetadata(beachBiomes, overworld)
             .withRarity(calculateApproximateRarity(gorgonChance + 1.0D, worldGenDistance));
 
         // Mausoleum - cold, snowy biomes
         register("mausoleum")
             .fromMapWithBundledFallback(createSurfaceMap("mausoleum", Biomes.ICE_PLAINS,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenMausoleum", 0,
-                    new Class<?>[] { EnumFacing.class }, EnumFacing.NORTH), SNOW))
+                WORLD_GENERATOR_PACKAGE + "WorldGenMausoleum", SNOW,
+                new Class<?>[] { EnumFacing.class }, EnumFacing.NORTH))
             .withMetadata(iceDragonRoostBiomes, overworld)
             .withRarity(calculateApproximateRarity(mausoleumChance + 1.0D, worldGenDistance));
 
@@ -176,7 +173,7 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
 
         register("hydra_lair")
             .fromMapWithBundledFallback(createSurfaceMap("hydra_lair", Biomes.SWAMPLAND, 3,
-                createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenHydraCave"), GRASS))
+                WORLD_GENERATOR_PACKAGE + "WorldGenHydraCave", GRASS))
             .withMetadata(swampBiomes, overworld)
             .withRarity(calculateApproximateRarity(hydraChance + 1.0D, worldGenDistance));
 
@@ -197,33 +194,45 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
             .withRarity(calculateApproximateRarity(myrmexChance, MYRMEX_MIN_DISTANCE_BLOCKS));
     }
 
-    private static MapGenerationBuilder createSurfaceMap(String name, Biome biome,
-            BiConsumer<MapGenerationWorld, Random> generator, IBlockState platformBlock) {
+    private static MapGenerationBuilder createSurfaceMap(String name, Biome biome, String generatorClass,
+            IBlockState platformBlock) {
         return new MapGenerationBuilder(128, 128, 64, platformBlock)
             .withName(MOD_ID + ":" + name)
-            .build(generator, biome);
+            .withWorldGenerator(generatorClass)
+            .build(biome);
     }
 
     private static MapGenerationBuilder createSurfaceMap(String name, Biome biome, int layersBelow,
-            BiConsumer<MapGenerationWorld, Random> generator, IBlockState platformBlock) {
+            String generatorClass, IBlockState platformBlock) {
         return new MapGenerationBuilder(128, 128, 64, platformBlock)
             .withName(MOD_ID + ":" + name)
             .withBelowLayers(layersBelow, STONE)
-            .build(generator, biome);
+            .withWorldGenerator(generatorClass)
+            .build(biome);
     }
 
-    private static MapGenerationBuilder createUndergroundMap(String name, Biome biome,
-            BiConsumer<MapGenerationWorld, Random> generator) {
+    private static MapGenerationBuilder createSurfaceMap(String name, Biome biome, String generatorClass,
+            IBlockState platformBlock, Class<?>[] parameterTypes, Object... parameters) {
+        return new MapGenerationBuilder(128, 128, 64, platformBlock)
+            .withName(MOD_ID + ":" + name)
+            .withWorldGenerator(generatorClass, 0, parameterTypes, parameters)
+            .build(biome);
+    }
+
+    private static MapGenerationBuilder createUndergroundMap(String name, Biome biome, String generatorClass,
+            int yOffset) {
         return MapGenerationBuilder.ofBuried(128, 128, STONE)
             .withName(MOD_ID + ":" + name)
-            .build(generator, biome);
+            .withWorldGenerator(generatorClass, yOffset)
+            .build(biome);
     }
 
     private static MapGenerationBuilder createHiveMap(String name, Biome biome, boolean jungle) {
         return MapGenerationBuilder.ofBuried(256, 256, STONE)
             .withName(MOD_ID + ":" + name)
-            .build(createMapGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenMyrmexHive", -32,
-                new Class<?>[] { boolean.class, boolean.class }, false, jungle), biome);
+            .withWorldGenerator(WORLD_GENERATOR_PACKAGE + "WorldGenMyrmexHive", -32,
+                new Class<?>[] { boolean.class, boolean.class }, false, jungle)
+            .build(biome);
     }
 
     private LocalizedText calculateDragonRarity(Set<Biome> biomes, boolean roost, int baseChance) {

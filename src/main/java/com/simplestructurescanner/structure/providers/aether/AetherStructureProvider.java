@@ -15,6 +15,7 @@ import net.minecraft.init.Biomes;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
+import net.minecraft.world.biome.Biome;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.providers.AbstractStructureProvider;
@@ -24,6 +25,7 @@ import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
+import com.simplestructurescanner.structure.generation.MapGenerationWorld;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.SeedHelper;
@@ -40,6 +42,7 @@ public class AetherStructureProvider extends AbstractStructureProvider {
     private static final String MOD_NAME = "gui.structurescanner.provider.aether_legacy";
     private static final String REWARD_KEY = "gui.structurescanner.loot.aether.reward";
     private static final String DUNGEON_CLASS_PREFIX = "com.gildedgames.the_aether.world.";
+    private static final String AETHER_WORLD_CLASS = DUNGEON_CLASS_PREFIX + "AetherWorld";
 
     // Cache: seed -> list of dungeon positions
     private static final Map<Long, List<BlockPos>> silverDungeonCache = new HashMap<>();
@@ -76,10 +79,10 @@ public class AetherStructureProvider extends AbstractStructureProvider {
             GOLD_GRID_SIZE, goldPrimaryChance, goldSecondaryChance);
 
         // Silver Dungeon (Valkyrie Queen)
-        MapGenerationBuilder silverDungeonMap = new MapGenerationBuilder(256, 256, 64, AIR)
+        MapGenerationBuilder silverDungeonMap = MapGenerationBuilder.ofFloatingIsland(256, 256)
             .withName(MOD_ID + ":silver_dungeon")
-            .withoutPlatform()
-            .build(createMapStructureStart(DUNGEON_CLASS_PREFIX + "gen.MapGenSilverDungeon$Start"), Biomes.PLAINS);
+            .withStructureStart(DUNGEON_CLASS_PREFIX + "gen.MapGenSilverDungeon$Start")
+            .build(Biomes.PLAINS);
         register("silver_dungeon", true)
             .fromMap(silverDungeonMap)
             .withLootTables(new LootEntry("aether_legacy:chests/silver_dungeon_reward", REWARD_KEY))
@@ -87,11 +90,12 @@ public class AetherStructureProvider extends AbstractStructureProvider {
             .withMetadata(null, aetherDim, silverRarity);
 
         // Gold Dungeon (Sun Spirit) - despite being a floating island, it requires terrain to generate correctly
-        MapGenerationBuilder goldDungeonMap = new MapGenerationBuilder(128, 128, 64, AIR)
+        MapGenerationBuilder goldDungeonMap = MapGenerationBuilder.ofFloatingIsland(128, 128)
             .withName(MOD_ID + ":gold_dungeon")
             .withOrigin(64, 64)
-            // FIXME: the island is *bald*
-            .build(createMapStructureStart(DUNGEON_CLASS_PREFIX + "gen.MapGenGoldenDungeon$Start"), Biomes.PLAINS);
+            .withStructureStart(DUNGEON_CLASS_PREFIX + "gen.MapGenGoldenDungeon$Start")
+            .withPostGeneration((start, world, random) -> populateGoldDungeon(world))
+            .build(Biomes.PLAINS);
         register("gold_dungeon", true)
             .fromMap(goldDungeonMap)
             .withLootTables(new LootEntry("aether_legacy:chests/gold_dungeon_reward", REWARD_KEY))
@@ -130,6 +134,30 @@ public class AetherStructureProvider extends AbstractStructureProvider {
                 silverPrimaryChance, silverSecondaryChance, goldPrimaryChance, goldSecondaryChance, aetherDimensionId);
         } catch (Exception e) {
             SimpleStructureScanner.LOGGER.warn("Could not load Aether config, using defaults: {}", e.getMessage());
+        }
+    }
+
+    private static void populateGoldDungeon(MapGenerationWorld world) throws ReflectiveOperationException {
+        Object aetherBiome = Class.forName(AETHER_WORLD_CLASS).getField("aether_biome").get(null);
+        if (!(aetherBiome instanceof Biome)) {
+            throw new IllegalStateException("Aether dungeon biome has an invalid type");
+        }
+
+        Random populationRandom = new Random(world.getSeed());
+        long xSeed = populationRandom.nextLong() / 2L * 2L + 1L;
+        long zSeed = populationRandom.nextLong() / 2L * 2L + 1L;
+        int minChunkX = Math.floorDiv(world.getMinX(), 16);
+        int maxChunkX = Math.floorDiv(world.getMaxX(), 16);
+        int minChunkZ = Math.floorDiv(world.getMinZ(), 16);
+        int maxChunkZ = Math.floorDiv(world.getMaxZ(), 16);
+
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                int x = chunkX * 16;
+                int z = chunkZ * 16;
+                populationRandom.setSeed((long) x * xSeed + (long) z * zSeed ^ world.getSeed());
+                ((Biome) aetherBiome).decorate(world, populationRandom, new BlockPos(x, 0, z));
+            }
         }
     }
 

@@ -3,8 +3,10 @@ package com.simplestructurescanner.structure.generation;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import javax.annotation.Nonnull;
@@ -43,6 +45,7 @@ import net.minecraft.world.chunk.storage.IChunkLoader;
 import net.minecraft.world.gen.structure.template.TemplateManager;
 import net.minecraft.world.storage.IPlayerFileData;
 import net.minecraft.world.storage.ISaveHandler;
+import net.minecraft.world.storage.MapStorage;
 import net.minecraft.world.storage.WorldInfo;
 import net.minecraft.world.storage.loot.LootTable;
 import net.minecraft.world.storage.loot.LootTableManager;
@@ -100,6 +103,7 @@ public final class MapGenerationWorld extends World {
             false
         );
 
+        this.mapStorage = new MapStorage(null);
         minX = originX - sizeX / 2;
         maxX = minX + sizeX - 1;
         minZ = originZ - sizeZ / 2;
@@ -600,7 +604,7 @@ public final class MapGenerationWorld extends World {
 
     private static final class MapGenerationChunkProvider implements IChunkProvider {
         private final World world;
-        private final Long2ObjectMap<Chunk> loadedChunks = new Long2ObjectOpenHashMap<>();
+        private final Map<Long, Chunk> loadedChunks = new HashMap<>();
 
         private MapGenerationChunkProvider(World world) {
             this.world = world;

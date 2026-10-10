@@ -20,6 +20,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 import net.minecraft.world.biome.Biome;
 import net.minecraft.world.biome.BiomeProvider;
+import net.minecraft.world.gen.feature.WorldGenerator;
 import net.minecraft.world.gen.structure.StructureStart;
 import net.minecraftforge.common.BiomeDictionary;
 
@@ -30,6 +31,7 @@ import com.simplestructurescanner.structure.StructureInfo.EntityEntry;
 import com.simplestructurescanner.structure.LocalizedText;
 import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.generation.MapGenerationBuilder;
+import com.simplestructurescanner.structure.generation.MapGenerationWorld;
 import com.simplestructurescanner.structure.util.PositionHelper;
 import com.simplestructurescanner.structure.util.RarityTextHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
@@ -142,9 +144,9 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
         if (wastelandsBiome != null) {
             abyssalStrongholdMap = MapGenerationBuilder.ofBuried(256, 256, STONE)
                 .withName(MOD_ID + ":aby_stronghold")
-                .build(createMapStructureStart(STRUCTURE_PACKAGE
-                    + "abyss.stronghold.MapGenAbyStronghold$Start",
-                    AbyssalCraftStructureProvider::hasStrongholdPortal), wastelandsBiome);
+                .withStructureStart(STRUCTURE_PACKAGE + "abyss.stronghold.MapGenAbyStronghold$Start",
+                    AbyssalCraftStructureProvider::hasStrongholdPortal)
+                .build(wastelandsBiome);
         }
         register("aby_stronghold", true)
             .fromMap(abyssalStrongholdMap)
@@ -156,8 +158,8 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
         if (dreadlandsBiome != null) {
             dreadlandsMineshaftMap = MapGenerationBuilder.ofBuriedWithFloor(256, 256, STONE)
                 .withName(MOD_ID + ":dreadlands_mineshaft")
-                .build(createMapStructureStart(STRUCTURE_PACKAGE
-                    + "dreadlands.mineshaft.StructureDreadlandsMineStart"), dreadlandsBiome);
+                .withStructureStart(STRUCTURE_PACKAGE + "dreadlands.mineshaft.StructureDreadlandsMineStart")
+                .build(dreadlandsBiome);
         }
         register("dreadlands_mineshaft")
             .fromMap(dreadlandsMineshaftMap)
@@ -169,8 +171,9 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
             jzaharTempleMap = new MapGenerationBuilder(128, 128, 64, omotholStone)
                 .withName(MOD_ID + ":jzahar_temple")
                 .withOrigin(0, 52)
-                .build(createMapGenerator(STRUCTURE_PACKAGE + "omothol.StructureJzaharTemple",
-                    new BlockPos(4, 1, 7)), omotholBiome);
+                .withWorldGenerator(STRUCTURE_PACKAGE + "omothol.StructureJzaharTemple",
+                    new BlockPos(4, 1, 7))
+                .build(omotholBiome);
         }
         register("jzahar_temple", true)
             .fromMap(jzaharTempleMap)
@@ -179,9 +182,11 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
         // Omothol City - randomly generated buildings with various loot
         MapGenerationBuilder omotholCityMap = null;
         if (omotholStone != null && omotholBiome != null) {
-            omotholCityMap = new MapGenerationBuilder(128, 128, 64, omotholStone)
+            omotholCityMap = new MapGenerationBuilder(256, 256, 64, omotholStone)
                 .withName(MOD_ID + ":omothol_city")
-                .build(createMapGenerator(STRUCTURE_PACKAGE + "omothol.StructureCity", 1), omotholBiome);
+                .withChunkPopulation(STRUCTURE_PACKAGE + "omothol.StructureCity", 48,
+                    AbyssalCraftStructureProvider::getOmotholCityPopulationPosition)
+                .build(omotholBiome);
         }
         register("omothol_city")
             .fromMap(omotholCityMap)
@@ -190,9 +195,10 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
         // Omothol Storage - storage buildings with crates, generated separately from city buildings
         MapGenerationBuilder omotholStorageMap = null;
         if (omotholStone != null && omotholBiome != null) {
-            omotholStorageMap = new MapGenerationBuilder(128, 128, 64, omotholStone)
+            omotholStorageMap = new MapGenerationBuilder(256, 256, 64, omotholStone)
                 .withName(MOD_ID + ":omothol_storage")
-                .build(createMapGenerator(STRUCTURE_PACKAGE + "omothol.StructureStorage", 1), omotholBiome);
+                .withWorldGenerator(STRUCTURE_PACKAGE + "omothol.StructureStorage", 1)
+                .build(omotholBiome);
         }
         register("omothol_storage")
             .fromMap(omotholStorageMap)
@@ -202,11 +208,11 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
         // The lair spans Z=-101 through Z=2 relative to the sealing lock
         MapGenerationBuilder chagarothLairMap = null;
         if (dreadlandsBiome != null) {
-            chagarothLairMap = new MapGenerationBuilder(128, 128, 128, AIR)
+            chagarothLairMap = MapGenerationBuilder.ofFloatingIsland(128, 128)
                 .withName(MOD_ID + ":chagaroth_lair")
-                .withoutPlatform()
                 .withOrigin(0, -60)
-                .build(createMapGenerator(STRUCTURE_PACKAGE + "dreadlands.chagarothlair"), dreadlandsBiome);
+                .withWorldGenerator(STRUCTURE_PACKAGE + "dreadlands.chagarothlair")
+                .build(dreadlandsBiome);
         }
         register("chagaroth_lair")
             .fromMap(chagarothLairMap)
@@ -231,7 +237,8 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
 
         MapGenerationBuilder shoggothLairMap = new MapGenerationBuilder(128, 128, 64, GRASS)
             .withName(MOD_ID + ":shoggoth_lair")
-            .build(createMapGenerator(STRUCTURE_PACKAGE + "StructureShoggothPit", 1), Biomes.SWAMPLAND);
+            .withWorldGenerator(STRUCTURE_PACKAGE + "StructureShoggothPit", 1)
+            .build(Biomes.SWAMPLAND);
         register("shoggoth_lair")
             .fromMapWithBundledFallback(shoggothLairMap)
             .withMetadata(shoggothBiomes, overworldAndOmothol)
@@ -241,9 +248,10 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
         if (hasGraveyardStructure) {
             MapGenerationBuilder graveyardMap = new MapGenerationBuilder(128, 128, 64, GRASS)
                 .withName(MOD_ID + ":graveyard")
-                .build(createMapGenerator(GRAVEYARD_CLASS, new BlockPos(0, 1, 0),
-                    (generator, random) -> generator.getClass().getMethod("setSize", int.class)
-                        .invoke(generator, 2)), Biomes.PLAINS);
+                .withWorldGenerator(GRAVEYARD_CLASS, 1)
+                .withPreGeneration((generator, world, random) -> generator.getClass()
+                    .getMethod("setSize", int.class).invoke(generator, 2))
+                .build(Biomes.PLAINS);
             register("graveyard")
                 .fromMapWithBundledFallback(graveyardMap)
                 .withMetadata(null, overworldAndOmothol, calculateGraveyardRarity());
@@ -251,6 +259,7 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
     }
 
     @Nullable
+    @SuppressWarnings("deprecation")
     private IBlockState getOmotholStone() {
         Block omotholStone = Block.getBlockFromName(MOD_ID + ":omotholstone");
         if (omotholStone != null) return omotholStone.getDefaultState();
@@ -264,6 +273,18 @@ public class AbyssalCraftStructureProvider extends AbstractStructureProvider {
 
         SimpleStructureScanner.LOGGER.error("Could not find AbyssalCraft Omothol stone");
         return null;
+    }
+
+    @Nullable
+    private static BlockPos getOmotholCityPopulationPosition(WorldGenerator generator,
+            MapGenerationWorld world, Random random, int chunkX, int chunkZ)
+            throws ReflectiveOperationException {
+        BlockPos pos = new BlockPos(chunkX * 16, world.getPlatformY() + 1, chunkZ * 16);
+        BlockPos candidate = pos.add(random.nextInt(8) + 8, 0, random.nextInt(8) + 8);
+        boolean tooClose = (Boolean) generator.getClass().getMethod("tooClose", BlockPos.class)
+            .invoke(generator, candidate);
+
+        return tooClose ? null : pos;
     }
 
     private static boolean hasStrongholdPortal(StructureStart structureStart)

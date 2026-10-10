@@ -6,9 +6,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
-import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -17,11 +15,7 @@ import javax.annotation.ParametersAreNonnullByDefault;
 
 import net.minecraft.world.biome.Biome;
 import net.minecraft.util.ResourceLocation;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
-import net.minecraft.world.gen.feature.WorldGenerator;
 import net.minecraft.world.gen.structure.StructureBoundingBox;
-import net.minecraft.world.gen.structure.StructureStart;
 import net.minecraftforge.common.BiomeDictionary;
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.init.Blocks;
@@ -90,16 +84,6 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         public int getColor() {
             return color;
         }
-    }
-
-    @FunctionalInterface
-    protected interface MapGeneratorInitializer {
-        void initialize(Object generator, Random random) throws ReflectiveOperationException;
-    }
-
-    @FunctionalInterface
-    protected interface MapStructureStartValidator {
-        boolean isComplete(StructureStart structureStart) throws ReflectiveOperationException;
     }
 
     /**
@@ -252,85 +236,9 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         builder.addLootEntry(new LootEntry(lootTableId, CHEST_KEY));
     }
 
-    protected static BiConsumer<MapGenerationWorld, Random> createMapGenerator(String className) {
-        return createMapGenerator(className, BlockPos.ORIGIN);
-    }
-
-    protected static BiConsumer<MapGenerationWorld, Random> createMapGenerator(String className, int yOffset) {
-        return createMapGenerator(className, new BlockPos(0, yOffset, 0));
-    }
-
-    protected static BiConsumer<MapGenerationWorld, Random> createMapGenerator(String className,
-            int yOffset, Class<?>[] parameterTypes, Object... parameters) {
-        return createMapGenerator(className, new BlockPos(0, yOffset, 0), parameterTypes, parameters);
-    }
-
-    protected static BiConsumer<MapGenerationWorld, Random> createMapGenerator(String className,
-            BlockPos relativePos) {
-        return createMapGenerator(className, relativePos, new Class<?>[0]);
-    }
-
-    protected static BiConsumer<MapGenerationWorld, Random> createMapGenerator(String className,
-            BlockPos relativePos, MapGeneratorInitializer initializer) {
-        return (world, random) -> generateMapGenerator(world, random, className, relativePos,
-            new Class<?>[0], initializer);
-    }
-
-    protected static BiConsumer<MapGenerationWorld, Random> createMapGenerator(String className,
-            BlockPos relativePos, Class<?>[] parameterTypes, Object... parameters) {
-        return (world, random) -> generateMapGenerator(world, random, className, relativePos,
-            parameterTypes, null, parameters);
-    }
-
-    protected static BiConsumer<MapGenerationWorld, Random> createMapStructureStart(String className) {
-        return createMapStructureStart(className, null);
-    }
-
-    protected static BiConsumer<MapGenerationWorld, Random> createMapStructureStart(String className,
-            MapStructureStartValidator validator) {
-        return (world, random) -> {
-            try {
-                StructureStart structureStart;
-                do {
-                    Object createdStart = Class.forName(className)
-                        .getConstructor(World.class, Random.class, int.class, int.class)
-                        .newInstance(world, random, 0, 0);
-                    if (!(createdStart instanceof StructureStart)) {
-                        throw new IllegalStateException("Map structure start has an invalid type: " + className);
-                    }
-
-                    structureStart = (StructureStart) createdStart;
-                } while (validator != null && !validator.isComplete(structureStart));
-
-                structureStart.generateStructure(world, random, getMapBounds(world));
-            } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException("Could not create map structure start: " + className, e);
-            }
-        };
-    }
-
     protected static StructureBoundingBox getMapBounds(MapGenerationWorld world) {
         return new StructureBoundingBox(world.getMinX(), 0, world.getMinZ(),
             world.getMaxX(), 255, world.getMaxZ());
-    }
-
-    private static void generateMapGenerator(MapGenerationWorld world, Random random, String className,
-            BlockPos relativePos, Class<?>[] parameterTypes, MapGeneratorInitializer initializer,
-            Object... parameters) {
-        try {
-            Object generator = Class.forName(className).getConstructor(parameterTypes).newInstance(parameters);
-            if (!(generator instanceof WorldGenerator)) {
-                throw new IllegalStateException("Map generator has an invalid type: " + className);
-            }
-
-            if (initializer != null) initializer.initialize(generator, random);
-
-            BlockPos pos = new BlockPos(relativePos.getX(), world.getPlatformY() + relativePos.getY(),
-                relativePos.getZ());
-            ((WorldGenerator) generator).generate(world, random, pos);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Could not create map generator: " + className, e);
-        }
     }
 
 }
