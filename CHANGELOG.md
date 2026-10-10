@@ -13,6 +13,9 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Allow to disable individual providers in config. A disabled provider will not contribute structures to the scanner, effectively hiding them from all search and preview functionalities. This is an alternative to blacklisting ALL structures from that provider, but avoid the loading overhead of registering them at startup (realistically, you only gain a few seconds).
 - Add cutaway view support for structures, allowing to hide outer walls/ceiling to better visualize the interior.
 
+### Fixed
+- Provide all missing structure previews/metadata via their MapGeneration data.
+
 ### Technical
 - Add Spark profiling support for map generation, with the -Dsimplestructurescanner.mapProfile=true JVM argument. Data will go in config/spark/data/.
 
