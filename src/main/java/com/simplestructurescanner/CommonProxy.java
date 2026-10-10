@@ -26,9 +26,6 @@ public class CommonProxy {
     public void init(FMLInitializationEvent event) {
     }
 
-    public void postInit(FMLPostInitializationEvent event) {
-    }
-
     public void loadComplete(FMLLoadCompleteEvent event) {
         // Some integrations populate their structure registries during their own post-init pass.
         // Discover providers after the full load cycle so those registries are stable.

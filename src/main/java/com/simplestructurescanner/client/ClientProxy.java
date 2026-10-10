@@ -30,9 +30,4 @@ public class ClientProxy extends CommonProxy {
         ClientSettings.syncFromConfig();
         ClientCommandHandler.instance.registerCommand(new CommandStructureSearchBlacklist());
     }
-
-    @Override
-    public void postInit(FMLPostInitializationEvent event) {
-        super.postInit(event);
-    }
 }

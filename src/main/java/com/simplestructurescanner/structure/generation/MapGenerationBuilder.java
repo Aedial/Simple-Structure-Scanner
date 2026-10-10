@@ -51,6 +51,11 @@ public final class MapGenerationBuilder {
     private boolean generationFailed;
     private List<StructureLayer> capturedLayers = Collections.emptyList();
 
+    /**
+     * Creates a new map generation builder with the specified platform size, height, and material.
+     * The platform will be sizeX x 1 x sizeZ, of the specified material and at the specified Y level.
+     * The parameters should be chosen to match the MapGen implementation requirements.
+     */
     public MapGenerationBuilder(int sizeX, int sizeZ, int y, IBlockState material) {
         if (sizeX <= 0 || sizeZ <= 0) throw new IllegalArgumentException("Platform sizes must be positive");
         if (y < 0 || y > 255) throw new IllegalArgumentException("Platform Y must be between 0 and 255");
@@ -62,16 +67,34 @@ public final class MapGenerationBuilder {
         this.material = material;
     }
 
+    /**
+     * Creates a new map generation builder for an underground structure (buried beneath the surface).
+     * The terrain will be a {@code sizeX} x {@code y} x {@code sizeZ} rectangular cuboid
+     * of the specified material, meaning it extends down to the bottom of the world.
+     * The alternative, {@link #ofBuried(int, int, IBlockState)}, is usually enough for most cases.
+     */
     public static MapGenerationBuilder ofBuried(int sizeX, int sizeZ, int y, IBlockState material) {
         return new MapGenerationBuilder(sizeX, sizeZ, y, material)
             .withBelowLayers(y, material)
             .withoutPlatform();
     }
 
+    /**
+     * Creates a new map generation builder for an underground structure with a default Y level of 64.
+     * The terrain will be a {@code sizeX} x {@code 64} x {@code sizeZ} rectangular cuboid
+     * of the specified material, meaning it extends down to the bottom of the world.
+     */
     public static MapGenerationBuilder ofBuried(int sizeX, int sizeZ, IBlockState material) {
         return ofBuried(sizeX, sizeZ, 64, material);
     }
 
+    /**
+     * Creates a new map generation builder for an underground structure (buried beneath the surface)
+     * with a floor layer underneath the carved-out air making the corridors and rooms.
+     * Use it when the structure does not naturally generate its own floor layer.
+     * The terrain will be a {@code sizeX} x {@code y} x {@code sizeZ} rectangular cuboid
+     * of the specified material, meaning it extends down to the bottom of the world.
+     */
     public static MapGenerationBuilder ofBuriedWithFloor(int sizeX, int sizeZ, int y, IBlockState material) {
         return new MapGenerationBuilder(sizeX, sizeZ, y, material)
             .withBelowLayers(y, material)
@@ -79,12 +102,21 @@ public final class MapGenerationBuilder {
             .withoutPlatform();
     }
 
+    /**
+     * Creates a new map generation builder for an underground structure with a default Y level of 64
+     * and a floor layer underneath the carved-out air making the corridors and rooms.
+     * Use it when the structure does not naturally generate its own floor layer.
+     * The terrain will be a {@code sizeX} x {@code 64} x {@code sizeZ} rectangular cuboid
+     * of the specified material, meaning it extends down to the bottom of the world.
+     */
     public static MapGenerationBuilder ofBuriedWithFloor(int sizeX, int sizeZ, IBlockState material) {
         return ofBuriedWithFloor(sizeX, sizeZ, 64, material);
     }
 
     /**
      * Adds a material band directly above the previous upper band.
+     * These layers exist purely to satify the generator's requirements
+     * and should be chosen considering the MapGen implementation.
      */
     public MapGenerationBuilder withAboveLayers(int sizeY, IBlockState layerMaterial) {
         if (built) throw new IllegalStateException("Cannot add layers after the map has been built");
@@ -95,6 +127,8 @@ public final class MapGenerationBuilder {
 
     /**
      * Adds a material band directly below the previous lower band.
+     * These layers exist purely to satify the generator's requirements.
+     * and should be chosen considering the MapGen implementation.
      */
     public MapGenerationBuilder withBelowLayers(int sizeY, IBlockState layerMaterial) {
         if (built) throw new IllegalStateException("Cannot add layers after the map has been built");
@@ -104,7 +138,8 @@ public final class MapGenerationBuilder {
     }
 
     /**
-     * Omits the platform from the captured layers.
+     * Omits the (1-block-thick) platform from the captured layers.
+     * Should be used if the structure expands under the platform.
      */
     public MapGenerationBuilder withoutPlatform() {
         if (built) throw new IllegalStateException("Cannot change platform capture after the map has been built");
@@ -115,6 +150,7 @@ public final class MapGenerationBuilder {
 
     /**
      * Captures the configured terrain block below each vertical run of non-opaque generated blocks.
+     * This creates a floor for structures that rely on terrain for support, only carving air.
      */
     public MapGenerationBuilder withLowestNonOpaqueFloor() {
         if (built) throw new IllegalStateException("Cannot add a generated floor after the map has been built");
@@ -125,6 +161,9 @@ public final class MapGenerationBuilder {
 
     /**
      * Moves the platform center from the default world origin.
+     * Should be used if the MapGen starts generating structures away from the default world origin.
+     * A misaligned structure may try to expand beyond the platform area, resulting in cut-off.
+     * A bigger platform area *may* be an alternative solution, but is more of a workaround.
      */
     public MapGenerationBuilder withOrigin(int x, int z) {
         if (built) throw new IllegalStateException("Cannot set the origin after the map has been built");
@@ -144,6 +183,9 @@ public final class MapGenerationBuilder {
         return this;
     }
 
+    /**
+     * Sets the debugging name of the generated map. Used for logging, profiling, and exporting purposes.
+     */
     public MapGenerationBuilder withName(String value) {
         if (built) throw new IllegalStateException("Cannot set the map name after the map has been built");
         if (value == null || value.isEmpty()) throw new IllegalArgumentException("Map name is required");
@@ -153,7 +195,10 @@ public final class MapGenerationBuilder {
     }
 
     /**
-     * Runs the supplied map before server worlds exist.
+     * Runs the supplied map for capture purposes. Note that this occurs in a fake World
+     * (not WorldServer), meaning any MapGen that relies on server-side world features
+     * may not function as expected. Some may crash (resulting in no captured data),
+     * while others may be missing features (partial capture).
      */
     public MapGenerationBuilder build(BiConsumer<MapGenerationWorld, Random> map, Biome biome) {
         if (built) throw new IllegalStateException("The map has already been built");
@@ -225,7 +270,7 @@ public final class MapGenerationBuilder {
     }
 
     /**
-     * Captures the generated structure(s).
+     * Captures the generated structure(s) after the map has been built.
      */
     public List<StructureLayer> capture() {
         if (!built) throw new IllegalStateException("Build the map before capturing its layers");

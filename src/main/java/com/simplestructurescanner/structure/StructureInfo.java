@@ -891,6 +891,23 @@ public class StructureInfo {
             recordedAir.clear(index);
         }
 
+        public void fillBlockStateIfAbsent(int minX, int minZ, int maxX, int maxZ, IBlockState state) {
+            if (state == null) return;
+
+            minX = Math.max(minX, 0);
+            minZ = Math.max(minZ, 0);
+            maxX = Math.min(maxX, width - 1);
+            maxZ = Math.min(maxZ, depth - 1);
+            if (minX > maxX || minZ > maxZ) return;
+
+            for (int z = minZ; z <= maxZ; z++) {
+                int index = minX + z * width;
+                for (int x = minX; x <= maxX; x++, index++) {
+                    if (blockStates[index] == null && !recordedAir.get(index)) blockStates[index] = state;
+                }
+            }
+        }
+
         public void setRecordedAir(int x, int z) {
             if (x < 0 || x >= width || z < 0 || z >= depth) return;
 

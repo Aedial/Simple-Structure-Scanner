@@ -2,14 +2,15 @@ package com.simplestructurescanner.structure.util;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeMap;
 
 import javax.annotation.Nullable;
+
+import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.LongLinkedOpenHashSet;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.nbt.NBTTagCompound;
@@ -55,6 +56,13 @@ public class StructurePreviewStitcher {
     public void setRecordedAir(int x, int y, int z) {
         PreviewLayerAccumulator layer = layersByY.computeIfAbsent(y, PreviewLayerAccumulator::new);
         layer.addRecordedAir(x, z);
+    }
+
+    public void addPlatform(int y, int minX, int minZ, int maxX, int maxZ, IBlockState state) {
+        if (state == null || minX > maxX || minZ > maxZ) return;
+
+        PreviewLayerAccumulator layer = layersByY.computeIfAbsent(y, PreviewLayerAccumulator::new);
+        layer.addPlatform(minX, minZ, maxX, maxZ, state);
     }
 
     public void addParsedStructure(StructureNBTParser.ParsedStructure parsed, BlockPos origin) {
@@ -145,8 +153,14 @@ public class StructurePreviewStitcher {
         private int maxX = Integer.MIN_VALUE;
         private int minZ = Integer.MAX_VALUE;
         private int maxZ = Integer.MIN_VALUE;
-        private final Map<Long, PreviewBlock> blocks = new LinkedHashMap<>();
-        private final Set<Long> recordedAir = new LinkedHashSet<>();
+        private final Long2ObjectMap<PreviewBlock> blocks = new Long2ObjectLinkedOpenHashMap<>();
+        private final LongLinkedOpenHashSet recordedAir = new LongLinkedOpenHashSet();
+        @Nullable
+        private IBlockState platformState;
+        private int platformMinX;
+        private int platformMaxX;
+        private int platformMinZ;
+        private int platformMaxZ;
 
         private PreviewLayerAccumulator(int y) {
             this.y = y;
@@ -169,6 +183,17 @@ public class StructurePreviewStitcher {
             updateBounds(x, z);
         }
 
+        private void addPlatform(int minX, int minZ, int maxX, int maxZ, IBlockState state) {
+            platformState = state;
+            platformMinX = minX;
+            platformMaxX = maxX;
+            platformMinZ = minZ;
+            platformMaxZ = maxZ;
+
+            updateBounds(minX, minZ);
+            updateBounds(maxX, maxZ);
+        }
+
         private void updateBounds(int x, int z) {
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
@@ -181,9 +206,9 @@ public class StructurePreviewStitcher {
             int depth = maxZ - minZ + 1;
             StructureInfo.StructureLayer layer = new StructureInfo.StructureLayer(y, width, depth, minX, minZ);
 
-            for (Map.Entry<Long, PreviewBlock> entry : blocks.entrySet()) {
-                int x = unpackX(entry.getKey());
-                int z = unpackZ(entry.getKey());
+            for (Long2ObjectMap.Entry<PreviewBlock> entry : blocks.long2ObjectEntrySet()) {
+                int x = unpackX(entry.getLongKey());
+                int z = unpackZ(entry.getLongKey());
                 PreviewBlock block = entry.getValue();
                 layer.setBlockState(x - minX, z - minZ, block.state, block.blockEntityData);
             }
@@ -192,6 +217,13 @@ public class StructurePreviewStitcher {
                 int x = unpackX(key);
                 int z = unpackZ(key);
                 layer.setRecordedAir(x - minX, z - minZ);
+            }
+
+            if (platformState != null) {
+                layer.fillBlockStateIfAbsent(
+                    platformMinX - minX, platformMinZ - minZ,
+                    platformMaxX - minX, platformMaxZ - minZ, platformState
+                );
             }
 
             return layer;

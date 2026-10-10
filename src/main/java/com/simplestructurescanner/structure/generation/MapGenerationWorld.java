@@ -3,10 +3,8 @@ package com.simplestructurescanner.structure.generation;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import javax.annotation.Nonnull;
@@ -70,10 +68,11 @@ public final class MapGenerationWorld extends World {
     private final int platformMaxY;
     private final IBlockState[] platformStates = new IBlockState[256];
     private final Long2ObjectMap<IBlockState> changedStates = new Long2ObjectOpenHashMap<>();
-    private final Map<Long, TileEntity> tileEntities = new HashMap<>();
+    private final Long2ObjectMap<TileEntity> tileEntities = new Long2ObjectOpenHashMap<>();
     private final List<NBTTagCompound> generatedEntityData = new ArrayList<>();
     private final Set<Block> excludedBlocks;
     private final Set<IBlockState> excludedStates;
+    private final boolean hasExclusions;
     private final boolean capturePlatform;
     private final boolean captureLowestNonOpaqueFloor;
     private boolean hasCaptureContent;
@@ -112,6 +111,7 @@ public final class MapGenerationWorld extends World {
         platformMaxY = platformY + getLayerHeight(aboveLayers);
         this.excludedBlocks = Collections.unmodifiableSet(new HashSet<>(excludedBlocks));
         this.excludedStates = Collections.unmodifiableSet(new HashSet<>(excludedStates));
+        hasExclusions = !this.excludedBlocks.isEmpty() || !this.excludedStates.isEmpty();
         fillPlatformStates(platformMaterial, aboveLayers, belowLayers);
         this.lootTable = MAP_LOOT_TABLE_MANAGER;
 
@@ -345,13 +345,16 @@ public final class MapGenerationWorld extends World {
         IBlockState state = changedStates.get(pos.toLong());
         if (state != null) return state;
 
-        return getPlatformState(pos);
+        return getPlatformState(pos.getY());
     }
 
     private IBlockState getPlatformState(BlockPos pos) {
         if (!isWithinPlatform(pos)) return AIR;
 
-        int y = pos.getY();
+        return getPlatformState(pos.getY());
+    }
+
+    private IBlockState getPlatformState(int y) {
         if (y < 0 || y >= platformStates.length) return AIR;
 
         IBlockState state = platformStates[y];
@@ -407,10 +410,10 @@ public final class MapGenerationWorld extends World {
 
     private List<StructureLayer> buildLayers(CaptureBounds bounds) {
         StructurePreviewStitcher preview = new StructurePreviewStitcher();
-        LongOpenHashSet occupiedPositions = new LongOpenHashSet();
+        LongOpenHashSet occupiedPositions = new LongOpenHashSet(changedStates.size());
 
         addGeneratedStates(preview, bounds, occupiedPositions);
-        if (capturePlatform) addPlatformStates(preview, bounds, occupiedPositions);
+        if (capturePlatform) addPlatformState(preview, bounds, occupiedPositions);
         if (captureLowestNonOpaqueFloor) addNonOpaqueFloorStates(preview, bounds, occupiedPositions);
 
         return preview.buildLayers();
@@ -419,28 +422,40 @@ public final class MapGenerationWorld extends World {
     private void addGeneratedStates(StructurePreviewStitcher preview, CaptureBounds bounds,
             LongOpenHashSet occupiedPositions) {
         for (Long2ObjectMap.Entry<IBlockState> entry : changedStates.long2ObjectEntrySet()) {
-            BlockPos pos = BlockPos.fromLong(entry.getLongKey());
+            long key = entry.getLongKey();
             IBlockState state = entry.getValue();
             if (state.getBlock() == Blocks.AIR && !isExcluded(state)) {
                 preview.setRecordedAir(
-                    pos.getX() - bounds.minPos.getX(),
-                    pos.getY() - bounds.minPos.getY(),
-                    pos.getZ() - bounds.minPos.getZ()
+                    unpackBlockX(key) - bounds.minPos.getX(),
+                    unpackBlockY(key) - bounds.minPos.getY(),
+                    unpackBlockZ(key) - bounds.minPos.getZ()
                 );
             } else {
-                addPreviewBlock(preview, pos, state, bounds);
+                addPreviewBlock(preview, BlockPos.fromLong(key), state, bounds);
             }
-            occupiedPositions.add(entry.getLongKey());
+            occupiedPositions.add(key);
         }
     }
 
-    private void addPlatformStates(StructurePreviewStitcher preview, CaptureBounds bounds,
+    private void addPlatformState(StructurePreviewStitcher preview, CaptureBounds bounds,
             LongOpenHashSet occupiedPositions) {
-        for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(bounds.minPos, bounds.maxPos)) {
+        IBlockState state = getPlatformState(platformY);
+        if (state.getBlock() == Blocks.AIR || isExcluded(state)) return;
+
+        int y = platformY - bounds.minPos.getY();
+        int maxX = bounds.maxPos.getX() - bounds.minPos.getX();
+        int maxZ = bounds.maxPos.getZ() - bounds.minPos.getZ();
+        if (!hasExclusions && !state.getBlock().hasTileEntity(state)) {
+            preview.addPlatform(y, 0, 0, maxX, maxZ, state);
+            return;
+        }
+
+        BlockPos minPos = new BlockPos(bounds.minPos.getX(), platformY, bounds.minPos.getZ());
+        BlockPos maxPos = new BlockPos(bounds.maxPos.getX(), platformY, bounds.maxPos.getZ());
+        for (BlockPos.MutableBlockPos mutablePos : BlockPos.getAllInBoxMutable(minPos, maxPos)) {
             long key = mutablePos.toLong();
             if (occupiedPositions.contains(key)) continue;
 
-            IBlockState state = getPlatformState(mutablePos);
             if (addPreviewBlock(preview, mutablePos, state, bounds)) occupiedPositions.add(key);
         }
     }
@@ -451,6 +466,8 @@ public final class MapGenerationWorld extends World {
             if (occupiedPositions.contains(entry.getLongKey())) continue;
 
             BlockPos pos = BlockPos.fromLong(entry.getLongKey());
+            if (capturePlatform && pos.getY() == platformY) continue;
+
             if (addPreviewBlock(preview, pos, entry.getValue(), bounds)) {
                 occupiedPositions.add(entry.getLongKey());
             }
@@ -513,7 +530,21 @@ public final class MapGenerationWorld extends World {
     }
 
     private boolean isExcluded(IBlockState state) {
+        if (!hasExclusions) return false;
+
         return excludedBlocks.contains(state.getBlock()) || excludedStates.contains(state);
+    }
+
+    private static int unpackBlockX(long key) {
+        return (int) (key >> 38);
+    }
+
+    private static int unpackBlockY(long key) {
+        return (int) (key << 26 >> 52);
+    }
+
+    private static int unpackBlockZ(long key) {
+        return (int) (key << 38 >> 38);
     }
 
     private static final class CaptureBounds {
