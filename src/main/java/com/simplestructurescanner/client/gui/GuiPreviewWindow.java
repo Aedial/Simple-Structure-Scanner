@@ -54,7 +54,7 @@ public class GuiPreviewWindow extends Gui {
     public void hide() {
         visible = false;
         hiddenForNavigation = false;
-        previewRenderer.setCutawayEnabled(false);
+        previewRenderer.setCutawayMode(null);
     }
 
     public boolean restoreIfHiddenForNavigation() {
@@ -146,9 +146,14 @@ public class GuiPreviewWindow extends Gui {
 
         Minecraft mc = Minecraft.getMinecraft();
         FontRenderer font = mc.fontRenderer;
-        previewRenderer.setCutawayEnabled(
-            Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT)
-        );
+        StructurePreviewRenderer.CutawayMode cutawayMode = null;
+        if (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL)) {
+            cutawayMode = StructurePreviewRenderer.CutawayMode.THICK;
+        } else if (Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT)) {
+            cutawayMode = StructurePreviewRenderer.CutawayMode.THIN;
+        }
+
+        previewRenderer.setCutawayMode(cutawayMode);
 
         // Draw window background
         Gui.drawRect(windowX - 1, windowY - 1, windowX + windowW + 1, windowY + windowH + 1, palette.frameColor);

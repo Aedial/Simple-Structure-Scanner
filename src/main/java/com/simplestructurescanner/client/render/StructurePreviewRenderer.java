@@ -3,6 +3,7 @@ package com.simplestructurescanner.client.render;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -70,14 +71,6 @@ public class StructurePreviewRenderer {
         BlockRenderLayer.CUTOUT_MIPPED,
         BlockRenderLayer.CUTOUT
     };
-    // Keeps floors visible while stripping exterior walls and ceilings
-    private static final EnumFacing[] CUTAWAY_OUTSIDE_DIRECTIONS = new EnumFacing[] {
-        EnumFacing.UP,
-        EnumFacing.NORTH,
-        EnumFacing.SOUTH,
-        EnumFacing.WEST,
-        EnumFacing.EAST
-    };
 
     private static final FloatBuffer LIGHT_POSITION = makeLightBuffer(0.5f, 1.0f, 0.8f, 0.0f);
     private static final FloatBuffer LIGHT_DIFFUSE = makeLightBuffer(0.9f, 0.9f, 0.9f, 1.0f);
@@ -87,8 +80,7 @@ public class StructurePreviewRenderer {
     private final Object buildLock = new Object();
     private final EnumMap<BlockRenderLayer, List<RenderBlockEntry>> layerEntries = new EnumMap<>(BlockRenderLayer.class);
     private final EnumMap<BlockRenderLayer, LayerBufferCache> layerBuffers = new EnumMap<>(BlockRenderLayer.class);
-    private final EnumMap<BlockRenderLayer, LayerBufferCache> cutawayLayerBuffers =
-        new EnumMap<>(BlockRenderLayer.class);
+    private final EnumMap<CutawayMode, CutawayLayerBuffers> cutawayLayerBuffers = new EnumMap<>(CutawayMode.class);
     private final List<RenderTileEntityEntry> tileEntityEntries = new ArrayList<>();
 
     private DummyWorld world;
@@ -99,7 +91,15 @@ public class StructurePreviewRenderer {
     @Nullable
     private PreviewSnapshot cutawaySnapshot;
     @Nullable
-    private volatile CutawayRenderCache cutawayCache;
+    private volatile CutawayTopology cutawayTopology;
+    @Nullable
+    private volatile CutawayRenderCache thinCutawayCache;
+    @Nullable
+    private volatile CutawayRenderCache thickCutawayCache;
+    @Nullable
+    private volatile PreviewSnapshot cutawayUnavailableSnapshot;
+    @Nullable
+    private volatile CutawayMode cutawayMode;
     private volatile VboLayout cutawayVboLayout = VboLayout.empty();
     private LightingMode lightingMode = LightingMode.STRUCTURE;
     private float zoom_factor = 0.75f;
@@ -108,9 +108,7 @@ public class StructurePreviewRenderer {
     private float centerZ = 0.5f;
     private float maxDimension = 1.0f;
     private boolean buffersUploaded;
-    private boolean cutawayBuffersUploaded;
     private boolean loggedUnsupportedLayerWarning;
-    private boolean cutawayEnabled;
     private volatile boolean buildReady = true;
     private volatile boolean released;
 
@@ -124,6 +122,11 @@ public class StructurePreviewRenderer {
          * without normals. Would require custom rendering with normals for full effect.
          */
         WORLD
+    }
+
+    public enum CutawayMode {
+        THIN,
+        THICK
     }
 
     // TODO: Get the full Global TESR rendering from Machinery Assembler, if needed.
@@ -140,7 +143,10 @@ public class StructurePreviewRenderer {
         for (BlockRenderLayer layer : BlockRenderLayer.values()) {
             layerEntries.put(layer, new ArrayList<>());
             layerBuffers.put(layer, new LayerBufferCache());
-            cutawayLayerBuffers.put(layer, new LayerBufferCache());
+        }
+
+        for (CutawayMode mode : CutawayMode.values()) {
+            cutawayLayerBuffers.put(mode, new CutawayLayerBuffers());
         }
     }
 
@@ -226,10 +232,28 @@ public class StructurePreviewRenderer {
     }
 
     public void setCutawayEnabled(boolean cutawayEnabled) {
-        this.cutawayEnabled = cutawayEnabled;
-        if (!cutawayEnabled) return;
+        setCutawayMode(cutawayEnabled ? CutawayMode.THIN : null);
+    }
 
-        startCutawayBuild();
+    public void setCutawayMode(@Nullable CutawayMode cutawayMode) {
+        this.cutawayMode = cutawayMode;
+        if (cutawayMode == null) return;
+
+        startCutawayBuild(cutawayMode);
+    }
+
+    @Nullable
+    private CutawayRenderCache getCutawayCache(CutawayMode mode) {
+        return mode == CutawayMode.THIN ? thinCutawayCache : thickCutawayCache;
+    }
+
+    private void setCutawayCache(CutawayMode mode, CutawayRenderCache cutawayCache) {
+        if (mode == CutawayMode.THIN) {
+            thinCutawayCache = cutawayCache;
+            return;
+        }
+
+        thickCutawayCache = cutawayCache;
     }
 
     public void release() {
@@ -244,9 +268,12 @@ public class StructurePreviewRenderer {
             cutawayThreadToStop = cutawayBuildThread;
             cutawayBuildThread = null;
             cutawaySnapshot = null;
-            cutawayCache = null;
+            cutawayTopology = null;
+            thinCutawayCache = null;
+            thickCutawayCache = null;
+            cutawayUnavailableSnapshot = null;
             cutawayVboLayout = VboLayout.empty();
-            cutawayEnabled = false;
+            cutawayMode = null;
         }
 
         if (threadToStop != null) threadToStop.interrupt();
@@ -386,17 +413,25 @@ public class StructurePreviewRenderer {
         startBuildTask(() -> preparePreview(previewSnapshot));
     }
 
-    private void startCutawayBuild() {
+    private void startCutawayBuild(CutawayMode mode) {
         PreviewSnapshot previewSnapshot;
+        CutawayTopology topology;
         Thread thread;
 
         synchronized (buildLock) {
-            if (released || !buildReady || cutawayCache != null || cutawayBuildThread != null) return;
+            if (released || !buildReady || getCutawayCache(mode) != null || cutawayBuildThread != null) return;
 
             previewSnapshot = cutawaySnapshot;
-            if (previewSnapshot == null) return;
+            if (previewSnapshot == null || cutawayUnavailableSnapshot == previewSnapshot) return;
 
-            thread = new Thread(() -> buildCutaway(previewSnapshot), "Structure Preview Cutaway Builder");
+            if (!previewSnapshot.hasRecordedAir()) {
+                cutawayUnavailableSnapshot = previewSnapshot;
+                SimpleStructureScanner.LOGGER.warn("Cannot create cutaway preview: no interior air was recorded");
+                return;
+            }
+
+            topology = cutawayTopology;
+            thread = new Thread(() -> buildCutaway(previewSnapshot, topology, mode), "Structure Preview Cutaway Builder");
             thread.setDaemon(true);
             cutawayBuildThread = thread;
         }
@@ -446,12 +481,22 @@ public class StructurePreviewRenderer {
         }
     }
 
-    private void buildCutaway(PreviewSnapshot previewSnapshot) {
+    private void buildCutaway(PreviewSnapshot previewSnapshot, @Nullable CutawayTopology topology,
+            CutawayMode mode) {
         CutawayRenderCache preparedCutaway = null;
 
         try {
             long startTime = System.currentTimeMillis();
-            preparedCutaway = prepareCutaway(previewSnapshot);
+            if (topology == null) {
+                CutawayTopologyBuildResult buildResult = prepareCutawayTopology(previewSnapshot);
+                if (buildResult.cancelled) return;
+
+                topology = buildResult.topology;
+            }
+
+            if (topology == null) return;
+
+            preparedCutaway = prepareCutaway(topology, mode);
             if (preparedCutaway == null) return;
 
             preparedCutaway = preparedCutaway.withVboDrawRanges(cutawayVboLayout);
@@ -460,8 +505,9 @@ public class StructurePreviewRenderer {
                 if (released || cutawayBuildThread != Thread.currentThread() ||
                     cutawaySnapshot != previewSnapshot) return;
 
-                cutawayCache = preparedCutaway;
-                cutawaySnapshot = null;
+                cutawayTopology = topology;
+                setCutawayCache(mode, preparedCutaway);
+                cutawayLayerBuffers.get(mode).uploaded = false;
             }
 
             long endTime = System.currentTimeMillis();
@@ -474,56 +520,122 @@ public class StructurePreviewRenderer {
     }
 
     /*
-     * Detect which blocks are wall/ceiling blocks, and should be stripped in the cutaway view.
-     * Such block is considered as:
-     * - Generated block
-     * - Adjacent to neither a generated block nor recorded air (exterior)
-     * - Having recorded air or a non-opaque generated block (interior) in the opposite direction
+     * Detects which wall and ceiling spans should be stripped in the cutaway view.
+     * A span contains generated blocks between exterior and recorded interior air.
+     * Interior -> solid -> interior is not stripped in the cutaway view.
      *
      * TODO: Consider adding direct diagonal checks for edges
      *       This involves 8 more checks per block, which is ~2.6x the current work.
-     * TODO: Should we handle walls/ceilings that are multiple blocks thick?
-     *       These are very troublesome to detect accurately without absolutely
-     *       killing performance. Actually, should we try some bitset magic?
-     *       => Ouside-air bitset and interior-air bitset, then make any transition cutaway?
-     *          Interior-air should include non-opaque blocks as well.
      * TODO: Should we move the "inside" vs "outside" air flood-fill detection here?
+     *       It is currently only handled in the Capture Service / NBT Air script.
      *       Some structures can misreport air and break the cutaway detection.
      *       Problem is it could stall the cutaway preparation quite a bit, due to
      *       being very computationally expensive.
      */
-    @Nullable
-    private CutawayRenderCache prepareCutaway(PreviewSnapshot previewSnapshot) {
+    private CutawayTopologyBuildResult prepareCutawayTopology(PreviewSnapshot previewSnapshot) {
         Map<BlockPos, IBlockState> generatedBlocks = new HashMap<>();
-        DummyWorld previewWorld = world;
+        Set<BlockPos> recordedAir = previewSnapshot.getRecordedAir();
 
         for (PreviewBlockEntry entry : previewSnapshot.getBlocks()) {
-            if (shouldCancelBuild()) return null;
+            if (shouldCancelBuild()) return CutawayTopologyBuildResult.cancelled();
 
             generatedBlocks.put(entry.pos, entry.state);
         }
 
-        Set<BlockPos> strippedBlocks = new HashSet<>();
+        CutawayVolume volume = new CutawayVolume(previewSnapshot);
+        EnumMap<EnumFacing.Axis, AxisTransitionData> transitions = new EnumMap<>(EnumFacing.Axis.class);
+        for (EnumFacing.Axis axis : EnumFacing.Axis.values()) {
+            transitions.put(axis, new AxisTransitionData(volume, axis));
+        }
 
+        // Record the exterior and interior boundaries around every generated block
         for (BlockPos pos : generatedBlocks.keySet()) {
-            if (shouldCancelBuild()) return null;
+            if (shouldCancelBuild()) return CutawayTopologyBuildResult.cancelled();
 
-            for (EnumFacing outsideDirection : CUTAWAY_OUTSIDE_DIRECTIONS) {
-                // Outside has neither a generated block nor recorded air
+            for (EnumFacing outsideDirection : EnumFacing.VALUES) {
+                AxisTransitionData axisTransitions = transitions.get(outsideDirection.getAxis());
                 BlockPos outsidePos = pos.offset(outsideDirection);
-                if (generatedBlocks.containsKey(outsidePos) || previewSnapshot.hasRecordedAir(outsidePos)) continue;
+                if (!generatedBlocks.containsKey(outsidePos) && !recordedAir.contains(outsidePos)) {
+                    axisTransitions.exteriorTransitions.set(axisTransitions.getEdgeIndex(pos, outsideDirection));
+                }
 
-                // Interior has recorded air or a non-opaque generated block
                 BlockPos interiorPos = pos.offset(outsideDirection.getOpposite());
-                IBlockState interiorState = generatedBlocks.get(interiorPos);
-                if (!previewSnapshot.hasRecordedAir(interiorPos)
-                        && (interiorState == null || interiorState.isOpaqueCube())) continue;
-
-                strippedBlocks.add(pos);
-                break;
+                if (recordedAir.contains(interiorPos)) {
+                    int edgeIndex = axisTransitions.getEdgeIndex(pos, outsideDirection.getOpposite());
+                    axisTransitions.interiorTransitions.set(edgeIndex);
+                }
             }
         }
 
+        // Match the direct boundaries around each contiguous solid span
+        BitSet thinStrippedBlocks = new BitSet(volume.getCellCount());
+        BitSet thickStrippedBlocks = new BitSet(volume.getCellCount());
+
+        for (AxisTransitionData axisTransitions : transitions.values()) {
+            for (int line = 0; line < axisTransitions.lineCount; line++) {
+                if (shouldCancelBuild()) return CutawayTopologyBuildResult.cancelled();
+
+                int lineStart = axisTransitions.getLineStart(line);
+                for (int start = 0; start < axisTransitions.lineLength;) {
+                    if (!generatedBlocks.containsKey(axisTransitions.getBlockPos(line, start))) {
+                        start++;
+                        continue;
+                    }
+
+                    int end = start + 1;
+                    while (end < axisTransitions.lineLength &&
+                            generatedBlocks.containsKey(axisTransitions.getBlockPos(line, end))) {
+                        end++;
+                    }
+
+                    int startTransition = lineStart + start;
+                    int endTransition = lineStart + end;
+                    boolean exteriorToInterior = axisTransitions.exteriorTransitions.get(startTransition) &&
+                        axisTransitions.interiorTransitions.get(endTransition);
+                    boolean interiorToExterior = axisTransitions.interiorTransitions.get(startTransition) &&
+                        axisTransitions.exteriorTransitions.get(endTransition);
+
+                    // Keep exterior -> interior transitions on Y to keep floors intact (only cutting walls/ceilings)
+                    // Exterior -> interior is floor because we go from lower Y to higher Y
+                    boolean isFloor = axisTransitions.axis == EnumFacing.Axis.Y && exteriorToInterior;
+                    if (!isFloor && (exteriorToInterior || interiorToExterior)) {
+                        addCutawaySpan(axisTransitions, line, start, end, volume, thinStrippedBlocks,
+                            thickStrippedBlocks);
+                    }
+
+                    start = end;
+                }
+            }
+        }
+
+        return CutawayTopologyBuildResult.success(
+            new CutawayTopology(generatedBlocks, volume, thinStrippedBlocks, thickStrippedBlocks));
+    }
+
+    private void addCutawaySpan(AxisTransitionData axisTransitions, int line, int startEdge, int endEdge,
+            CutawayVolume volume, BitSet thinStrippedBlocks, BitSet thickStrippedBlocks) {
+        int thickness = endEdge - startEdge;
+        if (thickness <= 0) return;
+
+        // Thick walls = any thickness, thin walls = 1-block thick only
+        for (int coordinate = startEdge; coordinate < endEdge; coordinate++) {
+            int bitIndex = volume.getCellIndex(axisTransitions.getBlockPos(line, coordinate));
+
+            if (thickness == 1) thinStrippedBlocks.set(bitIndex);
+            thickStrippedBlocks.set(bitIndex);
+        }
+    }
+
+    @Nullable
+    private CutawayRenderCache prepareCutaway(CutawayTopology topology, CutawayMode mode) {
+        Set<BlockPos> strippedBlocks = topology.getStrippedBlocks(mode);
+        return prepareCutawayCache(topology.generatedBlocks, strippedBlocks, mode);
+    }
+
+    @Nullable
+    private CutawayRenderCache prepareCutawayCache(Map<BlockPos, IBlockState> generatedBlocks,
+            Set<BlockPos> strippedBlocks, CutawayMode mode) {
+        DummyWorld previewWorld = world;
         Set<BlockPos> repairBlocks = new HashSet<>();
         for (BlockPos pos : strippedBlocks) {
             if (shouldCancelBuild()) return null;
@@ -571,7 +683,7 @@ public class StructurePreviewRenderer {
         }
 
         return new CutawayRenderCache(
-            strippedBlocks, skippedBaseBlocks, cutawayBlockAccess, repairLayerEntries, repairLayerBufferData
+            mode, strippedBlocks, skippedBaseBlocks, cutawayBlockAccess, repairLayerEntries, repairLayerBufferData
         );
     }
 
@@ -926,11 +1038,14 @@ public class StructurePreviewRenderer {
         centerZ = preparedPreview.centerZ;
         maxDimension = preparedPreview.maxDimension;
         cutawaySnapshot = preparedPreview.previewSnapshot;
-        cutawayCache = null;
+        cutawayTopology = null;
+        thinCutawayCache = null;
+        thickCutawayCache = null;
+        cutawayUnavailableSnapshot = null;
         cutawayVboLayout = createVboLayout(preparedPreview.layerBufferData);
-        cutawayEnabled = false;
+        cutawayMode = null;
         buffersUploaded = false;
-        cutawayBuffersUploaded = false;
+        clearCutawayLayerBufferUploads();
 
         if (PROFILE_PREPARE_PREVIEW) {
             long total = System.nanoTime() - t;
@@ -1174,12 +1289,13 @@ public class StructurePreviewRenderer {
 
     private void ensureCutawayLayerBuffersUploaded(BlockRendererDispatcher blockRenderer,
             CutawayRenderCache activeCutaway) {
-        if (cutawayBuffersUploaded) return;
+        CutawayLayerBuffers cutawayBuffers = cutawayLayerBuffers.get(activeCutaway.getMode());
+        if (cutawayBuffers.uploaded) return;
 
-        deleteCutawayLayerBuffers();
+        deleteLayerBuffers(cutawayBuffers.layerBuffers);
 
         for (BlockRenderLayer layer : BlockRenderLayer.values()) {
-            LayerBufferCache layerBuffer = cutawayLayerBuffers.get(layer);
+            LayerBufferCache layerBuffer = cutawayBuffers.layerBuffers.get(layer);
             PreparedLayerBufferData preparedData = activeCutaway.takeRepairLayerBufferData(layer);
 
             if (preparedData != null) {
@@ -1221,19 +1337,20 @@ public class StructurePreviewRenderer {
             layerBuffer.blockVertexRanges = blockVertexRanges;
         }
 
-        cutawayBuffersUploaded = true;
+        cutawayBuffers.uploaded = true;
     }
 
     @Nullable
     private CutawayRenderCache getActiveCutawayCache() {
-        if (!cutawayEnabled) return null;
+        CutawayMode activeMode = cutawayMode;
+        if (activeMode == null) return null;
 
-        CutawayRenderCache activeCutaway = cutawayCache;
+        CutawayRenderCache activeCutaway = getCutawayCache(activeMode);
         if (activeCutaway == null) return null;
         if (activeCutaway.hasVboLayout(cutawayVboLayout)) return activeCutaway;
 
         activeCutaway = activeCutaway.withVboDrawRanges(cutawayVboLayout);
-        cutawayCache = activeCutaway;
+        setCutawayCache(activeMode, activeCutaway);
         return activeCutaway;
     }
 
@@ -1343,7 +1460,8 @@ public class StructurePreviewRenderer {
         renderLayerBuffer(layer, layerBuffer, drawRanges);
 
         if (activeCutaway != null) {
-            renderLayerBuffer(layer, cutawayLayerBuffers.get(layer), null);
+            CutawayLayerBuffers cutawayBuffers = cutawayLayerBuffers.get(activeCutaway.getMode());
+            renderLayerBuffer(layer, cutawayBuffers.layerBuffers.get(layer), null);
         }
     }
 
@@ -1381,8 +1499,16 @@ public class StructurePreviewRenderer {
     }
 
     private void deleteCutawayLayerBuffers() {
-        deleteLayerBuffers(cutawayLayerBuffers);
-        cutawayBuffersUploaded = false;
+        for (CutawayLayerBuffers cutawayBuffers : cutawayLayerBuffers.values()) {
+            deleteLayerBuffers(cutawayBuffers.layerBuffers);
+            cutawayBuffers.uploaded = false;
+        }
+    }
+
+    private void clearCutawayLayerBufferUploads() {
+        for (CutawayLayerBuffers cutawayBuffers : cutawayLayerBuffers.values()) {
+            cutawayBuffers.uploaded = false;
+        }
     }
 
     private void deleteLayerBuffers(EnumMap<BlockRenderLayer, LayerBufferCache> buffers) {
@@ -1489,7 +1615,184 @@ public class StructurePreviewRenderer {
         }
     }
 
+    private static class CutawayLayerBuffers {
+        private final EnumMap<BlockRenderLayer, LayerBufferCache> layerBuffers =
+            new EnumMap<>(BlockRenderLayer.class);
+        private volatile boolean uploaded;
+
+        private CutawayLayerBuffers() {
+            for (BlockRenderLayer layer : BlockRenderLayer.values()) {
+                layerBuffers.put(layer, new LayerBufferCache());
+            }
+        }
+    }
+
+    private static class CutawayTopologyBuildResult {
+        @Nullable
+        private final CutawayTopology topology;
+        private final boolean cancelled;
+
+        private CutawayTopologyBuildResult(@Nullable CutawayTopology topology, boolean cancelled) {
+            this.topology = topology;
+            this.cancelled = cancelled;
+        }
+
+        private static CutawayTopologyBuildResult success(CutawayTopology topology) {
+            return new CutawayTopologyBuildResult(topology, false);
+        }
+
+        private static CutawayTopologyBuildResult cancelled() {
+            return new CutawayTopologyBuildResult(null, true);
+        }
+    }
+
+    private static class CutawayTopology {
+        private final Map<BlockPos, IBlockState> generatedBlocks;
+        private final CutawayVolume volume;
+        private final BitSet thinStrippedBlocks;
+        private final BitSet thickStrippedBlocks;
+
+        private CutawayTopology(Map<BlockPos, IBlockState> generatedBlocks, CutawayVolume volume,
+                BitSet thinStrippedBlocks, BitSet thickStrippedBlocks) {
+            this.generatedBlocks = generatedBlocks;
+            this.volume = volume;
+            this.thinStrippedBlocks = thinStrippedBlocks;
+            this.thickStrippedBlocks = thickStrippedBlocks;
+        }
+
+        private Set<BlockPos> getStrippedBlocks(CutawayMode mode) {
+            BitSet strippedMask = mode == CutawayMode.THIN ? thinStrippedBlocks : thickStrippedBlocks;
+            Set<BlockPos> strippedBlocks = new HashSet<>();
+
+            for (int index = strippedMask.nextSetBit(0); index >= 0;
+                    index = strippedMask.nextSetBit(index + 1)) {
+                strippedBlocks.add(volume.getBlockPos(index));
+            }
+
+            return strippedBlocks;
+        }
+    }
+
+    private static class CutawayVolume {
+        private final int minX;
+        private final int minY;
+        private final int minZ;
+        private final int sizeX;
+        private final int sizeY;
+        private final int sizeZ;
+        private final int cellCount;
+
+        private CutawayVolume(PreviewSnapshot previewSnapshot) {
+            this.minX = previewSnapshot.getMinX();
+            this.minY = previewSnapshot.getMinY();
+            this.minZ = previewSnapshot.getMinZ();
+            this.sizeX = previewSnapshot.getMaxX() - minX + 1;
+            this.sizeY = previewSnapshot.getMaxY() - minY + 1;
+            this.sizeZ = previewSnapshot.getMaxZ() - minZ + 1;
+            this.cellCount = sizeX * sizeY * sizeZ;
+        }
+
+        private int getCellCount() {
+            return cellCount;
+        }
+
+        private int getCellIndex(BlockPos pos) {
+            int x = pos.getX() - minX;
+            int y = pos.getY() - minY;
+            int z = pos.getZ() - minZ;
+            return x + sizeX * (z + sizeZ * y);
+        }
+
+        private BlockPos getBlockPos(int index) {
+            int x = index % sizeX;
+            int remaining = index / sizeX;
+            int z = remaining % sizeZ;
+            int y = remaining / sizeZ;
+            return new BlockPos(minX + x, minY + y, minZ + z);
+        }
+    }
+
+    private static class AxisTransitionData {
+        private final CutawayVolume volume;
+        private final EnumFacing.Axis axis;
+        private final int lineLength;
+        private final int lineCount;
+        private final BitSet exteriorTransitions;
+        private final BitSet interiorTransitions;
+
+        private AxisTransitionData(CutawayVolume volume, EnumFacing.Axis axis) {
+            this.volume = volume;
+            this.axis = axis;
+
+            switch (axis) {
+                case X:
+                    lineLength = volume.sizeX;
+                    lineCount = volume.sizeY * volume.sizeZ;
+                    break;
+                case Y:
+                    lineLength = volume.sizeY;
+                    lineCount = volume.sizeX * volume.sizeZ;
+                    break;
+                case Z:
+                    lineLength = volume.sizeZ;
+                    lineCount = volume.sizeX * volume.sizeY;
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unsupported cutaway axis: " + axis);
+            }
+
+            exteriorTransitions = new BitSet(lineCount * (lineLength + 1));
+            interiorTransitions = new BitSet(lineCount * (lineLength + 1));
+        }
+
+        private int getEdgeIndex(BlockPos pos, EnumFacing side) {
+            int coordinate;
+            int line;
+
+            switch (axis) {
+                case X:
+                    coordinate = pos.getX() - volume.minX;
+                    line = (pos.getY() - volume.minY) * volume.sizeZ + pos.getZ() - volume.minZ;
+                    break;
+                case Y:
+                    coordinate = pos.getY() - volume.minY;
+                    line = (pos.getX() - volume.minX) * volume.sizeZ + pos.getZ() - volume.minZ;
+                    break;
+                case Z:
+                    coordinate = pos.getZ() - volume.minZ;
+                    line = (pos.getY() - volume.minY) * volume.sizeX + pos.getX() - volume.minX;
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unsupported cutaway axis: " + axis);
+            }
+
+            int edge = side.getAxisDirection() == EnumFacing.AxisDirection.POSITIVE ? coordinate + 1 : coordinate;
+            return getLineStart(line) + edge;
+        }
+
+        private int getLineStart(int line) {
+            return line * (lineLength + 1);
+        }
+
+        private BlockPos getBlockPos(int line, int coordinate) {
+            switch (axis) {
+                case X:
+                    return new BlockPos(volume.minX + coordinate, volume.minY + line / volume.sizeZ,
+                        volume.minZ + line % volume.sizeZ);
+                case Y:
+                    return new BlockPos(volume.minX + line / volume.sizeZ, volume.minY + coordinate,
+                        volume.minZ + line % volume.sizeZ);
+                case Z:
+                    return new BlockPos(volume.minX + line % volume.sizeX, volume.minY + line / volume.sizeX,
+                        volume.minZ + coordinate);
+                default:
+                    throw new IllegalArgumentException("Unsupported cutaway axis: " + axis);
+            }
+        }
+    }
+
     private static class CutawayRenderCache {
+        private final CutawayMode mode;
         private final Set<BlockPos> strippedBlocks;
         private final Set<BlockPos> baseSkippedBlocks;
         private final IBlockAccess blockAccess;
@@ -1501,16 +1804,18 @@ public class StructurePreviewRenderer {
         @Nullable
         private final EnumMap<BlockRenderLayer, List<VertexRange>> drawRanges;
 
-        private CutawayRenderCache(Set<BlockPos> strippedBlocks, Set<BlockPos> baseSkippedBlocks,
+        private CutawayRenderCache(CutawayMode mode, Set<BlockPos> strippedBlocks, Set<BlockPos> baseSkippedBlocks,
                 IBlockAccess blockAccess, EnumMap<BlockRenderLayer, List<RenderBlockEntry>> repairLayerEntries,
                 EnumMap<BlockRenderLayer, PreparedLayerBufferData> repairLayerBufferData) {
-            this(strippedBlocks, baseSkippedBlocks, blockAccess, repairLayerEntries, repairLayerBufferData, null, null);
+            this(mode, strippedBlocks, baseSkippedBlocks, blockAccess, repairLayerEntries, repairLayerBufferData,
+                null, null);
         }
 
-        private CutawayRenderCache(Set<BlockPos> strippedBlocks, Set<BlockPos> baseSkippedBlocks,
+        private CutawayRenderCache(CutawayMode mode, Set<BlockPos> strippedBlocks, Set<BlockPos> baseSkippedBlocks,
                 IBlockAccess blockAccess, EnumMap<BlockRenderLayer, List<RenderBlockEntry>> repairLayerEntries,
                 @Nullable EnumMap<BlockRenderLayer, PreparedLayerBufferData> repairLayerBufferData,
                 @Nullable VboLayout vboLayout, @Nullable EnumMap<BlockRenderLayer, List<VertexRange>> drawRanges) {
+            this.mode = mode;
             this.strippedBlocks = strippedBlocks;
             this.baseSkippedBlocks = baseSkippedBlocks;
             this.blockAccess = blockAccess;
@@ -1522,6 +1827,10 @@ public class StructurePreviewRenderer {
 
         private boolean isStripped(BlockPos pos) {
             return strippedBlocks.contains(pos);
+        }
+
+        private CutawayMode getMode() {
+            return mode;
         }
 
         private Set<BlockPos> getBaseSkippedBlocks() {
@@ -1558,7 +1867,7 @@ public class StructurePreviewRenderer {
         private CutawayRenderCache withVboDrawRanges(VboLayout vboLayout) {
             if (vboLayout.isEmpty()) {
                 return new CutawayRenderCache(
-                    strippedBlocks, baseSkippedBlocks, blockAccess, repairLayerEntries, repairLayerBufferData,
+                    mode, strippedBlocks, baseSkippedBlocks, blockAccess, repairLayerEntries, repairLayerBufferData,
                     vboLayout, null
                 );
             }
@@ -1606,7 +1915,7 @@ public class StructurePreviewRenderer {
             }
 
             return new CutawayRenderCache(
-                strippedBlocks, baseSkippedBlocks, blockAccess, repairLayerEntries, repairLayerBufferData,
+                mode, strippedBlocks, baseSkippedBlocks, blockAccess, repairLayerEntries, repairLayerBufferData,
                 vboLayout, drawRanges
             );
         }

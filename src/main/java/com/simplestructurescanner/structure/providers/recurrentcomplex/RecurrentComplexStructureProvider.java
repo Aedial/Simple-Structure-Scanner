@@ -16,6 +16,7 @@ import javax.annotation.Nullable;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.state.IBlockState;
+import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -365,8 +366,19 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
         if (blockId == null) return false;
 
         // RC stores editor-time placeholders like Negative Space, Natural Air, Floor, and Barrier
-        // in these two typed blocks. They should not leak into the final block list or preview.
+        // in these two typed blocks. Preview handling translates air placeholders before removing the rest.
         return GENERIC_SPACE_BLOCK_ID.equals(blockId) || GENERIC_SOLID_BLOCK_ID.equals(blockId);
+    }
+
+    private static boolean isRcRecordedAir(@Nullable IBlockState state, @Nullable Block block) {
+        if (block == Blocks.AIR) return true;
+        if (state == null || block == null) return false;
+
+        // generic_space@1 = air placeholder
+        ResourceLocation blockId = block.getRegistryName();
+        if (GENERIC_SPACE_BLOCK_ID.equals(blockId) && block.getMetaFromState(state) == 1) return true;
+
+        return false;
     }
 
     private void mergeBlockCollection(StructureNBTParser.StructureContentSink contents, @Nullable Object blockCollection,
@@ -378,10 +390,10 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
             throw new ReflectionException("Unexpected Recurrent Complex block area payload: " + area);
         }
 
-        // Script blocks are control nodes that spawn child structures, so counting them would pollute the merged metadata.
         for (Object posObject : (Iterable<?>) area) {
             if (!(posObject instanceof BlockPos)) continue;
 
+            // Script blocks are control nodes that spawn child structures, so counting them would pollute the merged metadata.
             BlockPos pos = (BlockPos) posObject;
             if (scriptPositions.contains(pos)) continue;
 
@@ -412,10 +424,16 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
 
             IBlockState state = getBlockState(blockCollection, localPos);
             Block block = state != null ? state.getBlock() : null;
+            BlockPos pos = offsetPos(origin, transform.applyLocal(localPos, size));
+            if (isRcRecordedAir(state, block)) {
+                preview.setRecordedAir(pos.getX(), pos.getY(), pos.getZ());
+                continue;
+            }
+
             if (!DEFAULT_PARSE_EXTENSION.shouldStoreLayerBlock(state, block)) continue;
 
             NBTTagCompound blockEntityData = tileEntitiesByPos.containsKey(localPos) ? tileEntitiesByPos.get(localPos).copy() : null;
-            preview.setBlock(offsetPos(origin, transform.applyLocal(localPos, size)), state, blockEntityData);
+            preview.setBlock(pos, state, blockEntityData);
         }
     }
 

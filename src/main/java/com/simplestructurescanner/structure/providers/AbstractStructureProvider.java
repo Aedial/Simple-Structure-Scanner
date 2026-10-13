@@ -240,5 +240,4 @@ public abstract class AbstractStructureProvider implements StructureProvider {
         return new StructureBoundingBox(world.getMinX(), 0, world.getMinZ(),
             world.getMaxX(), 255, world.getMaxZ());
     }
-
 }

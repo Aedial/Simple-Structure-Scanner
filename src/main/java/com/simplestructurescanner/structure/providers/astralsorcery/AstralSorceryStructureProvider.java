@@ -1,7 +1,6 @@
 package com.simplestructurescanner.structure.providers.astralsorcery;
 
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -22,6 +21,7 @@ import com.simplestructurescanner.structure.StructureLocation;
 import com.simplestructurescanner.structure.StructureNBTParser;
 import com.simplestructurescanner.structure.util.ReflectionHelper;
 import com.simplestructurescanner.structure.util.ReflectionHelper.ReflectionException;
+import com.simplestructurescanner.structure.util.StructurePreviewStitcher;
 
 
 public class AstralSorceryStructureProvider extends AbstractStructureProvider {
@@ -64,8 +64,7 @@ public class AstralSorceryStructureProvider extends AbstractStructureProvider {
                 throw new ReflectionException("Astral Sorcery template pattern is not a map: " + fieldName);
             }
 
-            Map<BlockPos, IBlockState> blocks = new LinkedHashMap<>();
-            Map<BlockPos, NBTTagCompound> blockEntityDataByPos = new LinkedHashMap<>();
+            StructurePreviewStitcher preview = new StructurePreviewStitcher();
 
             for (Map.Entry<?, ?> entry : ((Map<?, ?>) patternValue).entrySet()) {
                 if (!(entry.getKey() instanceof BlockPos)) continue;
@@ -77,17 +76,23 @@ public class AstralSorceryStructureProvider extends AbstractStructureProvider {
                 if (!(stateValue instanceof IBlockState)) continue;
 
                 IBlockState state = (IBlockState) stateValue;
-                if (StructureNBTParser.isInvisibleBlock(state.getBlock())) continue;
-
                 BlockPos pos = (BlockPos) entry.getKey();
-                if (shrineLoot && state.getBlock() == Blocks.CHEST) {
-                    blockEntityDataByPos.put(pos, createLootTableData(SHRINE_LOOT_TABLE, "minecraft:chest"));
+                if (state.getBlock() == Blocks.AIR) {
+                    preview.setRecordedAir(pos.getX(), pos.getY(), pos.getZ());
+                    continue;
                 }
 
-                blocks.put(pos, state);
+                if (StructureNBTParser.isInvisibleBlock(state.getBlock())) continue;
+
+                NBTTagCompound blockEntityData = null;
+                if (shrineLoot && state.getBlock() == Blocks.CHEST) {
+                    blockEntityData = createLootTableData(SHRINE_LOOT_TABLE, "minecraft:chest");
+                }
+
+                preview.setBlock(pos, state, blockEntityData);
             }
 
-            return StructureInfo.createLayers(blocks, blockEntityDataByPos);
+            return preview.buildLayers();
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.warn("Failed to load Astral Sorcery structure template {}", path, e);
             return Collections.emptyList();

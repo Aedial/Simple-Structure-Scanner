@@ -712,6 +712,10 @@ public class StructureInfo {
                 int x = index % layer.width + layer.xOffset;
                 int z = index / layer.width + layer.zOffset;
                 int y = layer.y + yOffset;
+                minX = Math.min(minX, x);
+                minZ = Math.min(minZ, z);
+                maxX = Math.max(maxX, x);
+                maxZ = Math.max(maxZ, z);
                 recordedAir.add(new BlockPos(x, y, z));
             }
         }
@@ -804,6 +808,14 @@ public class StructureInfo {
 
         public boolean hasRecordedAir(BlockPos pos) {
             return recordedAir.contains(pos);
+        }
+
+        public boolean hasRecordedAir() {
+            return !recordedAir.isEmpty();
+        }
+
+        public Set<BlockPos> getRecordedAir() {
+            return recordedAir;
         }
 
         public boolean isEmpty() {

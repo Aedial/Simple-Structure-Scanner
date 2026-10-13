@@ -147,7 +147,7 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
         Set<Biome> beachBiomes = hasAnyBiomes(BiomeDictionary.Type.BEACH);
 
         register("cyclops_cave")
-            .fromMapWithBundledFallback(createSurfaceMap("cyclops_cave", Biomes.BEACH, 3,
+            .fromMapWithBundledFallback(createSurfaceMap("cyclops_cave", Biomes.BEACH, 20,
                 WORLD_GENERATOR_PACKAGE + "WorldGenCyclopsCave", STONE))
             .withMetadata(beachBiomes, overworld)
             .withRarity(calculateApproximateRarity(cyclopsCaveChance + 1.0D, worldGenDistance));
@@ -172,7 +172,7 @@ public class IceAndFireStructureProvider extends AbstractStructureProvider {
         Set<Biome> swampBiomes = hasAnyBiomes(BiomeDictionary.Type.SWAMP);
 
         register("hydra_lair")
-            .fromMapWithBundledFallback(createSurfaceMap("hydra_lair", Biomes.SWAMPLAND, 3,
+            .fromMapWithBundledFallback(createSurfaceMap("hydra_lair", Biomes.SWAMPLAND, 20,
                 WORLD_GENERATOR_PACKAGE + "WorldGenHydraCave", GRASS))
             .withMetadata(swampBiomes, overworld)
             .withRarity(calculateApproximateRarity(hydraChance + 1.0D, worldGenDistance));

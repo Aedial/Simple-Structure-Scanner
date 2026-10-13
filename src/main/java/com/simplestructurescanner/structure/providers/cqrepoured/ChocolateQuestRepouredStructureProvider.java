@@ -488,6 +488,11 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
                 int y = (Integer) ReflectionHelper.invokeRequired(blockInfo, "getY");
                 int z = (Integer) ReflectionHelper.invokeRequired(blockInfo, "getZ");
                 IBlockState state = (IBlockState) ReflectionHelper.invokeRequired(blockInfo, "getState");
+                if (state != null && state.getBlock() == Blocks.AIR) {
+                    preview.setRecordedAir(x, y - GENERATED_PREVIEW_BASE_Y, z);
+                    continue;
+                }
+
                 if (!shouldIncludeState(state)) continue;
 
                 TileEntity tileEntity = (TileEntity) ReflectionHelper.invokeRequired(blockInfo, "getTileEntity");
@@ -877,6 +882,11 @@ public class ChocolateQuestRepouredStructureProvider extends AbstractStructurePr
 
     private void addSyntheticBlock(StructureNBTParser.ParsedStructureBuilder builder, int x, int y, int z,
             @Nullable IBlockState state, @Nullable NBTTagCompound tileEntityData) {
+        if (state != null && state.getBlock() == Blocks.AIR) {
+            builder.setLayerRecordedAir(x, y, z);
+            return;
+        }
+
         if (!shouldIncludeState(state)) return;
 
         builder.addBlockCount(
