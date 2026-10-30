@@ -25,6 +25,7 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.fluids.FluidStack;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.client.BlockEntryFilter;
 import com.simplestructurescanner.config.SimpleStructureScannerConfig;
 import com.simplestructurescanner.integration.JEIHelper;
 import com.simplestructurescanner.structure.LootTableResolver;
@@ -41,10 +42,10 @@ import com.simplestructurescanner.structure.providers.recurrentcomplex.Recurrent
  * Lazy structure recipe cache for JEI lookups.
  * <p>
  * Warm-up runs whenever JEI sees no cached visibility snapshot or the current visibility signature changes
- * (provider revision, captured GameStages snapshot, or client blacklist fingerprint).
+ * (provider revision, captured GameStages snapshot, client blacklist, or block filter and resources).
  * <p>
- * Phase 1 runs on the client thread: {@code createBuildRequest()} filters visible structures, sorts the
- * per-tab wrappers, and publishes a temporary visible-only state. Direct category opens through
+ * Phase 1 runs on the client thread: {@code createBuildRequest()} filters visible structures and block entries,
+ * sorts the per-tab wrappers, and publishes a temporary visible-only state. Direct category opens through
  * {@link #getAllVisible(StructureJeiView)} are exact as soon as this swap happens, but reverse match lookups
  * through {@link #getMatchingBlockItems(ItemStack)}, {@link #getMatchingBlockFluids(FluidStack)}, and
  * {@link #getMatchingLootItems(ItemStack)} still return empty lists because no lookup buckets have been attached yet.
@@ -286,7 +287,8 @@ final class StructureJeiRecipes {
         return new VisibilitySignature(
             StructureProviderRegistry.getRevision(),
             StructureJeiVisibility.captureStageSnapshot(),
-            captureBlacklistFingerprint()
+            captureBlacklistFingerprint(),
+            BlockEntryFilter.getCurrent()
         );
     }
 
@@ -317,8 +319,9 @@ final class StructureJeiRecipes {
             StructureJeiRecipe lootRecipe = RECIPES.get(StructureJeiView.LOOT).get(structureId);
             if (previewRecipe == null || blockRecipe == null || lootRecipe == null) continue;
 
-            seeds.add(new BuildSeed(structureInfo, previewRecipe.getSortKey(), previewRecipe, blockRecipe,
-                lootRecipe));
+            List<BlockEntry> blockEntries = signature.blockFilter.filter(structureInfo.getBlocks());
+            seeds.add(new BuildSeed(structureInfo, Collections.unmodifiableList(blockEntries),
+                previewRecipe.getSortKey(), previewRecipe, blockRecipe, lootRecipe));
         }
 
         seeds.sort((first, second) -> first.sortKey.compareToIgnoreCase(second.sortKey));
@@ -403,7 +406,7 @@ final class StructureJeiRecipes {
         Set<StructureJeiIngredientKeys.IngredientKey> seenItemKeys = new HashSet<>();
         Set<StructureJeiIngredientKeys.IngredientKey> seenFluidKeys = new HashSet<>();
 
-        for (BlockEntry blockEntry : seed.structureInfo.getBlocks()) {
+        for (BlockEntry blockEntry : seed.blockEntries) {
             if (blockEntry.displayStack != null && !blockEntry.displayStack.isEmpty()) {
                 StructureJeiIngredientKeys.IngredientKey itemKey =
                     StructureJeiIngredientKeys.itemLookupKey(blockEntry.displayStack);
@@ -522,7 +525,7 @@ final class StructureJeiRecipes {
         if (currentState == null) return "no cached visibility snapshot";
 
         VisibilitySignature currentSignature = currentState.signature;
-        List<String> reasons = new ArrayList<>(3);
+        List<String> reasons = new ArrayList<>(4);
         if (currentSignature.providerRevision != nextSignature.providerRevision) {
             reasons.add("provider registry changed");
         }
@@ -531,6 +534,9 @@ final class StructureJeiRecipes {
         }
         if (!currentSignature.blacklistFingerprint.equals(nextSignature.blacklistFingerprint)) {
             reasons.add("client blacklist changed");
+        }
+        if (currentSignature.blockFilter != nextSignature.blockFilter) {
+            reasons.add("client block filters or resources changed");
         }
 
         if (reasons.isEmpty()) return "cached snapshot was replaced";
@@ -695,14 +701,16 @@ final class StructureJeiRecipes {
 
     private static final class BuildSeed {
         private final StructureInfo structureInfo;
+        private final List<BlockEntry> blockEntries;
         private final String sortKey;
         private final StructureJeiRecipe previewRecipe;
         private final StructureJeiRecipe blockRecipe;
         private final StructureJeiRecipe lootRecipe;
 
-        private BuildSeed(StructureInfo structureInfo, String sortKey, StructureJeiRecipe previewRecipe,
-            StructureJeiRecipe blockRecipe, StructureJeiRecipe lootRecipe) {
+        private BuildSeed(StructureInfo structureInfo, List<BlockEntry> blockEntries, String sortKey,
+            StructureJeiRecipe previewRecipe, StructureJeiRecipe blockRecipe, StructureJeiRecipe lootRecipe) {
             this.structureInfo = structureInfo;
+            this.blockEntries = blockEntries;
             this.sortKey = sortKey;
             this.previewRecipe = previewRecipe;
             this.blockRecipe = blockRecipe;
@@ -873,12 +881,14 @@ final class StructureJeiRecipes {
         @Nullable
         private final Set<String> stageSnapshot;
         private final String blacklistFingerprint;
+        private final BlockEntryFilter blockFilter;
 
         private VisibilitySignature(long providerRevision, @Nullable Set<String> stageSnapshot,
-                String blacklistFingerprint) {
+                String blacklistFingerprint, BlockEntryFilter blockFilter) {
             this.providerRevision = providerRevision;
             this.stageSnapshot = stageSnapshot;
             this.blacklistFingerprint = blacklistFingerprint;
+            this.blockFilter = blockFilter;
         }
 
         @Override
@@ -889,12 +899,13 @@ final class StructureJeiRecipes {
             VisibilitySignature that = (VisibilitySignature) other;
             return providerRevision == that.providerRevision
                 && Objects.equals(stageSnapshot, that.stageSnapshot)
-                && blacklistFingerprint.equals(that.blacklistFingerprint);
+                && blacklistFingerprint.equals(that.blacklistFingerprint)
+                && blockFilter == that.blockFilter;
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(providerRevision, stageSnapshot, blacklistFingerprint);
+            return Objects.hash(providerRevision, stageSnapshot, blacklistFingerprint, blockFilter);
         }
     }
 

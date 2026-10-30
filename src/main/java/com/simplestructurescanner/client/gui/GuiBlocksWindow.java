@@ -17,6 +17,7 @@ import net.minecraft.client.util.ITooltipFlag;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.client.resources.I18n;
 
+import com.simplestructurescanner.client.BlockEntryFilter;
 import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.integration.JEIHelper;
 import com.simplestructurescanner.structure.StructureInfo;
@@ -53,15 +54,15 @@ public class GuiBlocksWindow {
     private boolean hoveringTotal = false;
 
     // Block data
-    private final List<BlockEntry> blocks;
-    private final int totalBlocks;
+    private BlockEntryFilter blockFilter;
+    private List<BlockEntry> blocks;
+    private int totalBlocks;
 
     public GuiBlocksWindow(GuiScreen parent, ResourceLocation structureId, StructureInfo structureInfo) {
         this.parent = parent;
         this.structureId = structureId;
         this.structureInfo = structureInfo;
-        this.blocks = structureInfo.getBlocks();
-        this.totalBlocks = blocks.stream().mapToInt(b -> b.count).sum();
+        refreshBlocks();
     }
 
     public void show() {
@@ -99,7 +100,22 @@ public class GuiBlocksWindow {
         return visible;
     }
 
+    private void refreshBlocks() {
+        BlockEntryFilter filter = BlockEntryFilter.getCurrent();
+        if (blockFilter == filter) return;
+
+        blockFilter = filter;
+        blocks = filter.filter(structureInfo.getBlocks());
+        totalBlocks = blocks.stream().mapToInt(b -> b.count).sum();
+        hoveredItemIndex = -1;
+        hoveringCount = false;
+        countHoverIndex = -1;
+        hoveringTotal = false;
+    }
+
     private void calculateLayout() {
+        refreshBlocks();
+
         Minecraft mc = Minecraft.getMinecraft();
         ScaledResolution sr = new ScaledResolution(mc);
         int screenW = sr.getScaledWidth();
@@ -217,6 +233,7 @@ public class GuiBlocksWindow {
 
     public void draw(int mouseX, int mouseY, float partialTicks) {
         if (!visible) return;
+        if (blockFilter != BlockEntryFilter.getCurrent()) calculateLayout();
 
         Minecraft mc = Minecraft.getMinecraft();
         FontRenderer font = mc.fontRenderer;

@@ -12,6 +12,8 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 ### Added
 - Allow to disable individual providers in config. A disabled provider will not contribute structures to the scanner, effectively hiding them from all search and preview functionalities. This is an alternative to blacklisting ALL structures from that provider, but avoid the loading overhead of registering them at startup (realistically, you only gain a few seconds).
 - Add cutaway view support for structures, allowing to hide outer walls/ceiling to better visualize the interior.
+- Add a configurable blacklist for the blocks shown in the Blocks window or JEI block recipes, allowing you to hide specific blocks or items based on their ID and metadata. The config comes with a basic set of unbrekable/creative/invisible vanilla blocks.
+- Add a config option to hide blocks with missing textures from the Blocks window and JEI block recipes.
 
 ### Fixed
 - Provide all missing structure previews/metadata via their MapGeneration data.

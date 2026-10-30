@@ -462,6 +462,28 @@ public final class SimpleStructureScannerConfig {
         @Config.LangKey("config.structurescanner.client.showBlocks")
         public boolean showBlocks = true;
 
+        @Config.LangKey("config.structurescanner.client.blockBlacklist")
+        public String[] blockBlacklist = {
+            "minecraft:air",
+            "minecraft:bedrock",
+            "minecraft:barrier",
+            "minecraft:command_block",
+            "minecraft:chain_command_block",
+            "minecraft:repeating_command_block",
+            "minecraft:structure_block",
+            "minecraft:structure_void",
+            "minecraft:portal",
+            "minecraft:end_portal",
+            "minecraft:end_portal_frame",
+            "minecraft:end_gateway",
+            "minecraft:piston_head",
+            "minecraft:piston_extension",
+            "minecraft:fire"
+        };
+
+        @Config.LangKey("config.structurescanner.client.hideMissingBlockTextures")
+        public boolean hideMissingBlockTextures = true;
+
         @Config.LangKey("config.structurescanner.client.showEntities")
         public boolean showEntities = true;
 

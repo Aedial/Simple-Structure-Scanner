@@ -38,6 +38,7 @@ import mezz.jei.api.ingredients.VanillaTypes;
 import mezz.jei.api.recipe.IFocus;
 import mezz.jei.api.recipe.IRecipeWrapper;
 
+import com.simplestructurescanner.client.BlockEntryFilter;
 import com.simplestructurescanner.client.ClientTextResolver;
 import com.simplestructurescanner.client.gui.SmallVanillaButton;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
@@ -145,7 +146,9 @@ public class StructureJeiRecipe implements IRecipeWrapper {
 
     @Nullable
     private StructureInfo cachedBlockInfo;
-    /** Cached block-tab data derived from the current structure info instance. */
+    @Nullable
+    private BlockEntryFilter cachedBlockFilter;
+    /** Cached block-tab data derived from the current structure info and client filter. */
     private List<BlockEntry> cachedSortedBlockEntries = Collections.emptyList();
     private List<ItemStack> cachedBlockItemOutputs = Collections.emptyList();
     private List<FluidStack> cachedBlockFluidOutputs = Collections.emptyList();
@@ -520,6 +523,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
 
     private void syncJeiIngredientLayout(StructureInfo structureInfo) {
         if (jeiItemStacks == null) return;
+        if (view == StructureJeiView.BLOCKS) refreshBlockCache(structureInfo);
         if (jeiLayoutInfo == structureInfo && jeiLayoutPage == page) return;
 
         if (view == StructureJeiView.BLOCKS) syncBlockJeiSlots(structureInfo);
@@ -735,12 +739,13 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     }
 
     /**
-     * Refreshes the cached block-tab payload when the structure info instance changes.
+     * Refreshes the cached block-tab payload when the structure info or client filter changes.
      */
     private void refreshBlockCache(StructureInfo structureInfo) {
-        if (cachedBlockInfo == structureInfo) return;
+        BlockEntryFilter filter = BlockEntryFilter.getCurrent();
+        if (cachedBlockInfo == structureInfo && cachedBlockFilter == filter) return;
 
-        List<BlockEntry> sortedEntries = new ArrayList<>(structureInfo.getBlocks());
+        List<BlockEntry> sortedEntries = filter.filter(structureInfo.getBlocks());
         sortedEntries.sort((first, second) -> Integer.compare(second.count, first.count));
 
         List<ItemStack> itemOutputs = new ArrayList<>();
@@ -764,9 +769,12 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         }
 
         cachedBlockInfo = structureInfo;
+        cachedBlockFilter = filter;
         cachedSortedBlockEntries = Collections.unmodifiableList(sortedEntries);
         cachedBlockItemOutputs = Collections.unmodifiableList(itemOutputs);
         cachedBlockFluidOutputs = Collections.unmodifiableList(fluidOutputs);
+        clampPage(Math.max(1, (sortedEntries.size() + PAGE_SIZE - 1) / PAGE_SIZE));
+        invalidateJeiLayout();
     }
 
     private List<LootDisplayEntry> getLootDisplayEntries(StructureInfo structureInfo) {
