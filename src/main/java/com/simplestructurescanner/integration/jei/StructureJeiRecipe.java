@@ -40,10 +40,12 @@ import mezz.jei.api.recipe.IRecipeWrapper;
 
 import com.simplestructurescanner.client.BlockEntryFilter;
 import com.simplestructurescanner.client.ClientTextResolver;
+import com.simplestructurescanner.client.LootItemTooltip;
 import com.simplestructurescanner.client.gui.SmallVanillaButton;
 import com.simplestructurescanner.client.render.StructurePreviewRenderer;
 import com.simplestructurescanner.integration.JEIHelper;
 import com.simplestructurescanner.item.ModItems;
+import com.simplestructurescanner.structure.LootItemAccumulator;
 import com.simplestructurescanner.structure.LootTableResolver;
 import com.simplestructurescanner.structure.LootTableResolver.LootItem;
 import com.simplestructurescanner.structure.StructureInfo;
@@ -51,6 +53,7 @@ import com.simplestructurescanner.structure.StructureProviderRegistry;
 import com.simplestructurescanner.structure.StructureInfo.BlockEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
 import com.simplestructurescanner.structure.StructureInfo.LootEntryKind;
+import com.simplestructurescanner.util.ItemStackKey;
 
 
 /**
@@ -613,6 +616,7 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         LootDisplayEntry entry = getDisplayedLootEntry(slotIndex, structureInfo);
         if (entry == null) return;
 
+        LootItemTooltip.apply(tooltip, entry.stack, entry.grouped);
         tooltip.add(I18n.format("jei.structurescanner.loot.sources", entry.sourceCount));
 
         if (entry.isFixedOnly()) {
@@ -657,8 +661,10 @@ public class StructureJeiRecipe implements IRecipeWrapper {
         }
 
         if (view == StructureJeiView.LOOT) {
-            for (ItemStack output : getLootOutputStacks(structureInfo)) {
-                if (matchesItemStack(output, stack)) return true;
+            ItemStack normalized = LootTableResolver.normalizeForDisplay(stack);
+            for (LootDisplayEntry entry : getLootDisplayEntries(structureInfo)) {
+                if (entry.grouped && ItemStack.areItemsEqual(entry.stack, normalized)) return true;
+                if (matchesItemStack(entry.stack, normalized)) return true;
             }
         }
 
@@ -800,27 +806,36 @@ public class StructureJeiRecipe implements IRecipeWrapper {
     private void refreshLootCache(StructureInfo structureInfo) {
         if (cachedLootInfo == structureInfo) return;
 
-        Map<String, LootDisplayEntry> lootByKey = new LinkedHashMap<>();
+        Map<ItemStackKey, LootDisplayEntry> lootByKey = new LinkedHashMap<>();
         World lootResolutionWorld = getLootResolutionWorld();
         int simulationCount = LootTableResolver.getSimulationCount();
-
+        LootItemAccumulator items = new LootItemAccumulator();
+        List<List<LootItem>> dropsBySource = new ArrayList<>();
         for (LootEntry lootEntry : structureInfo.getLootTables()) {
             List<LootItem> resolvedDrops = resolveLootDisplayItems(lootEntry, lootResolutionWorld, simulationCount);
+            dropsBySource.add(resolvedDrops);
+            for (LootItem item : resolvedDrops) items.add(item);
+        }
+
+        for (int sourceIndex = 0; sourceIndex < dropsBySource.size(); sourceIndex++) {
+            LootEntry lootEntry = structureInfo.getLootTables().get(sourceIndex);
+            List<LootItem> resolvedDrops = dropsBySource.get(sourceIndex);
             if (resolvedDrops.isEmpty()) continue;
 
-            Set<String> seenInEntry = new LinkedHashSet<>();
+            Set<ItemStackKey> seenInEntry = new LinkedHashSet<>();
 
             for (LootItem possibleDrop : resolvedDrops) {
                 if (possibleDrop == null || possibleDrop.stack.isEmpty() || possibleDrop.dropCount <= 0) continue;
 
-                ItemStack displayStack = LootTableResolver.normalizeForDisplay(possibleDrop.stack);
+                ItemStack displayStack = items.getDisplayStack(possibleDrop.stack);
                 if (displayStack.isEmpty()) continue;
 
                 displayStack.setCount(1);
 
-                String aggregationKey = LootTableResolver.createAggregationKey(displayStack);
+                ItemStackKey aggregationKey = items.getDisplayKey(possibleDrop.stack);
+                boolean grouped = items.isGrouped(possibleDrop.stack);
                 LootDisplayEntry displayEntry = lootByKey.computeIfAbsent(aggregationKey,
-                    k -> new LootDisplayEntry(displayStack));
+                    k -> new LootDisplayEntry(displayStack, grouped));
 
                 displayEntry.addContribution(
                     possibleDrop.dropCount,
@@ -1153,13 +1168,15 @@ public class StructureJeiRecipe implements IRecipeWrapper {
      */
     private static class LootDisplayEntry implements Comparable<LootDisplayEntry> {
         private final ItemStack stack;
+        private final boolean grouped;
         private int sourceCount;
         private int totalDropCount;
         private boolean fixedContribution;
         private boolean dynamicContribution;
 
-        private LootDisplayEntry(ItemStack stack) {
+        private LootDisplayEntry(ItemStack stack, boolean grouped) {
             this.stack = stack;
+            this.grouped = grouped;
             this.sourceCount = 0;
             this.totalDropCount = 0;
         }

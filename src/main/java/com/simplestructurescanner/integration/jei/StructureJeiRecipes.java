@@ -148,7 +148,7 @@ final class StructureJeiRecipes {
         VisibleState state = visibleState;
         if (state == null) return Collections.emptyList();
 
-        return state.getLootItemMatches(StructureJeiIngredientKeys.itemLookupKey(stack));
+        return state.getLootItemMatches(stack);
     }
 
     static List<LootItem> getResolvedLootItems(LootEntry lootEntry, @Nullable World lootResolutionWorld) {
@@ -365,7 +365,7 @@ final class StructureJeiRecipes {
     private static PreparedVisibleState prepareVisibleState(long buildId, BuildRequest request) {
         Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockItemOutputs = new HashMap<>();
         Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockFluidOutputs = new HashMap<>();
-        Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> staticLootOutputs = new HashMap<>();
+        StructureJeiLootIndex staticLootOutputs = new StructureJeiLootIndex();
         Map<LootSourceKey, List<StructureJeiRecipe>> pendingLootSources = new LinkedHashMap<>();
 
         for (BuildSeed seed : request.seeds) {
@@ -386,7 +386,7 @@ final class StructureJeiRecipes {
             request.sortedRecipes,
             freezeIndex(blockItemOutputs),
             freezeIndex(blockFluidOutputs),
-            freezeIndex(staticLootOutputs),
+            staticLootOutputs,
             pendingLootTasks
         );
     }
@@ -429,9 +429,8 @@ final class StructureJeiRecipes {
     }
 
     private static void collectLootOutputs(
-            Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> staticLootOutputs,
+            StructureJeiLootIndex staticLootOutputs,
             Map<LootSourceKey, List<StructureJeiRecipe>> pendingLootSources, BuildSeed seed) {
-        Set<StructureJeiIngredientKeys.IngredientKey> seenStaticKeys = new HashSet<>();
         Set<LootSourceKey> seenDynamicSources = new LinkedHashSet<>();
 
         for (LootEntry lootEntry : seed.structureInfo.getLootTables()) {
@@ -449,7 +448,7 @@ final class StructureJeiRecipes {
                 continue;
             }
 
-            addStaticLootOutputs(staticLootOutputs, seenStaticKeys, lootEntry, seed.lootRecipe);
+            addStaticLootOutputs(staticLootOutputs, lootEntry, seed.lootRecipe);
         }
     }
 
@@ -468,22 +467,13 @@ final class StructureJeiRecipes {
     }
 
     private static void addStaticLootOutputs(
-            Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> staticLootOutputs,
-            Set<StructureJeiIngredientKeys.IngredientKey> seenStaticKeys, LootEntry lootEntry,
-            StructureJeiRecipe lootRecipe) {
+            StructureJeiLootIndex staticLootOutputs, LootEntry lootEntry, StructureJeiRecipe lootRecipe) {
         if (lootEntry.possibleDrops == null || lootEntry.possibleDrops.isEmpty()) return;
 
         for (ItemStack possibleDrop : lootEntry.possibleDrops) {
             if (possibleDrop == null || possibleDrop.isEmpty()) continue;
 
-            ItemStack displayStack = LootTableResolver.normalizeForDisplay(possibleDrop);
-            if (displayStack.isEmpty()) continue;
-
-            displayStack.setCount(1);
-            StructureJeiIngredientKeys.IngredientKey itemKey = StructureJeiIngredientKeys.itemLookupKey(displayStack);
-            if (!seenStaticKeys.add(itemKey)) continue;
-
-            addIndexedRecipe(staticLootOutputs, itemKey.copyForStorage(), lootRecipe);
+            staticLootOutputs.add(new LootItem(possibleDrop, possibleDrop.getCount()), lootRecipe);
         }
     }
 
@@ -614,7 +604,7 @@ final class StructureJeiRecipes {
         for (LootItem lootItem : resolvedLoot) {
             if (lootItem == null || lootItem.stack.isEmpty() || lootItem.dropCount <= 0) continue;
 
-            frozenLoot.add(new LootItem(lootItem.stack.copy(), lootItem.dropCount));
+            frozenLoot.add(new LootItem(lootItem.stack, lootItem.dropCount, lootItem.grouped));
         }
 
         if (frozenLoot.isEmpty()) return Collections.emptyList();
@@ -644,38 +634,24 @@ final class StructureJeiRecipes {
         return Collections.unmodifiableMap(frozenIndex);
     }
 
-    private static Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> copyMutableIndex(
-            Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> sourceIndex) {
-        if (sourceIndex.isEmpty()) return new HashMap<>();
-
-        Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> copy = new HashMap<>();
-        for (Map.Entry<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> entry : sourceIndex.entrySet()) {
-            copy.put(entry.getKey(), new ArrayList<>(entry.getValue()));
-        }
-
-        return copy;
-    }
-
     private static void addResolvedLootOutputs(
-            Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> lootOutputs,
+            StructureJeiLootIndex lootOutputs,
             List<LootItem> resolvedOutputs, StructureJeiRecipe recipe) {
         if (resolvedOutputs.isEmpty()) return;
 
         for (LootItem output : resolvedOutputs) {
-            addIndexedRecipe(lootOutputs, StructureJeiIngredientKeys.itemStorageKey(output.stack), recipe);
+            lootOutputs.add(output, recipe);
         }
     }
 
     private static void addResolvedLootOutputs(
-            Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> lootOutputs,
+            StructureJeiLootIndex lootOutputs,
             List<LootItem> resolvedOutputs, List<StructureJeiRecipe> recipes) {
         if (resolvedOutputs.isEmpty() || recipes.isEmpty()) return;
 
         for (LootItem output : resolvedOutputs) {
-            StructureJeiIngredientKeys.IngredientKey key = StructureJeiIngredientKeys.itemStorageKey(output.stack);
-
             for (StructureJeiRecipe recipe : recipes) {
-                addIndexedRecipe(lootOutputs, key, recipe);
+                lootOutputs.add(output, recipe);
             }
         }
     }
@@ -724,14 +700,14 @@ final class StructureJeiRecipes {
         private final Map<StructureJeiView, List<StructureJeiRecipe>> sortedRecipes;
         private final Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockItemOutputs;
         private final Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockFluidOutputs;
-        private final Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> staticLootOutputs;
+        private final StructureJeiLootIndex staticLootOutputs;
         private final List<LootWarmupTask> pendingLootTasks;
 
         private PreparedVisibleState(long buildId, VisibilitySignature signature,
                 Map<StructureJeiView, List<StructureJeiRecipe>> sortedRecipes,
             Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockItemOutputs,
             Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockFluidOutputs,
-            Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> staticLootOutputs,
+            StructureJeiLootIndex staticLootOutputs,
                 List<LootWarmupTask> pendingLootTasks) {
             this.buildId = buildId;
             this.signature = signature;
@@ -744,7 +720,7 @@ final class StructureJeiRecipes {
 
         private VisibleState toVisibleState() {
             return new VisibleState(buildId, signature, sortedRecipes, blockItemOutputs, blockFluidOutputs,
-                copyMutableIndex(staticLootOutputs), new ArrayList<>(pendingLootTasks));
+                staticLootOutputs, new ArrayList<>(pendingLootTasks));
         }
 
         private boolean hasPendingLootTasks() {
@@ -758,7 +734,7 @@ final class StructureJeiRecipes {
         private final Map<StructureJeiView, List<StructureJeiRecipe>> sortedRecipes;
         private final Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockItemOutputs;
         private final Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockFluidOutputs;
-        private final Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> lootItemOutputs;
+        private final StructureJeiLootIndex lootItemOutputs;
         private final List<LootWarmupTask> pendingLootTasks;
         private int nextPendingLootTaskIndex = 0;
 
@@ -766,7 +742,7 @@ final class StructureJeiRecipes {
                 Map<StructureJeiView, List<StructureJeiRecipe>> sortedRecipes,
             Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockItemOutputs,
             Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> blockFluidOutputs,
-            Map<StructureJeiIngredientKeys.IngredientKey, List<StructureJeiRecipe>> lootItemOutputs,
+            StructureJeiLootIndex lootItemOutputs,
                 List<LootWarmupTask> pendingLootTasks) {
             this.buildId = buildId;
             this.signature = signature;
@@ -780,7 +756,7 @@ final class StructureJeiRecipes {
         private static VisibleState visibleOnly(long buildId, VisibilitySignature signature,
                 Map<StructureJeiView, List<StructureJeiRecipe>> sortedRecipes) {
             return new VisibleState(buildId, signature, sortedRecipes, Collections.emptyMap(), Collections.emptyMap(),
-                new LinkedHashMap<>(), Collections.emptyList());
+                new StructureJeiLootIndex(), Collections.emptyList());
         }
 
         private boolean matches(VisibilitySignature other) {
@@ -799,8 +775,8 @@ final class StructureJeiRecipes {
             return blockFluidOutputs.getOrDefault(key, Collections.emptyList());
         }
 
-        private List<StructureJeiRecipe> getLootItemMatches(StructureJeiIngredientKeys.IngredientKey key) {
-            return lootItemOutputs.getOrDefault(key, Collections.emptyList());
+        private List<StructureJeiRecipe> getLootItemMatches(ItemStack stack) {
+            return lootItemOutputs.getMatches(stack);
         }
 
         private boolean hasPendingLootTasks() {

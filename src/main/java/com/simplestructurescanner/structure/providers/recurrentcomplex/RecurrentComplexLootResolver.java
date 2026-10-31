@@ -1,6 +1,5 @@
 package com.simplestructurescanner.structure.providers.recurrentcomplex;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -25,6 +24,7 @@ import net.minecraftforge.common.util.Constants;
 
 import com.simplestructurescanner.SimpleStructureScanner;
 import com.simplestructurescanner.structure.LocalizedText;
+import com.simplestructurescanner.structure.LootItemAccumulator;
 import com.simplestructurescanner.structure.LootTableResolver;
 import com.simplestructurescanner.structure.LootTableResolver.LootItem;
 import com.simplestructurescanner.structure.StructureInfo.LootEntry;
@@ -106,54 +106,52 @@ public final class RecurrentComplexLootResolver {
     public static List<LootItem> resolveGeneratedLootWithSimulation(@Nullable World world, ItemStack generatorStack) {
         if (generatorStack.isEmpty()) return Collections.emptyList();
 
-        Map<String, LootItem> itemMap = new LinkedHashMap<>();
+        LootItemAccumulator items = new LootItemAccumulator();
         long seed = 0x5EEDC0DEL ^ generatorStack.copy().writeToNBT(new NBTTagCompound()).toString().hashCode();
         Random random = new Random(seed);
 
         for (int i = 0; i < LootTableResolver.getSimulationCount(); i++) {
-            simulateGenerator(world, generatorStack, random, itemMap, 0);
+            simulateGenerator(world, generatorStack, random, items, 0);
         }
 
-        List<LootItem> resolvedLoot = new ArrayList<>(itemMap.values());
-        resolvedLoot.sort((first, second) -> Integer.compare(second.dropCount, first.dropCount));
-        return resolvedLoot;
+        return items.getItems();
     }
 
     private static void simulateGenerator(@Nullable World world, ItemStack stack, Random random,
-            Map<String, LootItem> itemMap, int depth) {
+            LootItemAccumulator items, int depth) {
         if (stack.isEmpty() || depth > MAX_RECURSION_DEPTH) return;
 
         ResourceLocation itemId = getContainedItemId(stack);
         if (MULTI_TAG_ITEM_ID.equals(itemId)) {
-            simulateMultiTag(world, stack, random, itemMap, depth + 1);
+            simulateMultiTag(world, stack, random, items, depth + 1);
             return;
         }
 
         if (SINGLE_TAG_ITEM_ID.equals(itemId)) {
-            simulateSingleTag(world, stack, random, itemMap, depth + 1);
+            simulateSingleTag(world, stack, random, items, depth + 1);
             return;
         }
 
         if (COMPONENT_TAG_ITEM_ID.equals(itemId)) {
-            simulateComponentTag(stack, random, itemMap, depth + 1);
+            simulateComponentTag(stack, random, items, depth + 1);
             return;
         }
 
         if (ARTIFACT_TAG_ITEM_ID.equals(itemId)) {
-            simulateGeneratedSpecialItem(world, random, itemMap, depth + 1, true);
+            simulateGeneratedSpecialItem(world, random, items, depth + 1, true);
             return;
         }
 
         if (BOOK_TAG_ITEM_ID.equals(itemId)) {
-            simulateGeneratedSpecialItem(world, random, itemMap, depth + 1, false);
+            simulateGeneratedSpecialItem(world, random, items, depth + 1, false);
             return;
         }
 
-        addResolvedItem(itemMap, stack);
+        addResolvedItem(items, stack);
     }
 
     private static void simulateMultiTag(@Nullable World world, ItemStack stack, Random random,
-            Map<String, LootItem> itemMap, int depth) {
+            LootItemAccumulator items, int depth) {
         Object lootTable = getWeightedLootTable(getGeneratorKey(stack));
         if (lootTable == null) return;
 
@@ -164,39 +162,39 @@ public final class RecurrentComplexLootResolver {
             : 0;
 
         for (int i = 0; i < amount; i++) {
-            simulateLootTableResult(world, lootTable, random, itemMap, depth);
+            simulateLootTableResult(world, lootTable, random, items, depth);
         }
     }
 
     private static void simulateSingleTag(@Nullable World world, ItemStack stack, Random random,
-            Map<String, LootItem> itemMap, int depth) {
+            LootItemAccumulator items, int depth) {
         Object lootTable = getWeightedLootTable(getGeneratorKey(stack));
         if (lootTable == null) return;
         if (random.nextFloat() >= getFloatTag(stack, "itemChance", 1.0f)) return;
 
-        simulateLootTableResult(world, lootTable, random, itemMap, depth);
+        simulateLootTableResult(world, lootTable, random, items, depth);
     }
 
     private static void simulateComponentTag(ItemStack stack, Random random,
-            Map<String, LootItem> itemMap, int depth) {
+            LootItemAccumulator items, int depth) {
         Object component = getGenericComponent(getGeneratorKey(stack));
         if (component == null) return;
 
         try {
             ItemStack generated = (ItemStack) ReflectionHelper.invokeRequired(component, "getRandomItemStack",
                 new Class<?>[]{Random.class}, random);
-            if (generated != null) simulateGenerator(null, generated, random, itemMap, depth);
+            if (generated != null) simulateGenerator(null, generated, random, items, depth);
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.debug("Failed to resolve Recurrent Complex loot component", e);
         }
     }
 
     private static void simulateGeneratedSpecialItem(@Nullable World world, Random random,
-            Map<String, LootItem> itemMap, int depth, boolean artifact) {
+            LootItemAccumulator items, int depth, boolean artifact) {
         CustomOverride customOverride = getCustomOverride(artifact ? "customArtifactTag" : "customBookTag");
         if (customOverride.chance > 0.0f && random.nextFloat() < customOverride.chance) {
             Object overrideLootTable = getWeightedLootTable(customOverride.key);
-            if (overrideLootTable != null) simulateLootTableResult(world, overrideLootTable, random, itemMap, depth);
+            if (overrideLootTable != null) simulateLootTableResult(world, overrideLootTable, random, items, depth);
 
             return;
         }
@@ -205,7 +203,7 @@ public final class RecurrentComplexLootResolver {
             Class<?> sourceClass = ReflectionHelper.loadClassRequired(artifact ? ARTIFACT_ITEM_CLASS : BOOK_ITEM_CLASS);
             ItemStack generated = (ItemStack) ReflectionHelper.invokeStaticRequired(
                 sourceClass, "any", new Class<?>[]{Random.class}, random);
-            if (generated != null) simulateGenerator(world, generated, random, itemMap, depth);
+            if (generated != null) simulateGenerator(world, generated, random, items, depth);
         } catch (ReflectionException e) {
             SimpleStructureScanner.LOGGER.debug("Failed to resolve Recurrent Complex {} generator",
                 artifact ? "artifact" : "book", e);
@@ -213,11 +211,11 @@ public final class RecurrentComplexLootResolver {
     }
 
     private static void simulateLootTableResult(@Nullable World world, Object lootTable, Random random,
-            Map<String, LootItem> itemMap, int depth) {
+            LootItemAccumulator items, int depth) {
         ItemStack generated = generateLootTableItem(world, lootTable, random);
         if (generated.isEmpty()) return;
 
-        simulateGenerator(world, generated, random, itemMap, depth);
+        simulateGenerator(world, generated, random, items, depth);
     }
 
     @Nonnull
@@ -235,17 +233,10 @@ public final class RecurrentComplexLootResolver {
         }
     }
 
-    private static void addResolvedItem(Map<String, LootItem> itemMap, ItemStack stack) {
+    private static void addResolvedItem(LootItemAccumulator items, ItemStack stack) {
         if (stack.isEmpty()) return;
 
-        String itemKey = LootTableResolver.createAggregationKey(stack);
-        LootItem existingItem = itemMap.get(itemKey);
-        if (existingItem != null) {
-            existingItem.dropCount += stack.getCount();
-            return;
-        }
-
-        itemMap.put(itemKey, new LootItem(stack.copy(), stack.getCount()));
+        items.add(stack, stack.getCount());
     }
 
     @Nonnull

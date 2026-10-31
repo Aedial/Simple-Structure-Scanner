@@ -490,6 +490,70 @@ public final class SimpleStructureScannerConfig {
         @Config.LangKey("config.structurescanner.client.showLootTables")
         public boolean showLootTables = true;
 
+        @Config.LangKey("config.structurescanner.client.lootGroupingItems")
+        public String[] lootGroupingItems = {
+            "minecraft:potion",
+            "minecraft:splash_potion",
+            "minecraft:lingering_potion",
+            "minecraft:tipped_arrow",
+            "minecraft:spawn_egg",
+            "minecraft:skull@3",
+            "minecraft:written_book",
+            "minecraft:banner",
+            "minecraft:shield",
+            "minecraft:fireworks",
+            "minecraft:firework_charge",
+            "minecraft:filled_map"
+        };
+
+        @Config.LangKey("config.structurescanner.client.lootGroupingThreshold")
+        @Config.RangeInt(min = 1)
+        public int lootGroupingThreshold = 10;
+
+        /**
+         * NBT tags to strip from items for cleaner display.
+         * These tags control which item details remain when comparing loot variants.
+         */
+        @Config.LangKey("config.structurescanner.client.lootNbtTagsToStrip")
+        public String[] lootNbtTagsToStrip = {
+            // Enchantments
+            "ench",                 // Regular enchantments
+            "StoredEnchantments",   // Enchanted books
+            "RepairCost",           // Anvil repair cost
+
+            // Ender IO
+            "eio.yourface",         // EIO addon data
+            "eiocap",               // Capacitor stats
+            "enderio:capname",      // Capacitor name
+            "enderio:capno",        // Capacitor index
+
+            // Thaumcraft
+            "Aspects",              // Vis crystal aspects
+
+            // Corail Tombstone
+            "stored_xp",            // XP stored in a scroll
+            "magic_effect",         // Effect of a scroll
+            "dead_pet",             // Pet storage in Receptacle
+            "poppet_*",             // Poppet attributes
+
+            // Random Things
+            "biomeName",            // Biome Crystals
+
+            // General
+            "Damage",               // Durability damage
+            "display",              // Custom names/lore
+
+            /*
+             * NBT tag prefixes to strip from items for cleaner display.
+             * A trailing * removes tags whose names start with the preceding text.
+             */
+            // Ender IO
+            "enderio.darksteel.upgrade.*",   // EIO upgrade
+        };
+
+        @Config.LangKey("config.structurescanner.client.lootMetadataIgnoredItems")
+        public String[] lootMetadataIgnoredItems = { "minecraft:filled_map" };
+
         @Config.LangKey("config.structurescanner.client.enableJeiCategories")
         public boolean enableJeiCategories = true;
 

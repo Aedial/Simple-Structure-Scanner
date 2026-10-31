@@ -92,11 +92,17 @@ To remove a stage-qualified entry, use the same prefix as the file syntax, for e
 - showBlocks: Show blocks that are part of the structure in the details panel of the main GUI.
 - showEntities: Show entities that are part of the structure in the details panel of the main GUI.
 - showLootTables: Show loot tables that are part of the structure in the details panel of the main GUI.
+- lootGroupingItems: Item IDs or item@meta entries eligible for grouping when their distinct NBT variants reach lootGroupingThreshold. Each remaining metadata value forms a separate group. Defaults cover potions, tipped arrows, spawn eggs, player heads, written books, banners, shields, fireworks, and filled maps.
+- lootGroupingThreshold: Minimum number of distinct cleaned variants needed to group eligible entries, default 10. Repeated rolls of the same variant count once. Grouped entries show a generic item with combined counts and rates.
+- lootNbtTagsToStrip: Case-sensitive root NBT tags to remove before comparing and displaying loot, using the existing defaults. A trailing * matches tag name prefixes, such as enderio.darksteel.upgrade.*.
+- lootMetadataIgnoredItems: Exact item IDs whose loot metadata becomes 0, default minecraft:filled_map. Durability is always ignored, including unbreakable equipment. Existing Wizardry and Tombstone spell/buff metadata normalization remains active.
 - enableJeiBlocks: Enable the registration of structure blocks in JEI as coming from the structure. This allows you to see what structures a block is part of.
 - enableJeiLoot: Enable the registration of structure loot tables in JEI as coming from the structure. This allows you to see what loot can be found in a structure.
 - enableJeiPreview: Allow to see structure previews in JEI.
 - enableJeiCategories: Master switch to enable/disable all JEI categories. If disabled, the other 3 JEI configs are ignored.
 - Provider toggles: Enable or disable specific providers, meaning they will not load any structures. Only works on native providers. If you want to remove external providers, just remove the files from config.
+
+Restart the game after changing loot grouping or cleanup settings to refresh cached results.
 
 
 ### Config-driven external providers:

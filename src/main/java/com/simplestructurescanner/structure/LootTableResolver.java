@@ -2,13 +2,12 @@ package com.simplestructurescanner.structure;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.init.Items;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraftforge.fml.common.Loader;
@@ -23,6 +22,8 @@ import net.minecraft.world.storage.loot.LootTable;
 import net.minecraft.world.storage.loot.LootTableManager;
 
 import com.simplestructurescanner.SimpleStructureScanner;
+import com.simplestructurescanner.config.SimpleStructureScannerConfig;
+import com.simplestructurescanner.util.ItemStackKey;
 
 
 /**
@@ -49,40 +50,6 @@ public class LootTableResolver {
     private static boolean tombstoneChecked = false;
     private static boolean tombstoneLoaded = false;
     private static Class<?> scrollBuffClass = null;
-
-    /**
-     * NBT tags to strip from items for cleaner display.
-     * These are tags that cause visual noise or grouping issues but aren't essential for item identity.
-     */
-    private static final String[] NBT_TAGS_TO_STRIP = {
-        // Enchantments
-        "ench",                 // Regular enchantments
-        "StoredEnchantments",   // Enchanted books
-        "RepairCost",           // Anvil repair cost
-
-        // Ender IO
-        "eio.yourface",         // EIO addon data
-
-        // Thaumcraft
-        "Aspects",              // Vis crystal aspects
-
-        // Corail Tombstone
-        "stored_xp",            // XP stored in items
-        "dead_pet",             // Pet storage
-
-        // General
-        "Damage",               // Durability damage
-        "display",              // Custom names/lore
-    };
-
-    /**
-     * NBT tag prefixes to strip from items for cleaner display.
-     * These are prefixes of tags that cause visual noise but aren't essential for item identity.
-     */
-    private static final String[] NBT_TAGS_TO_STRIP_STARTING_WITH = {
-        // Ender IO
-        "enderio.darksteel.upgrade.",   // EIO upgrade
-    };
 
     private static void initReflection() {
         if (reflectionInitialized) return;
@@ -119,12 +86,19 @@ public class LootTableResolver {
      */
     public static class LootItem {
         public final ItemStack stack;
+        public final boolean grouped;
         public int dropCount;
 
         public LootItem(ItemStack stack, int dropCount) {
-            // Store a normalized copy for cleaner display
+            this(stack, dropCount, false);
+        }
+
+        public LootItem(ItemStack stack, int dropCount, boolean grouped) {
+            // Keep a normalized copy for cleaner display
             this.stack = normalizeForDisplay(stack);
+            this.grouped = grouped;
             this.dropCount = dropCount;
+            if (grouped) this.stack.setTagCompound(null);
         }
 
         public String formatDropRate(int simulationCount) {
@@ -159,7 +133,7 @@ public class LootTableResolver {
      * @return List of aggregated loot items with drop counts
      */
     public static List<LootItem> resolveLootTableWithSimulation(World world, ResourceLocation lootTableId, EntityPlayer player) {
-        Map<String, LootItem> itemMap = new HashMap<>();
+        LootItemAccumulator items = new LootItemAccumulator();
 
         if (!(world instanceof WorldServer)) return resolveLootTableFallback(world, lootTableId);
 
@@ -182,21 +156,11 @@ public class LootTableResolver {
             for (ItemStack stack : drops) {
                 if (stack.isEmpty()) continue;
 
-                String key = getItemKey(stack);
-                LootItem existing = itemMap.get(key);
-
-                if (existing != null) {
-                    existing.dropCount += stack.getCount();
-                } else {
-                    itemMap.put(key, new LootItem(stack.copy(), stack.getCount()));
-                }
+                items.add(stack, stack.getCount());
             }
         }
 
-        List<LootItem> result = new ArrayList<>(itemMap.values());
-        result.sort((a, b) -> Integer.compare(b.dropCount, a.dropCount));
-
-        return result;
+        return items.getItems();
     }
 
     /**
@@ -216,7 +180,7 @@ public class LootTableResolver {
 
             if (table == LootTable.EMPTY_LOOT_TABLE) return items;
 
-            Map<String, LootItem> itemMap = new HashMap<>();
+            Map<ItemStackKey, LootItem> itemMap = new LinkedHashMap<>();
             List<LootPool> pools = getPools(table);
 
             for (LootPool pool : pools) {
@@ -229,7 +193,7 @@ public class LootTableResolver {
                     if (item == null) continue;
 
                     ItemStack stack = new ItemStack(item);
-                    String key = getItemKey(stack);
+                    ItemStackKey key = getItemKey(stack);
 
                     if (!itemMap.containsKey(key)) itemMap.put(key, new LootItem(stack, 1));
                 }
@@ -245,38 +209,48 @@ public class LootTableResolver {
 
     /**
      * Get a normalized item key for aggregation purposes.
-     * This unifies items by removing enchantments, damage values (for tools), and spell book specifics.
+     * Compare item, normalized metadata, and NBT left after configured cleanup.
      */
-    private static String getItemKey(ItemStack stack) {
-        Item item = stack.getItem();
-        int meta = stack.getMetadata();
-        ResourceLocation registryName = item.getRegistryName();
-
-        // Enchanted books - treat all as the same item
-        if (item == Items.ENCHANTED_BOOK) return registryName + "@enchanted";
-
-        // Items with durability - ignore damage value (metadata)
-        if (stack.isItemStackDamageable()) return registryName + "@0";
-
-        // Wizardry spell books/scrolls and Tombstone scroll_buff - ignore per-spell metadata
-        if (isMetadataStrippedItem(item)) return registryName + "@0";
-
-        return registryName + "@" + meta;
+    private static ItemStackKey getItemKey(ItemStack stack) {
+        return ItemStackKey.ofTransient(normalizeForDisplay(stack));
     }
 
     /**
      * Create the aggregation key used to merge equivalent loot results.
      */
-    public static String createAggregationKey(ItemStack stack) {
+    public static ItemStackKey createAggregationKey(ItemStack stack) {
         return getItemKey(stack);
+    }
+
+    public static boolean canGroupItem(ItemStack stack) {
+        ResourceLocation itemId = stack.getItem().getRegistryName();
+        if (itemId == null) return false;
+
+        String id = itemId.toString();
+        String subtype = id + "@" + stack.getMetadata();
+        for (String entry : SimpleStructureScannerConfig.client.lootGroupingItems) {
+            String selector = entry.trim();
+            if (selector.equals(id) || selector.equals(subtype)) return true;
+        }
+
+        return false;
     }
 
     /**
      * Check if an item should have its metadata stripped for grouping.
-     * This includes Wizardry spell books/scrolls and Tombstone scroll_buff.
+     * Includes configured item IDs, Wizardry spell books/scrolls, and Tombstone scroll_buff.
      */
     private static boolean isMetadataStrippedItem(Item item) {
-        return isWizardrySpellItem(item) || isTombstoneScrollBuff(item);
+        if (isWizardrySpellItem(item) || isTombstoneScrollBuff(item)) return true;
+
+        ResourceLocation itemId = item.getRegistryName();
+        if (itemId == null) return false;
+
+        for (String entry : SimpleStructureScannerConfig.client.lootMetadataIgnoredItems) {
+            if (itemId.toString().equals(entry.trim())) return true;
+        }
+
+        return false;
     }
 
     /**
@@ -336,7 +310,7 @@ public class LootTableResolver {
 
     /**
      * Create a normalized ItemStack for display.
-     * Strips specific NBT tags that cause noise while preserving item identity.
+     * Strips configured NBT tags and normalizes metadata before comparing loot variants.
      */
     public static ItemStack normalizeForDisplay(ItemStack stack) {
         ItemStack normalized = stack.copy();
@@ -344,25 +318,33 @@ public class LootTableResolver {
 
         // Strip specific NBT tags that cause noise
         if (normalized.hasTagCompound()) {
-            for (String tag : NBT_TAGS_TO_STRIP) normalized.getTagCompound().removeTag(tag);
+            // Enchanted books use the configured StoredEnchantments rule
+            List<String> keysToRemove = new ArrayList<>();
+            for (String entry : SimpleStructureScannerConfig.client.lootNbtTagsToStrip) {
+                String tag = entry.trim();
+                if (tag.isEmpty()) continue;
 
-            for (String tagStart : NBT_TAGS_TO_STRIP_STARTING_WITH) {
-                List<String> keysToRemove = new ArrayList<>();
-                for (String key : normalized.getTagCompound().getKeySet()) {
-                    if (key.startsWith(tagStart)) keysToRemove.add(key);
+                if (tag.endsWith("*")) {
+                    String prefix = tag.substring(0, tag.length() - 1);
+                    for (String key : normalized.getTagCompound().getKeySet()) {
+                        if (key.startsWith(prefix)) keysToRemove.add(key);
+                    }
+                } else {
+                    keysToRemove.add(tag);
                 }
-
-                for (String key : keysToRemove) normalized.getTagCompound().removeTag(key);
             }
+
+            for (String key : keysToRemove) normalized.getTagCompound().removeTag(key);
 
             // Clean up empty compound
             if (normalized.getTagCompound().isEmpty()) normalized.setTagCompound(null);
         }
 
-        // Reset damage/metadata on damageable items
-        if (normalized.isItemStackDamageable()) normalized.setItemDamage(0);
+        // Items with durability ignore damage values, including unbreakable equipment
+        if (normalized.getMaxDamage() > 0) normalized.setItemDamage(0);
 
-        // Reset metadata on items that use it for spell/buff variants
+        // Wizardry spell books/scrolls and Tombstone scroll_buff ignore per-spell metadata
+        // Reset metadata on configured items and spell/buff variants
         if (isMetadataStrippedItem(item)) normalized.setItemDamage(0);
 
         return normalized;

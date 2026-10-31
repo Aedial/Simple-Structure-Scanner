@@ -377,11 +377,11 @@ gui.structurescanner.structures.astralsorcery.ancient_shrine=神殿
 # Wizardry
 
 ## Wizardry: Structures
-gui.structurescanner.structures.wizardry.wizard_tower=巫师塔
-gui.structurescanner.structures.wizardry.shrine=圣祠
-gui.structurescanner.structures.wizardry.obelisk=方尖碑
-gui.structurescanner.structures.wizardry.library_ruins=图书馆遗迹
-gui.structurescanner.structures.wizardry.underground_library_ruins=地下图书馆遗迹
+gui.structurescanner.structures.ebwizardry.wizard_tower=巫师塔
+gui.structurescanner.structures.ebwizardry.shrine=圣祠
+gui.structurescanner.structures.ebwizardry.obelisk=方尖碑
+gui.structurescanner.structures.ebwizardry.library_ruins=图书馆遗迹
+gui.structurescanner.structures.ebwizardry.underground_library_ruins=地下图书馆遗迹
 
 # Buttons
 gui.structurescanner.blocksButton=[方块]

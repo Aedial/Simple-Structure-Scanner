@@ -377,11 +377,11 @@ gui.structurescanner.structures.astralsorcery.ancient_shrine=Temple
 # Wizardry
 
 ## Wizardry: Structures
-gui.structurescanner.structures.wizardry.wizard_tower=Wizard Tower
-gui.structurescanner.structures.wizardry.shrine=Shrine
-gui.structurescanner.structures.wizardry.obelisk=Obelisk
-gui.structurescanner.structures.wizardry.library_ruins=Library Ruins
-gui.structurescanner.structures.wizardry.underground_library_ruins=Underground Library Ruins
+gui.structurescanner.structures.ebwizardry.wizard_tower=Wizard Tower
+gui.structurescanner.structures.ebwizardry.shrine=Shrine
+gui.structurescanner.structures.ebwizardry.obelisk=Obelisk
+gui.structurescanner.structures.ebwizardry.library_ruins=Library Ruins
+gui.structurescanner.structures.ebwizardry.underground_library_ruins=Underground Library Ruins
 
 # Buttons
 gui.structurescanner.blocksButton=[Blocks]
@@ -448,6 +448,9 @@ jei.structurescanner.blocks.empty=No blocks available
 jei.structurescanner.loot.empty=No loot available
 jei.structurescanner.loot.uniqueCount=%d items
 jei.structurescanner.loot.sources=Appears in %d loot source(s)
+gui.structurescanner.loot.groupedName=Any %s
+gui.structurescanner.loot.spawnEgg=Spawn Egg
+gui.structurescanner.loot.groupedTooltip=Combines NBT variants; the count or rate includes all variants.
 jei.structurescanner.page=%d/%d
 jei.structurescanner.button.preview=Show preview
 jei.structurescanner.button.blocks=Show blocks
@@ -505,6 +508,14 @@ config.structurescanner.client.showEntities=Show entities
 config.structurescanner.client.showEntities.tooltip=Show entities that are part of the structure in the details panel
 config.structurescanner.client.showLootTables=Show loot tables
 config.structurescanner.client.showLootTables.tooltip=Show loot tables that are part of the structure in the details panel
+config.structurescanner.client.lootGroupingItems=Items eligible for loot grouping
+config.structurescanner.client.lootGroupingItems.tooltip=Item IDs or item@meta entries whose NBT variants collapse at the grouping threshold. Each remaining metadata value forms a separate group. Restart the game after editing to refresh cached loot.
+config.structurescanner.client.lootGroupingThreshold=Loot grouping threshold
+config.structurescanner.client.lootGroupingThreshold.tooltip=Minimum number of distinct cleaned variants needed to collapse eligible loot entries. Repeated rolls of the same variant count once. Default: 10. Restart the game after editing to refresh cached loot.
+config.structurescanner.client.lootNbtTagsToStrip=Loot NBT tags to strip
+config.structurescanner.client.lootNbtTagsToStrip.tooltip=Case-sensitive root NBT tag names to remove before comparing and displaying loot. A trailing * matches tag name prefixes, such as enderio.darksteel.upgrade.*. Restart the game after editing to refresh cached loot.
+config.structurescanner.client.lootMetadataIgnoredItems=Loot items whose metadata is ignored
+config.structurescanner.client.lootMetadataIgnoredItems.tooltip=Exact item IDs whose loot metadata becomes 0. Default: minecraft:filled_map. Durability and existing spell/buff normalization always apply. Restart the game after editing to refresh cached loot.
 config.structurescanner.client.enableJeiCategories=Enable JEI categories
 config.structurescanner.client.enableJeiCategories.tooltip=Enable the Structure Scanner JEI categories. Disabling this is equivalent to disabling each category below individually.
 config.structurescanner.client.enableJeiPreview=Enable JEI preview

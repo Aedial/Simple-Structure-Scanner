@@ -183,6 +183,8 @@ public class RecurrentComplexStructureProvider extends AbstractStructureProvider
     private ResourceLocation createStructureId(Object registry, String rawId) throws ReflectionException {
         Object status = ReflectionHelper.invokeRequired(registry, "status", new Class<?>[]{String.class}, rawId);
         String domain = status != null ? (String) ReflectionHelper.invokeRequired(status, "getDomain") : MOD_ID;
+        if (domain == null || domain.isEmpty()) domain = MOD_ID;
+
         return new ResourceLocation(domain, rawId);
     }
 

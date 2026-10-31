@@ -14,6 +14,7 @@ The format is based on Keep a Changelog and this project adheres to Semantic Ver
 - Add cutaway view support for structures, allowing to hide outer walls/ceiling to better visualize the interior.
 - Add a configurable blacklist for the blocks shown in the Blocks window or JEI block recipes, allowing you to hide specific blocks or items based on their ID and metadata. The config comes with a basic set of unbrekable/creative/invisible vanilla blocks.
 - Add a config option to hide blocks with missing textures from the Blocks window and JEI block recipes.
+- Add config options to deduplicate loot entries, like NBT stripping, Metadata stripping, and collapsing multiple entries into one if there are enough of them. This comes with safe defaults for common mods, like for EnderIO capacitors or Corail Tombstone items, alongside collapsing of potions and other vanilla items.
 
 ### Fixed
 - Provide all missing structure previews/metadata via their MapGeneration data.

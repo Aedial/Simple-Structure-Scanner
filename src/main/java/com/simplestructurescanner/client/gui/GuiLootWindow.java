@@ -20,7 +20,9 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.world.World;
 
 import com.simplestructurescanner.client.ClientTextResolver;
+import com.simplestructurescanner.client.LootItemTooltip;
 import com.simplestructurescanner.integration.JEIHelper;
+import com.simplestructurescanner.structure.LootItemAccumulator;
 import com.simplestructurescanner.structure.LootTableResolver;
 import com.simplestructurescanner.structure.LootTableResolver.LootItem;
 import com.simplestructurescanner.structure.StructureInfo;
@@ -125,7 +127,10 @@ public class GuiLootWindow {
                 }
             }
 
-            resolvedLoot.add(entryLoot);
+            LootItemAccumulator items = new LootItemAccumulator();
+            for (LootItem item : entryLoot) items.add(item);
+
+            resolvedLoot.add(items.getItems());
         }
     }
 
@@ -514,6 +519,7 @@ public class GuiLootWindow {
             ITooltipFlag.TooltipFlags tooltipFlag = mc.gameSettings.advancedItemTooltips ?
                 ITooltipFlag.TooltipFlags.ADVANCED : ITooltipFlag.TooltipFlags.NORMAL;
             List<String> tooltip = item.stack.getTooltip(mc.player, tooltipFlag);
+            LootItemTooltip.apply(tooltip, item.stack, item.grouped);
 
             GlStateManager.pushMatrix();
             GlStateManager.translate(0, 0, 500);
